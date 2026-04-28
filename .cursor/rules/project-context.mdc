@@ -1,0 +1,12 @@
+---
+description: Core project context for all agent tasks
+alwaysApply: true
+---
+
+# Prototype Cache Project Context
+
+- Build a production-shaped prototype for image storage/cache consumed by async workers.
+- Treat `docs/spec/` as requirements source of truth.
+- Prefer measurable requirements and explicit assumptions.
+- For major choices, update ADR table in `docs/spec/03_ARCHITECTURE_AND_DECISIONS.md`.
+- Keep implementation, tests, and observability aligned.

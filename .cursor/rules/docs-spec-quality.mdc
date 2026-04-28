@@ -1,0 +1,13 @@
+---
+description: Spec writing quality rules for docs
+globs: docs/**/*.md
+alwaysApply: false
+---
+
+# Specification Quality Rules
+
+- Keep sections short, direct, and testable.
+- Use IDs for requirements and decisions (`FR-*`, `NFR-*`, `ADR-*`, `Q-*`, `R-*`, `B-*`).
+- Avoid vague terms like "fast", "robust", or "secure" without targets.
+- Every critical requirement must include acceptance criteria.
+- Unknowns must be listed as explicit open questions with owner and due date.
