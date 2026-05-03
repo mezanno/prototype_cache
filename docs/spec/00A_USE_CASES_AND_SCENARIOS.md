@@ -16,7 +16,8 @@ How to use:
 - **Task API**: registers references and retrieves assets for processing workflows.
 - **Worker**: reads processing input and may write artifacts/results.
 - **Admin UI/API**: lists and manages resources.
-- **IIIF proxy**: fetches remotely and writes into storage module (or through dedicated fetch service).
+- **IIIF proxy**: fetches remotely and writes into storage module (or through dedicated fetch service). The role of the IIIF proxy is to ensure that required resources are present in storage before workers are actually triggered.
+The IIIF proxy contains the logic about what are the differents URLs that can be used to fetch a resource, and therefore what are the aliases that a resource can have.
 - **IIIF server**: reads images in user- or team/projec-storage and generates tiles views and manifests, caching tiles and manifests in a dedicated storage area if needed
 
 when core layers are ready, we may add new actors:
@@ -89,8 +90,7 @@ Copy/paste this block for new scenarios:
 
 
 ### SCN-003 - Task registration with a reference to a remote URL
-The role of the IIIF proxy is to ensure that required resources are present in storage before workers are actually triggered.
-The IIIF proxy contains the logic about what are the differents URLs that can be used to fetch a resource, and therefore what are the aliases that a resource can have.
+- **Priority:** P0
 - **Preconditions:** valid task request with remote URL, valid URL
 - **Trigger:** Task manager needs to ensure remote resource is fetched before triggering workers
 - **Main flow:**
@@ -106,13 +106,6 @@ The IIIF proxy contains the logic about what are the differents URLs that can be
 - **Observability checks:** cache hits/failures, data transfer saved, fetch errors, resource hits
 - **Open questions:** IIIF proxy needs dedicated workers (some with specific IPs, some with special authorizations) to be able to fetch from remote heritage institutions. Its actual implementation is left for future work.
 
-check whether URL is already cached > if yes, move on to SCN-002, if no, fetch resource.
-To fetch resource, the following actions are performed.
-1. The Task manager receives a "not found" reply from the storage service regarding the online resource. How
-2. 
-
-
-
 
 
 
@@ -125,12 +118,18 @@ To fetch resource, the following actions are performed.
 - **Trigger:** User uploads an image/binary through upstream API
 - **Main flow:**
   1. Upload API sends payload + metadata to storage module.
-  2. Storage module persists object and metadata.
-  3. Storage module returns canonical asset id.
+  2. Storage guard is requested to authenticate the user and generate a single-use upload permission for the upload API.
+  3. Upload API uses the single-use permission to create a new asset for the current user, persisting all userful metadata associated to it (actual filenames, sorting information, tags… all of this should be versionned at some point)
+  4. Storage module persists object and metadata.
+  5. Storage module returns canonical asset id.
 - **Expected result:** Upload API can reference the stored asset in business workflows.
 - **Error/failure paths:** invalid metadata, timeout during transfer
 - **Observability checks:** upload throughput, failed upload causes
 - **Open questions:** should storage enforce MIME/size constraints or trust caller?
+
+
+### TODO User visualizes previously uploaded artifacts
+
 
 ### SCN-004 - Admin lifecycle operation
 
