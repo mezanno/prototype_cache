@@ -91,6 +91,7 @@ Copy/paste this block for new scenarios:
 
 ### SCN-003 - Task registration with a reference to a remote URL
 - **Priority:** P0
+- **Actors:** TODO
 - **Preconditions:** valid task request with remote URL, valid URL
 - **Trigger:** Task manager needs to ensure remote resource is fetched before triggering workers
 - **Main flow:**
@@ -125,10 +126,22 @@ Copy/paste this block for new scenarios:
 - **Expected result:** Upload API can reference the stored asset in business workflows.
 - **Error/failure paths:** invalid metadata, timeout during transfer
 - **Observability checks:** upload throughput, failed upload causes
-- **Open questions:** should storage enforce MIME/size constraints or trust caller?
+- **Open questions:** should storage enforce MIME/size constraints or trust caller? How can users decide whether their data is private, restricted to some users, or public (readable without prior authentication)
 
 
 ### TODO User visualizes previously uploaded artifacts
+- **Priority:** P1
+- **Actors:** IIIF server, storage API
+- **Preconditions:** User previously uploaded a resource (image) to its personal space
+- **Trigger:** a user requests a resource via the IIIF server
+- **Main flow:**
+  1. (the API gateway itentifies the requests as a IIIF resource request and routes the requet to the IIIF server)
+  2. the IIIF server parses the query URL and extract any eventual 
+- **Expected result:** 
+- **Error/failure paths:** 
+- **Observability checks:** 
+- **Open questions:** 
+
 
 
 ### SCN-004 - Admin lifecycle operation
