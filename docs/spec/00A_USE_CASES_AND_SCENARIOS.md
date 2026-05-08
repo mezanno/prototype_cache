@@ -135,12 +135,14 @@ Copy/paste this block for new scenarios:
 - **Preconditions:** User previously uploaded a resource (image) to its personal space
 - **Trigger:** a user requests a resource via the IIIF server
 - **Main flow:**
-  1. (the API gateway itentifies the requests as a IIIF resource request and routes the requet to the IIIF server)
-  2. the IIIF server parses the query URL and extract any eventual 
-- **Expected result:** 
-- **Error/failure paths:** 
-- **Observability checks:** 
-- **Open questions:** 
+  1. (the API gateway identifies the requests as a IIIF resource request and routes the requet to the IIIF server)
+  2. the IIIF server parses the query URL and extract any eventual authorization token from the query
+  3. the permissions for accessing the resource are checked (not sure whether it should be handled at the IIIF server level, at the storage level, or somewhere else — maybe the permission for the original resource in the storage is sufficient and the IIIF server can be seen as a sort of proxy here which relays the authorization, but in this case which permissions should be assigned to the cached tiles?)
+  4. if available, the IIIF server serves the tiles present in its cache (which should be another storage space), and if not it reads the original resource and generates, if needed, requested tiles, caches them, and serves them
+- **Expected result:** an IIIF viewer can display the requested resources, and Corpusense (manifest browser) can load a shared manifest which points to IIIF resources hosted on our services
+- **Error/failure paths:** missing resource, insufficient permissions
+- **Observability checks:** tile serving throughput and latency, cache storage, cache hit/miss rates, 
+- **Open questions:** do we need all the features of the IIIF Image API which enables image format conversion, image processings, etc.? This may load the server in a useless way. Maybe pre-generating a couple of static images is sufficient…
 
 
 
@@ -157,7 +159,7 @@ Copy/paste this block for new scenarios:
 - **Expected result:** Resource state changes are durable and auditable.
 - **Error/failure paths:** concurrent update, protected asset deletion blocked
 - **Observability checks:** admin action audit logs, state transition counters
-- **Open questions:** what is mutable if storage is write-once?
+- **Open questions:** what is mutable if storage is write-once? metadata? iiif manifests? do we need to version mutable objects?
 
 ### SCN-005 - Worker writes result artifacts
 
@@ -173,6 +175,11 @@ Copy/paste this block for new scenarios:
 - **Error/failure paths:** group upload partial failure
 - **Observability checks:** artifact write success rate, grouped write consistency
 - **Open questions:** atomicity required for grouped artifacts?
+
+
+### TODO periodical removal of expired resources
+- **Priority:** P2+, will be detailed later but resource model need to be compatible with a form of expiration/life cycle management
+
 
 ---
 
