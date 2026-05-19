@@ -4,14 +4,19 @@
 
 | ID | Topic | Status |
 |----|--------|--------|
-| Q-004 | Quota: registry per `(bucket, partition_id)` vs MinIO | Partially directed — see ADR-007 |
-| Q-020 | Default `tmp` TTL and GC | Open |
+| Q-004 | Quota: registry per `(bucket, partition_id)` vs MinIO | Resolved — see FR-066..068, ADR-009 |
+| Q-006 | Grace period `expired → deleted`; per-space override | Resolved — 7 d (`cache`/`users`/`results`), 24 h (`tmp`) |
+| Q-020 | Default `tmp` TTL and GC | Resolved — 24 h default, per-partition max 7 d |
 | Q-021 | Cache alias derivation (fetcher) | Open |
 | Q-022 | Domain cache allowlist | Open |
 | Q-023 | Fetcher MVP phasing | Open |
 | Q-024 | Promote `tmp` → `users` (if ever) | Open |
 | Q-025 | IIIF server integration phasing: formal service identity timing and `iiif_server_cache` read-path interaction | Open |
 | Q-026 | `iiif-image-mirror` derivative generation: level 0 proxy-only vs level 1/2 with derivative generation (risk of upstream divergence) | Open |
+| Q-027 | Eviction sweep exhaustion handling | Resolved — alert-only for MVP |
+| Q-028 | FR-065 batch policy reset: sync vs async | Open |
+| Q-029 | `results` partition as `{userid}` with `anon` reserved | Resolved |
+| Q-030 | Per-write size cap on `results` via capability | Open |
 
 Full table below.
 
@@ -24,9 +29,9 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | Q-001 | What are the transactional semantics of a bulk batch? All-or-nothing per batch, per-N-item chunk, or best-effort with a manifest? | SCN-001 main flow + error behavior; bulk-loader UX | TBD | Phase 0 exit | Open |
 | Q-002 | What is the maximum batch size before the bulk-loader must request a fresh capability? | Operational, capability TTL bounds | TBD | Phase 0 exit | Open |
 | Q-003 | In which deployment topologies should `storage-guard` proxy the bytes instead of issuing presigned URLs? Default mode per environment? | ADR-003, NFR-007, NFR-008 | TBD | Phase 2 spike S-002 | Open |
-| Q-004 | Quota enforcement model: per-`(space, partition_id)` hard limit, soft warn + alert, both? **Direction:** sums in **registry** on commit; MinIO bucket metrics for coarse ops only ([`ADR-007`](03_ARCHITECTURE_AND_DECISIONS.md)). | FR-042, FR-015, NFR-001 | TBD | Phase 3 | Open |
+| Q-004 | Quota enforcement model: per-`(space, partition_id)` hard limit, soft warn + alert, both? **Resolved:** two-tier enforcement — `PartitionQuota` (thresholds: 80% warn, 90% async-evict trigger, 105% hard block `413`) and `BucketQuota` (80% warn, 100% hard block `413`); sums tracked in registry at commit time via atomic `UPDATE … RETURNING`; MinIO bucket metrics for coarse ops/cost only. | FR-066, FR-067, FR-068, ADR-009 | TBD | Phase 3 | Resolved |
 | Q-005 | MIME sniffing on commit (server-side) vs trust the caller? Trade-off between content-agnostic posture and operational safety. | FR-022, security guidance | TBD | Phase 2 | Open |
-| Q-006 | Default grace period between `expired` and `deleted` (current draft: 7 days)? Per-space override? | FR-060 | TBD | Phase 2 | Open |
+| Q-006 | Default grace period between `expired` and `deleted` (current draft: 7 days)? Per-space override? **Resolved:** 7 days for `cache`, `users`, and `results`; 24 h for `tmp`. Per-space values are operator-configurable. | FR-060, ADR-009 | TBD | Phase 2 | Resolved |
 | Q-007 | Should the admin be allowed to override TTL/expire on system-managed buckets (e.g. `cache`)? | SCN-004, ADR-005 | TBD | Phase 3 | Open |
 | Q-008 | Atomic-group write semantics: is the manifest-marker pattern enough or do we need a real transactional "commit bundle" endpoint? | FR-001..003, SCN-005 | TBD | Phase 3 | Open |
 | Q-009 | Is MinIO's current license and commercial trajectory acceptable for our use? If not, do we pivot to Garage now or retain optionality? | ADR-001 | TBD | Phase 0 spike S-001/S-004 | Open |
@@ -40,13 +45,17 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | Q-017 | Should the storage-guard provide a "renew capability" endpoint, or does the caller always request a fresh one? | UX of long-running workers | TBD | Phase 2 | Open |
 | Q-018 | Exact semantics of `mutable: true` aliases (FR-008): what can change (asset binding only? annotations are always editable regardless), grace period for name reuse on detach of an immutable alias, and which service identities are allowed to set the flag at create time | FR-001, FR-003, FR-008, ADR-005 | TBD | Phase 2 | Open |
 | Q-019 | When do we scope the future `manifest-service` that composes IIIF manifests from editable descriptive metadata + immutable structural references? Does descriptive-metadata storage live in the manifest-service's own DB or in another shared module? | downstream module roadmap; cross-references 01_SCOPE.md | TBD | Phase 4 | Open |
-| Q-020 | Default TTL and GC for `tmp` bucket assets (e.g. 24 h vs 7 d)? Per-partition override? | SCN-006, SCN-007, ADR-007 | TBD | Phase 2 | Open |
+| Q-020 | Default TTL and GC for `tmp` bucket assets (e.g. 24 h vs 7 d)? Per-partition override? **Resolved:** default TTL = 24 h; per-partition override allowed, max 7 d; grace period = 24 h (shorter than other spaces to contain `tmp` growth). | SCN-006, SCN-007, ADR-009 | TBD | Phase 2 | Resolved |
 | Q-021 | Cache alias derivation for fetcher: single canonical alias per normalized URL vs multiple aliases per mirror ([`_archive/00A_USE_CASES_AND_SCENARIOS.md`](_archive/00A_USE_CASES_AND_SCENARIOS.md) SCN-003)? | SCN-007, [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md) | TBD | Phase 2 | Open |
 | Q-022 | Domain cache allowlist: config file, DB, admin UI; who maintains entries? | SCN-007, fetcher | TBD | Phase 2 | Open |
 | Q-023 | Fetcher MVP: stub in asset-store repo vs separate service in Phase 2 vs 2b? | [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md), WORKPLAN | TBD | Phase 2 | Open |
 | Q-024 | Should upload-api ever promote `tmp` staging objects to `users` (copy + new alias) or always write directly to `users`? | SCN-003, SCN-006 | TBD | Phase 2 | Open |
 | Q-025 | IIIF server integration phasing: when does `iiif-server` get a formal service identity provisioned, and how does `iiif_server_cache` interact with the asset-store read path (separate bucket, no asset-store involvement)? | SCN-008, [`01_SCOPE.md`](01_SCOPE.md) | TBD | Phase 4 | Open |
 | Q-026 | `iiif-image-mirror` derivative generation: should the mirror generate image derivatives to achieve IIIF Image API level 1/2 compliance, or proxy level-0 URLs only? Generating derivatives risks subtle divergence from upstream rendering; if pursued, where are tiles stored (dedicated bucket outside asset-store)? | [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md), B-021 | TBD | Phase 3 | Open |
+| Q-027 | Eviction sweep exhaustion: when the lifecycle worker has swept all non-`exempt` candidates and still cannot reach the low-water mark, what should it do? **Resolved:** emit `gc_eviction_exhausted{space}` Prometheus alert and stop — the system never auto-escalates to evict `exempt` assets in MVP. | FR-064 | TBD | Phase 3 | Resolved |
+| Q-028 | FR-065 batch partition eviction-policy reset: should the implementation be synchronous (simple, may time out for large partitions) or async with a job-status endpoint (complex, requires a reliability model for the job worker)? | FR-065, reliability model | TBD | Phase 3 | Open |
+| Q-029 | Does the worker always receive the `userid` in its dispatched context, and is changing `results` `partition_id` to `{userid}` zero-cost to worker implementations? **Resolved:** task-api embeds `userid` (or reserved `anon` for anonymous tasks) transparently in the capability scope; worker code is unchanged. | FR-001, SCN-005, ADR-009 | TBD | Phase 2 | Resolved |
+| Q-030 | Should the asset-store enforce a per-write size cap on `results` via the capability (e.g. capability carries a `max_bytes` field enforced at commit)? This would defend against a single runaway worker consuming an entire user's quota in one write. | FR-066, capability model | TBD | Phase 3 | Open |
 
 ## Risks
 
@@ -83,13 +92,14 @@ Coarse-grained backlog. Refined into engineering tickets at Phase 1 kick-off. Or
 | B-011 | Bulk-loader CLI | Feature | P0 | B-009, B-010 | SCN-001 acceptance test green at 10k assets |
 | B-012 | Worker-sim CLI | Feature | P0 | B-009, B-010 | SCN-002 and SCN-005 acceptance tests green |
 | B-013 | Admin-UI (minimum: list, inspect, expire/delete, audit view) | Feature | P1 | B-009, B-010 | SCN-004 acceptance test green |
-| B-014 | Lifecycle worker: sweep `pending` orphans; transition `expired -> deleted` after grace | Feature | P1 | B-009 | Test forces expiry and verifies state transitions |
+| B-014 | Lifecycle worker: (a) sweep `pending` orphans; (b) transition `expired → deleted` after grace period (FR-060); (c) capacity-triggered eviction sweep for spaces above the soft-ceiling (FR-064); (d) quota-triggered eviction sweep for `eviction_sweep_enabled` partitions above the 90% trigger (FR-067); (e) size-weighted eviction scoring (`age_days × size_bytes`); (f) dry-run mode by default (`--dry-run` flag). Metrics: `gc_evicted_total{space,reason}` where `reason ∈ {ttl_expired, pressure_lfu, quota_lfu, orphan}`; `gc_eviction_exhausted{space}` when sweep runs dry. | Feature | P1 | B-009 | Test forces expiry and verifies state transitions; dry-run mode logs candidates without acting; eviction metrics emitted correctly |
 | B-015 | Load tests for S-2 / S-3 (locust or k6) | Test | P1 | B-011, B-012 | Numbers attached to NFR-002/003/004 acceptance |
 | B-016 | Chaos suite: kill-one of each service and one object-store node | Test | P2 | B-015 | Service replicas survive; failure modes match `03_ARCHITECTURE_AND_DECISIONS.md` |
 | B-017 | Backup hook to a second S3 target | Feature | P2 | B-009 | Documented and tested; FR-061 acceptance |
 | B-018 | Security review pass (STRIDE on storage-guard) + go-live checklist sweep | Doc | P1 | B-010, B-013 | Findings logged; checklist boxes ticked or risks accepted |
 | B-019 | Pilot plan + rollback rehearsal | Doc | P2 | B-015, B-018 | Plan reviewed; rehearsal report attached |
 | B-021 | Decide whether `iiif-image-mirror` is needed and scope it: end-user auth model, IIIF Image API compliance level, derivative generation decision ([`Q-026`](05_BACKLOG_AND_OPEN_QUESTIONS.md)) | Doc | P3 | B-010 | Decision recorded; if yes, `iiif-image-mirror` service identity provisioned in storage-guard |
+| B-022 | Quota reconciliation job: periodically scan `available` assets per `(space, partition_id)`, recompute `PartitionQuota.used_bytes` and `BucketQuota.used_bytes` from live asset rows, emit `quota_drift_detected{space,partition_id}` when drift exceeds configurable tolerance. Mitigates crash-between-commit-and-SQL-update divergence. | Feature | P2 | B-009 | Reconciliation job runs against a live registry without errors; `quota_drift_detected` fires correctly when drift is artificially injected above the tolerance threshold |
 
 ## Exit Criteria To Start Build Phase
 

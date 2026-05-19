@@ -115,11 +115,11 @@ Out-of-scope scenarios (IIIF tile cache, visualization) remain in [`_archive/00A
 
 - **Priority:** P1
 - **Actors:** Worker, storage-guard, asset-registry, object-store
-- **Maps to:** FR-001, FR-003, FR-004, FR-011, FR-013, FR-015, FR-021, FR-022, FR-050, NFR-005
-- **Preconditions:** Write capability scoped to `results/987/attempt-1/worker-3/`.
+- **Maps to:** FR-001, FR-003, FR-004, FR-011, FR-013, FR-015, FR-021, FR-022, FR-050, FR-069, NFR-005
+- **Preconditions:** Write capability scoped to `results/42/987/attempt-1/worker-3/` (where `42` is the `userid`; task-api embeds this transparently; anonymous tasks use `anon` as `partition_id`).
 - **Trigger:** Worker commit-results stage.
 - **Main flow:**
-  1. For each output: reserve alias under scope; PUT to bucket `results`, partition `987`.
+  1. For each output: reserve alias under scope; PUT to bucket `results`, partition `42` (userid).
   2. Commit each; upload manifest JSON last.
 - **Expected result:** Bundle discoverable via manifest alias.
 - **Error/failure paths:** partial upload; manifest marker pattern (`Q-008`).
@@ -191,7 +191,7 @@ Out-of-scope scenarios (IIIF tile cache, visualization) remain in [`_archive/00A
 - **SCN-002** → FR-002, FR-010, FR-012, FR-030/031, FR-050, NFR-002, NFR-004, NFR-008
 - **SCN-003** → FR-001, FR-004, FR-011, FR-013, FR-015, FR-020/021/022, FR-050, NFR-002
 - **SCN-004** → FR-005..007, FR-040..042, FR-050..052, NFR-009
-- **SCN-005** → FR-001, FR-003, FR-004, FR-011, FR-013, FR-015, FR-021/022, FR-050, NFR-005
+- **SCN-005** → FR-001, FR-003, FR-004, FR-011, FR-013, FR-015, FR-021/022, FR-050, FR-069, NFR-005
 - **SCN-006** → FR-001, FR-004, FR-011, FR-015, FR-020/022, FR-050
 - **SCN-007** → FR-002, FR-010..015, FR-020, FR-022, FR-050 + fetcher spec
 - **SCN-008** → FR-002, FR-010, FR-012 (read path; IIIF server future)

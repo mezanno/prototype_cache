@@ -26,16 +26,16 @@ flowchart TB
 | `cache` | `{remote_mirror_id}` | `cache/gallica/bnf/ark-…/default.jpg` | fetcher, bulk-loader |
 | `tmp` | `{tmpid}` | `tmp/task-abc/input.png` | fetcher, upload-api, task-api |
 | `users` | `{userid}` | `users/42/uploads/{suffix}` | upload-api |
-| `results` | `{taskid}` | `results/987/attempt-1/out.zip` | worker |
+| `results` | `{userid}` | `results/42/987/attempt-1/out.zip` | worker |
 
-**Quota:** per `(space, partition_id)` from registry ([`Q-004`](05_BACKLOG_AND_OPEN_QUESTIONS.md)). **MinIO** bucket totals for ops/cost.
+**Partition notes:** `results` uses `{userid}` as `partition_id`; the task identity lives in the alias path. Anonymous tasks use the reserved value `partition_id = anon`. **Quota:** two-tier enforcement — per `(space, partition_id)` via `PartitionQuota` and per-bucket via `BucketQuota` (FR-066..068, ADR-009); **MinIO** bucket totals for ops/cost only.
 
 **Legacy alias migration** (old docs → new):
 
 | Old | New |
 |-----|-----|
 | `u-42/…` | `users/42/…` |
-| `results-task-987/…` | `results/987/…` |
+| `results-task-987/…` | `results/42/987/…` |
 | `cache/…` (flat) | `cache/{mirror_id}/…` |
 
 ---
@@ -93,6 +93,7 @@ Enforced by **FR-015**. Denied requests return `403`.
 - `checksum` - server-side checksum reported by object-store; cross-checked against client-supplied value.
 - `state` - one of `pending`, `available`, `expired`, `deleted`.
 - `created_at`, `updated_at`, `expires_at` (nullable for infinite TTL).
+- `eviction_policy` - enum `inherit` (default) | `exempt`. `inherit`: asset follows the per-space eviction sweep policy. `exempt`: excluded from all capacity-triggered and quota-triggered sweeps; TTL expiry still applies. Settable by the creating service at write time; admin may update at any time; every change emits `asset.eviction_policy_set`.
 - `annotations` - JSONB free-form map.
 - `owner_service_id` - service identity that performed the create.
 
@@ -104,6 +105,28 @@ Enforced by **FR-015**. Denied requests return `403`.
 - `mutable` - boolean, default `false`. When `false`, the alias is bound to its `asset_id` for life (single-binding-for-life); detach permanently destroys the alias. When `true`, the alias may be rebound to a different `asset_id`; every rebind is audited as a first-class event. The flag is set at create time and is itself immutable.
 - `created_at`, `updated_at`.
 - `created_by_service_id`.
+
+### PartitionQuota
+
+One row per `(space, partition_id)`; created on first write to the partition.
+
+- `space` - storage bucket name.
+- `partition_id` - scope within bucket.
+- `quota_bytes` - nullable; null = no limit configured.
+- `quota_asset_count` - nullable; null = no count limit.
+- `used_bytes` - current sum of `size_bytes` for `available` assets in this partition. Updated atomically via Postgres `UPDATE … RETURNING` on every commit (increment) and every `→ deleted` transition (decrement); never via read-modify-write.
+- `used_asset_count` - current count of `available` assets; updated alongside `used_bytes`.
+- `eviction_sweep_enabled` - boolean. When `true` and the partition crosses the 90% quota trigger, the lifecycle worker runs a quota-triggered eviction sweep. Default: `true` for `cache` and `tmp`; `false` for `users` and `results`.
+
+### BucketQuota
+
+One row per `space`. Tracks aggregate storage across all partitions in the space.
+
+- `space` - storage bucket name.
+- `quota_bytes` - nullable; null = no bucket-wide limit.
+- `used_bytes` - sum of all `PartitionQuota.used_bytes` for this space; maintained atomically alongside per-partition updates.
+- `warn_threshold` - fraction at which a warn metric fires; default `0.80`.
+- `hard_ceiling` - fraction at which new commits are rejected with `413`; default `1.00`.
 
 ### Capability (issued, not persisted long-term)
 
@@ -145,6 +168,17 @@ stateDiagram-v2
 - **Terminal states:** `deleted` (registry row retained for audit retention period; payload removed from `object-store`).
 - **Retry rules:** state transitions are idempotent on `Idempotency-Key`; replays return the original response.
 
+## Per-Space Lifecycle Policy
+
+Normative defaults; all thresholds are operator-configurable per deployment.
+
+| Space | Default TTL | Pressure eviction | Quota eviction | `eviction_sweep_enabled` default | Grace period |
+|-------|-------------|-------------------|----------------|----------------------------------|--------------|
+| `cache` | Operator-configured | Yes — LFU+age sweep (FR-064) | Yes (FR-067) | `true` | 7 days |
+| `tmp` | 24 h; per-partition max 7 d | Hard TTL (FR-060) | Hard TTL | `true` | 24 h |
+| `users` | None (`expires_at = null`) | No — admin-only expire/delete | Admin-only | `false` | 7 days |
+| `results` | Per-task TTL hint; operator max 365 d | No — alert only (FR-068, FR-069) | No — alert only | `false` | 7 days |
+
 ## ADR Log
 
 All ADRs are accepted **provisionally**, pending the time-boxed spikes listed in [`06_OSS_SURVEY.md`](06_OSS_SURVEY.md) section 6. Each ADR records its rationale, rejected alternatives, and the spike(s) that may reverse it.
@@ -157,8 +191,9 @@ All ADRs are accepted **provisionally**, pending the time-boxed spikes listed in
 | ADR-004 | Identifier scheme = **opaque server-assigned `asset_id` (UUID v7) + zero-or-more aliases unique per space**; no ARK or DOI in MVP | Proposed | Time-sortable id; aliases satisfy the user-facing naming needs without requiring a national/global resolver; ARK / DOI can be layered on later as a special alias namespace | **ARK as primary id** (premature centralisation; requires a NAAN); **UUID v4** (not time-sortable); content-addressed (CAS) ids (lookups become bytes-driven, complicates updates of mutable metadata) |
 | ADR-005 | Mutability = **payload write-once**, **annotations mutable**, **alias single-binding-for-life by default with explicit `mutable: true` opt-in for rebind**; per-alias TTL with grace period before garbage collection | Proposed | Matches discovery answers (Q9-Q11) and resolves the IIIF-manifest concern (Q-018) by keeping asset-store content-agnostic and pushing structural-vs-descriptive composition to a future `manifest-service`; preserves the immutability invariant that historians and citation systems rely on; the `mutable: true` flag is a tiny escape hatch for genuinely-mutating use cases without weakening the default | Full mutability (lose immutability guarantees and audit clarity); alias versioning inside asset-store (forces the registry to model document semantics it should not own); per-asset TTL only (forces alias-rename to extend life of a single payload) |
 | ADR-006 | Language/runtime = **Python 3.12+ with FastAPI** for the custom services; service-to-service auth = **shared secret with rotation** for MVP; mTLS and OIDC (Keycloak) tracked as forward steps | Proposed | Team Python familiarity (Q26); FastAPI gives OpenAPI + async with minimum ceremony; shared secret is sufficient for service identities while user identity is out of scope | Go / Rust (would not leverage team skills); mTLS-from-day-1 (operationally heavier); Keycloak-from-day-1 (premature, no end-user identities in MVP) |
-| ADR-007 | Physical storage = **four category buckets** (`cache`, `tmp`, `users`, `results`) + **`partition_id` prefix**; object key `{partition_id}/assets/{asset_id}`; registry quotas per partition | Proposed | MinIO per-bucket ops metrics; registry for per-user precision; aligns with cost attribution | Bucket-per-user (explosion); semantic object keys (`photo.jpg`); single bucket only (weak isolation) |
+| ADR-007 | Physical storage = **four category buckets** (`cache`, `tmp`, `users`, `results`) + **`partition_id` prefix**; object key `{partition_id}/assets/{asset_id}`; two-tier quota tracking via `PartitionQuota` (per partition) and `BucketQuota` (per space). *Refinement (2026-05-20):* `results` `partition_id` is `{userid}` — task identity lives in the alias path; anonymous tasks use reserved `partition_id = anon`. | Proposed (refined 2026-05-20) | MinIO per-bucket ops metrics; `PartitionQuota` for per-user fairness; `BucketQuota` for infrastructure capacity. `{userid}` partition for `results` enables per-user quota without cross-partition aggregation at commit time. | Bucket-per-user (explosion); semantic object keys (`photo.jpg`); single bucket only (weak isolation); `{taskid}` as `results` partition (prevents per-user quota without expensive cross-partition sum) |
 | ADR-008 | **fetcher-service** owns remote URL materialization; asset-store never performs outbound HTTP | Proposed | SSRF and fetch policy in one place; clear audit boundary | Fetch inside storage-guard; workers fetch remote URLs directly |
+| ADR-009 | Per-space lifecycle and eviction policy: `eviction_policy` enum (`inherit` \| `exempt`) on every asset; per-space sweep defaults (see Per-Space Lifecycle Policy table); three-threshold model for capacity (80% warn / 90% sweep trigger / 95% hard block) and quota (80% warn / 90% sweep trigger / 105% hard block); eviction scoring = `age_days × size_bytes`; `results` excluded from all LFU sweeps — housekeeping is task-engine-driven via TTL hints and bulk-expire-by-prefix (FR-069); `PartitionQuota` and `BucketQuota` as dual enforcement entities (FR-066, FR-068) | Proposed | `exempt` is more expressive than a `pinned: bool` flag (settable at write time by creating service, clearable by admin, audited on change). Overloading `expires_at = null` as a pin proxy is ambiguous in `cache` — un-expired ≠ intentionally protected. Dual quota entities allow independent monitoring of per-user fairness (`PartitionQuota`) vs. overall infrastructure capacity (`BucketQuota`). `results` LFU exclusion prevents evicting valuable unique computation outputs that are typically downloaded only once (the normal outcome). | `pinned: bool` (coarser, no audit trail on set/clear); `expires_at = null` as pin proxy (ambiguous in `cache`); single quota entity (either loses per-user fairness or total-capacity protection); LFU sweep on `results` (wrong signal — download count of one is normal, not a sign of low value) |
 
 ## Failure Modes
 
@@ -186,13 +221,17 @@ Tracked as `Q-*` rows in [`05_BACKLOG_AND_OPEN_QUESTIONS.md`](05_BACKLOG_AND_OPE
 - batch transactional semantics (`Q-001`)
 - max batch size before re-issuing capability (`Q-002`)
 - proxy mode vs presigned URL default in some deployment topologies (`Q-003`)
-- quota enforcement model (`Q-004`) — registry per partition; MinIO for bucket totals
-- cache alias derivation (`Q-021`), domain allowlist (`Q-022`), fetcher phasing (`Q-023`), tmp TTL (`Q-020`)
+- quota enforcement model (`Q-004`) — **Resolved**: two-tier `PartitionQuota` + `BucketQuota`; see FR-066..068, ADR-009
+- cache alias derivation (`Q-021`), domain allowlist (`Q-022`), fetcher phasing (`Q-023`), tmp TTL (`Q-020`) — **Resolved**: default 24 h; per-partition max 7 d
 - MIME sniffing on commit vs trust declared (`Q-005`)
-- soft-delete vs hard-delete grace period default (`Q-006`)
+- grace period default (`Q-006`) — **Resolved**: 7 days for `cache`/`users`/`results`; 24 h for `tmp`
 - admin override on system-managed spaces (`Q-007`)
 - atomic group write semantics beyond manifest-marker pattern (`Q-008`)
 - final object-store license / commercial trajectory (`Q-009`)
 - audit storage: shared Postgres vs dedicated journal (`Q-010`)
 - exact semantics of `mutable: true` aliases - what can change, grace period for name reuse on detach, who is allowed to set the flag (`Q-018`)
 - when to scope the future `manifest-service` (composes IIIF manifests by merging immutable structural references and editable descriptive metadata) (`Q-019`)
+- eviction sweep exhaustion handling (`Q-027`) — **Resolved**: alert-only for MVP
+- FR-065 batch policy reset: sync vs async (`Q-028`)
+- `results` partition as `{userid}` with `anon` reserved (`Q-029`) — **Resolved**
+- per-write size cap on `results` via capability (`Q-030`)

@@ -6,7 +6,7 @@
 
 | Layer | Key requirements |
 |-------|------------------|
-| Registry | FR-001..008 — assets, aliases, lifecycle |
+| Registry | FR-001..008, FR-063..069 — assets, aliases, lifecycle, eviction policy, quota |
 | Guard | FR-010..015 — capabilities, service auth, **bucket allowlist** |
 | Data plane | FR-020..022 — PUT, multipart, commit + checksum |
 | Workers | FR-030..031 — resolve by alias only |
@@ -15,13 +15,15 @@
 
 **New in this revision:** **FR-015** — each service identity may only issue capabilities for buckets it is allowed to use.
 
+**New in this revision (2026-05-20):** **FR-063..069** — eviction policy flag, capacity soft gate, batch partition policy reset, partition and bucket quota enforcement, and `results` housekeeping contract. `results` `partition_id` changed from `{taskid}` to `{userid}` (anonymous tasks use reserved `partition_id = anon`); Q-004, Q-006, Q-020, Q-029 resolved.
+
 Priority codes: **M** = must, **S** = should, **C** = could, **W** = won't. P0 = M; P1 = S; P2 = C; P3 = W.
 
 ## Functional Requirements
 
 ### Asset and alias model
 
-- **FR-001 (M)** Create an asset by submitting a payload, one or more aliases, a **`space`** (storage bucket: `cache`, `tmp`, `users`, or `results`), a **`partition_id`** (e.g. userid, taskid, mirror id), an optional TTL (seconds), and an optional declared MIME. Each alias may carry an explicit `mutable` boolean flag (default `false`, see FR-008). The server returns an opaque `asset_id` and the canonical list of aliases. Each alias is unique within its space namespace; conflict yields `409 Conflict` without overwriting the existing binding. The registry assigns `storage_key` = `{partition_id}/assets/{asset_id}` in the target bucket ([`ADR-007`](03_ARCHITECTURE_AND_DECISIONS.md)).
+- **FR-001 (M)** Create an asset by submitting a payload, one or more aliases, a **`space`** (storage bucket: `cache`, `tmp`, `users`, or `results`), a **`partition_id`** (e.g. mirror id, user id; for `results` always `{userid}` — task identity lives in the alias path; anonymous tasks use the reserved value `anon`), an optional TTL (seconds), and an optional declared MIME. Each alias may carry an explicit `mutable` boolean flag (default `false`, see FR-008). The server returns an opaque `asset_id` and the canonical list of aliases. Each alias is unique within its space namespace; conflict yields `409 Conflict` without overwriting the existing binding. The registry assigns `storage_key` = `{partition_id}/assets/{asset_id}` in the target bucket ([`ADR-007`](03_ARCHITECTURE_AND_DECISIONS.md)).
 - **FR-002 (M)** Resolve an alias to an `asset_id` and to a redirect or signed URL for download. Deny if the alias is unknown, `pending`, `expired`, or `deleted`.
 - **FR-003 (M)** Add a *new* alias to an existing asset (subject to namespace uniqueness; new alias inherits `mutable=false` unless explicitly set). Detach an alias from its asset: for immutable aliases (the default), detach permanently destroys the alias; the name is reserved for a grace period (default 7 days) before it can be reused. For mutable aliases (FR-008), detach is the prerequisite to rebind. An asset with zero remaining aliases is automatically marked for garbage collection.
 - **FR-004 (M)** Reserve an alias before its payload exists (state `pending`) so an uploader can stream the payload via a signed URL and commit afterwards.
@@ -52,9 +54,9 @@ Priority codes: **M** = must, **S** = should, **C** = could, **W** = won't. P0 =
 
 ### Admin path
 
-- **FR-040 (M)** List assets with filters (`space`, `state`, `created_at` range, alias prefix). Cursor-based pagination.
+- **FR-040 (M)** List assets with filters (`space`, `state`, `created_at` range, alias prefix). Cursor-based pagination. When a `partition_id` filter is present, the response includes current quota usage (`used_bytes`, `quota_bytes`, `used_asset_count`, `quota_asset_count`) from `PartitionQuota`.
 - **FR-041 (M)** Inspect a single asset: full metadata, alias list, recent audit events, current state.
-- **FR-042 (M)** Lifecycle actions: set/extend TTL, force `expire`, force `delete`, attach/detach alias.
+- **FR-042 (M)** Lifecycle actions: set/extend TTL, force `expire`, force `delete`, attach/detach alias; set/update per-partition quota (`quota_bytes`, `quota_asset_count`, `eviction_sweep_enabled`) via `PartitionQuota`; bulk-expire-by-prefix (`POST /admin/aliases/expire?prefix=<prefix>`) to support task-engine housekeeping of result sets.
 
 ### Audit and observability
 
@@ -67,6 +69,16 @@ Priority codes: **M** = must, **S** = should, **C** = could, **W** = won't. P0 =
 
 - **FR-060 (S)** Configurable background job removes payloads of assets in `expired` state after a grace period (default 7 days), transitioning them to `deleted`.
 - **FR-061 (C)** Incremental snapshot of `object-store` to a second, possibly slower, S3-compatible backend; runs on a schedule.
+
+### Eviction policy and quota
+
+- **FR-063 (M)** *Eviction policy flag.* Every asset carries an `eviction_policy` field: `inherit` (default) or `exempt`. `inherit`: asset follows the per-space eviction sweep policy. `exempt`: asset is excluded from all capacity-triggered and quota-triggered eviction sweeps; TTL expiry (FR-006, FR-060) still applies normally. The field may be set by the creating service at write time and updated by admin at any time; every change emits an `asset.eviction_policy_set` audit event. Must be present in the data model from the registry MVP (B-009).
+- **FR-064 (S)** *Bucket-level capacity soft gate.* Each `space` has three configurable capacity thresholds: high-water (default 80%), soft-ceiling (90%), hard-ceiling (95%). Above high-water: metric `storage_space_used_ratio{space}` > 0.80 and a Prometheus alert fires; no write blocking. Above soft-ceiling: the lifecycle worker schedules an async eviction sweep (LFU+age order, `exempt` assets skipped). Above hard-ceiling: new commit requests return `503 Service Unavailable` with `Retry-After`; `pending` alias reservations are still accepted to avoid deadlocking in-progress uploads. If the sweep exhausts all non-`exempt` candidates without reaching the low-water mark (default 70%), the worker emits `gc_eviction_exhausted{space}` and stops — it never auto-escalates to `exempt` assets (Q-027 resolved: alert-only for MVP).
+- **FR-065 (C)** *Batch partition eviction-policy reset.* Admin can set or clear `eviction_policy` on all assets in a given `(space, partition_id)` in one call. Emits one `asset.eviction_policy_set` audit event per affected asset. Implementation detail (synchronous vs. async with status endpoint) is deferred as Q-028.
+- **FR-066 (S)** *Per-partition quota enforcement at commit.* At commit time the registry checks `PartitionQuota.used_bytes + new_size_bytes` against `PartitionQuota.quota_bytes` (when set). Thresholds: ≥ 80% → emit warn metric `quota_used_ratio{space,partition_id}` > 0.80; ≥ 90% → trigger async eviction sweep if `PartitionQuota.eviction_sweep_enabled = true`; ≥ 105% → reject with `413 Partition Quota Exceeded` + `Retry-After`. The 105% ceiling absorbs concurrent in-flight uploads that pre-checked quota before committing. `PartitionQuota.used_bytes` is updated atomically via Postgres `UPDATE … RETURNING` on every commit and every `→ deleted` transition; never via read-modify-write.
+- **FR-067 (S)** *Quota-triggered eviction sweep.* When a partition crosses the 90% quota trigger, the lifecycle worker sweeps `available` assets with `eviction_policy = inherit` in that partition, ordered by `last_read_at_age_days × size_bytes` descending (favouring large stale assets), until `used_bytes` falls to or below a configurable low-water mark (default 75% of `quota_bytes`). Applies only to partitions where `PartitionQuota.eviction_sweep_enabled = true` (default `true` for `cache` and `tmp`; `false` for `users` and `results`). Evicted assets transition to `expired`; normal TTL GC (FR-060) handles the subsequent `expired → deleted` transition.
+- **FR-068 (S)** *Global bucket quota enforcement at commit.* In addition to per-partition checks (FR-066), the registry checks `BucketQuota.used_bytes + new_size_bytes` against `BucketQuota.quota_bytes` (when set). Thresholds: ≥ 80% → warn metric; ≥ 100% → reject with `413 Bucket Quota Exceeded`. The response body distinguishes which limit was hit (partition vs. bucket). `BucketQuota.used_bytes` is maintained atomically alongside per-partition updates.
+- **FR-069 (S)** *Results housekeeping contract.* The `results` space is not subject to LFU eviction sweeps (`PartitionQuota.eviction_sweep_enabled = false` for all `results` partitions). Instead: (a) task-api **should** set a `ttl_seconds` hint on every result alias reservation (FR-004); (b) the registry **should** enforce a configurable maximum TTL for `results` writes (operator-set default: 365 days) to prevent indefinite accumulation; (c) the task engine is the primary driver of explicit expiry via the bulk-expire-by-prefix admin action (FR-042); (d) TTL GC (FR-060) is the fallback for abandoned tasks.
 
 ### Operational
 
