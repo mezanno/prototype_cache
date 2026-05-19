@@ -19,8 +19,21 @@ from asset_store_core.errors import (
 )
 from asset_store_core.ids import new_asset_id
 from asset_store_core.models import AliasBinding, Asset, AssetState, AuditEvent
-from asset_store_core.paths import qualified_alias, normalize_space, normalize_relative_alias
+from asset_store_core.paths import (
+    normalize_relative_alias,
+    normalize_space,
+    qualified_alias,
+    qualified_alias_for_partition,
+)
 from asset_store_core.registry import InMemoryAssetRegistry
+from asset_store_core.service_policy import assert_service_bucket_allowed, buckets_for_service
+from asset_store_core.storage import (
+    STORAGE_BUCKETS,
+    ObjectStoreLocation,
+    build_storage_key,
+    normalize_bucket,
+    normalize_partition_id,
+)
 
 __all__ = [
     "AliasBinding",
@@ -42,7 +55,15 @@ __all__ = [
     "SingleUseLedger",
     "ValidationError",
     "new_asset_id",
+    "STORAGE_BUCKETS",
+    "ObjectStoreLocation",
+    "assert_service_bucket_allowed",
+    "buckets_for_service",
+    "build_storage_key",
+    "normalize_bucket",
+    "normalize_partition_id",
     "normalize_relative_alias",
     "normalize_space",
     "qualified_alias",
+    "qualified_alias_for_partition",
 ]

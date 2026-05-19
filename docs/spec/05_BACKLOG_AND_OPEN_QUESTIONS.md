@@ -1,5 +1,18 @@
 # 05 - Backlog And Open Questions
 
+## Open questions summary
+
+| ID | Topic | Status |
+|----|--------|--------|
+| Q-004 | Quota: registry per `(bucket, partition_id)` vs MinIO | Partially directed — see ADR-007 |
+| Q-020 | Default `tmp` TTL and GC | Open |
+| Q-021 | Cache alias derivation (fetcher) | Open |
+| Q-022 | Domain cache allowlist | Open |
+| Q-023 | Fetcher MVP phasing | Open |
+| Q-024 | Promote `tmp` → `users` (if ever) | Open |
+
+Full table below.
+
 ## Open Questions
 
 Each row is a single decision-blocking question. Until "Status" is `Resolved`, the corresponding `FR-*`/`NFR-*`/`ADR-*` is provisional. Owners are placeholders for the project lead to assign.
@@ -9,10 +22,10 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | Q-001 | What are the transactional semantics of a bulk batch? All-or-nothing per batch, per-N-item chunk, or best-effort with a manifest? | SCN-001 main flow + error behavior; bulk-loader UX | TBD | Phase 0 exit | Open |
 | Q-002 | What is the maximum batch size before the bulk-loader must request a fresh capability? | Operational, capability TTL bounds | TBD | Phase 0 exit | Open |
 | Q-003 | In which deployment topologies should `storage-guard` proxy the bytes instead of issuing presigned URLs? Default mode per environment? | ADR-003, NFR-007, NFR-008 | TBD | Phase 2 spike S-002 | Open |
-| Q-004 | Quota enforcement model: per-space hard limit, soft warn + alert, both? Where computed (registry vs object-store metrics)? | FR-042, NFR-001 | TBD | Phase 3 | Open |
+| Q-004 | Quota enforcement model: per-`(space, partition_id)` hard limit, soft warn + alert, both? **Direction:** sums in **registry** on commit; MinIO bucket metrics for coarse ops only ([`ADR-007`](03_ARCHITECTURE_AND_DECISIONS.md)). | FR-042, FR-015, NFR-001 | TBD | Phase 3 | Open |
 | Q-005 | MIME sniffing on commit (server-side) vs trust the caller? Trade-off between content-agnostic posture and operational safety. | FR-022, security guidance | TBD | Phase 2 | Open |
 | Q-006 | Default grace period between `expired` and `deleted` (current draft: 7 days)? Per-space override? | FR-060 | TBD | Phase 2 | Open |
-| Q-007 | Should the admin be allowed to override TTL/expire on system-managed spaces (e.g. `cache`)? | SCN-004, ADR-005 | TBD | Phase 3 | Open |
+| Q-007 | Should the admin be allowed to override TTL/expire on system-managed buckets (e.g. `cache`)? | SCN-004, ADR-005 | TBD | Phase 3 | Open |
 | Q-008 | Atomic-group write semantics: is the manifest-marker pattern enough or do we need a real transactional "commit bundle" endpoint? | FR-001..003, SCN-005 | TBD | Phase 3 | Open |
 | Q-009 | Is MinIO's current license and commercial trajectory acceptable for our use? If not, do we pivot to Garage now or retain optionality? | ADR-001 | TBD | Phase 0 spike S-001/S-004 | Open |
 | Q-010 | Audit storage: shared Postgres DB with the registry, or a dedicated append-only journal? Retention/export hook? | FR-050..053, NFR-009 | TBD | Phase 2 | Open |
@@ -25,6 +38,11 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | Q-017 | Should the storage-guard provide a "renew capability" endpoint, or does the caller always request a fresh one? | UX of long-running workers | TBD | Phase 2 | Open |
 | Q-018 | Exact semantics of `mutable: true` aliases (FR-008): what can change (asset binding only? annotations are always editable regardless), grace period for name reuse on detach of an immutable alias, and which service identities are allowed to set the flag at create time | FR-001, FR-003, FR-008, ADR-005 | TBD | Phase 2 | Open |
 | Q-019 | When do we scope the future `manifest-service` that composes IIIF manifests from editable descriptive metadata + immutable structural references? Does descriptive-metadata storage live in the manifest-service's own DB or in another shared module? | downstream module roadmap; cross-references 01_SCOPE.md | TBD | Phase 4 | Open |
+| Q-020 | Default TTL and GC for `tmp` bucket assets (e.g. 24 h vs 7 d)? Per-partition override? | SCN-006, SCN-007, ADR-007 | TBD | Phase 2 | Open |
+| Q-021 | Cache alias derivation for fetcher: single canonical alias per normalized URL vs multiple aliases per mirror ([`_archive/00A_USE_CASES_AND_SCENARIOS.md`](_archive/00A_USE_CASES_AND_SCENARIOS.md) SCN-003)? | SCN-007, [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md) | TBD | Phase 2 | Open |
+| Q-022 | Domain cache allowlist: config file, DB, admin UI; who maintains entries? | SCN-007, fetcher | TBD | Phase 2 | Open |
+| Q-023 | Fetcher MVP: stub in asset-store repo vs separate service in Phase 2 vs 2b? | [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md), WORKPLAN | TBD | Phase 2 | Open |
+| Q-024 | Should upload-api ever promote `tmp` staging objects to `users` (copy + new alias) or always write directly to `users`? | SCN-003, SCN-006 | TBD | Phase 2 | Open |
 
 ## Risks
 
@@ -32,7 +50,7 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 |---|---|---|---|---|---|
 | R-001 | No encryption-at-rest in MVP could become a compliance blocker before pilot | M | M | Track Q-012; design space layout to allow per-space SSE-S3 enablement without payload rewrites | TBD |
 | R-002 | MinIO license terms or commercial trajectory could become unacceptable mid-prototype | M | M | Garage validated as drop-in alternative (Spike S-004); object-store usage is pure S3, no MinIO-specific extensions in code paths | TBD |
-| R-003 | Capability scope bugs grant cross-space access | L | H | Dedicated test suite (S-4); fuzz capability strings; default-deny posture in `storage-guard`; audit log review for `outcome=granted` on cross-space targets | TBD |
+| R-003 | Capability scope bugs grant cross-bucket or cross-partition access | L | H | S-4 suite; FR-015 bucket allowlist tests; fuzz capability strings; default-deny in `storage-guard` | TBD |
 | R-004 | Postgres becomes a single point of failure as load grows | L | H | Schema kept conservative; backups and PITR set up in Phase 4; read replica plan documented; horizontal scaling option (Citus or partitioning) noted for post-pilot | TBD |
 | R-005 | Garbage collection misfire deletes payloads still referenced | L | H | Two-step lifecycle (`expired` then `deleted` after grace); sweeper is dry-run by default; metrics + alert on unexpected GC volume; restore-from-backup plan rehearsed | TBD |
 | R-006 | Audit log grows unbounded and degrades query performance | M | M | Partition `audit_events` table by month; retention policy 30 days hot + export to cold storage; index design reviewed | TBD |
@@ -56,7 +74,8 @@ Coarse-grained backlog. Refined into engineering tickets at Phase 1 kick-off. Or
 | B-007 | Spike S-003 (InvenioRDM compare) | Spike | P0 | B-002 | Adopt-vs-compose decision confirmed; ADR-002 status updated |
 | B-008 | Spike S-004 (Garage fallback) | Spike | P0 | B-005 | ADR-001 fallback validated; notes appended |
 | B-009 | Asset-registry MVP: data model + migrations + FR-001..007 endpoints | Feature | P0 | B-006, B-007 | Integration tests covering SCN-001..005 happy paths green |
-| B-010 | Storage-guard MVP: service identity auth + FR-010..014 endpoints + audit log | Feature | P0 | B-009 | Capability scoping test suite (S-4) green |
+| B-010 | Storage-guard MVP: service identity auth + FR-010..015 endpoints + audit log + bucket allowlist | Feature | P0 | B-009 | Capability scoping (S-4) and cross-bucket denial (FR-015) green |
+| B-020 | Fetcher-service MVP: ensure_url + cache/tmp policy ([`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md)) | Feature | P0 | B-010 | SCN-007 green |
 | B-011 | Bulk-loader CLI | Feature | P0 | B-009, B-010 | SCN-001 acceptance test green at 10k assets |
 | B-012 | Worker-sim CLI | Feature | P0 | B-009, B-010 | SCN-002 and SCN-005 acceptance tests green |
 | B-013 | Admin-UI (minimum: list, inspect, expire/delete, audit view) | Feature | P1 | B-009, B-010 | SCN-004 acceptance test green |

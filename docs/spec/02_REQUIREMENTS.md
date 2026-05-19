@@ -1,13 +1,27 @@
 # 02 - Requirements
 
-Priority codes use MoSCoW: **M** = must, **S** = should, **C** = could, **W** = won't (this iteration).
-P0 = MoSCoW M; P1 = MoSCoW S; P2 = MoSCoW C; P3 = MoSCoW W.
+> Terms and acronyms: [`00B_GLOSSARY_AND_ACRONYMS.md`](00B_GLOSSARY_AND_ACRONYMS.md)
+
+## At a glance
+
+| Layer | Key requirements |
+|-------|------------------|
+| Registry | FR-001..008 — assets, aliases, lifecycle |
+| Guard | FR-010..015 — capabilities, service auth, **bucket allowlist** |
+| Data plane | FR-020..022 — PUT, multipart, commit + checksum |
+| Workers | FR-030..031 — resolve by alias only |
+| Admin | FR-040..042 |
+| Storage layout | NFR-012 — `{partition_id}/assets/{asset_id}`; `space` = bucket name |
+
+**New in this revision:** **FR-015** — each service identity may only issue capabilities for buckets it is allowed to use.
+
+Priority codes: **M** = must, **S** = should, **C** = could, **W** = won't. P0 = M; P1 = S; P2 = C; P3 = W.
 
 ## Functional Requirements
 
 ### Asset and alias model
 
-- **FR-001 (M)** Create an asset by submitting a payload, one or more aliases, an optional TTL (seconds), and an optional declared MIME. Each alias may carry an explicit `mutable` boolean flag (default `false`, see FR-008). The server returns an opaque `asset_id` and the canonical list of aliases. Each alias is unique within its space namespace; conflict yields `409 Conflict` without overwriting the existing binding.
+- **FR-001 (M)** Create an asset by submitting a payload, one or more aliases, a **`space`** (storage bucket: `cache`, `tmp`, `users`, or `results`), a **`partition_id`** (e.g. userid, taskid, mirror id), an optional TTL (seconds), and an optional declared MIME. Each alias may carry an explicit `mutable` boolean flag (default `false`, see FR-008). The server returns an opaque `asset_id` and the canonical list of aliases. Each alias is unique within its space namespace; conflict yields `409 Conflict` without overwriting the existing binding. The registry assigns `storage_key` = `{partition_id}/assets/{asset_id}` in the target bucket ([`ADR-007`](03_ARCHITECTURE_AND_DECISIONS.md)).
 - **FR-002 (M)** Resolve an alias to an `asset_id` and to a redirect or signed URL for download. Deny if the alias is unknown, `pending`, `expired`, or `deleted`.
 - **FR-003 (M)** Add a *new* alias to an existing asset (subject to namespace uniqueness; new alias inherits `mutable=false` unless explicitly set). Detach an alias from its asset: for immutable aliases (the default), detach permanently destroys the alias; the name is reserved for a grace period (default 7 days) before it can be reused. For mutable aliases (FR-008), detach is the prerequisite to rebind. An asset with zero remaining aliases is automatically marked for garbage collection.
 - **FR-004 (M)** Reserve an alias before its payload exists (state `pending`) so an uploader can stream the payload via a signed URL and commit afterwards.
@@ -23,6 +37,7 @@ P0 = MoSCoW M; P1 = MoSCoW S; P2 = MoSCoW C; P3 = MoSCoW W.
 - **FR-012 (M)** Reject any operation whose alias is outside the capability's declared scope; return `403 Forbidden`. Enforcement verified by the test suite covering S-4.
 - **FR-013 (S)** Issue a "single-use" write capability that is invalidated after one successful PUT.
 - **FR-014 (M)** Authenticate calling services via static service credentials (shared secret or mTLS, choice in `ADR-006`); user-level authentication is delegated to upstream APIs.
+- **FR-015 (M)** Enforce a **bucket allowlist** per service identity on every capability issue and registry write. A caller authenticated as `upload-api` cannot obtain write capabilities for `results`; a caller as `fetcher` cannot write `users`. Cross-bucket attempts return `403 Forbidden`. The allowlist is defined in [`03_ARCHITECTURE_AND_DECISIONS.md`](03_ARCHITECTURE_AND_DECISIONS.md). Verified together with S-4 and FR-012.
 
 ### Upload path
 
@@ -107,7 +122,7 @@ P0 = MoSCoW M; P1 = MoSCoW S; P2 = MoSCoW C; P3 = MoSCoW W.
 
 - **Category**: Security
 - **Requirement**: capabilities are prefix-scoped and time-bounded; default deny outside scope.
-- **Target**: a capability for prefix `<space>/<prefix>/` cannot access anything outside that prefix; verified by the test suite covering S-4.
+- **Target**: a capability for prefix `<space>/<partition>/…` cannot access anything outside that prefix (path-segment aware); verified by the test suite covering S-4.
 
 ### NFR-009 - Audit retention
 
@@ -131,7 +146,7 @@ P0 = MoSCoW M; P1 = MoSCoW S; P2 = MoSCoW C; P3 = MoSCoW W.
 
 - **Category**: Maintainability
 - **Requirement**: `asset_id`, alias, and object keys must allow renaming a service or moving to a different `object-store` in the future without rewriting payloads.
-- **Target**: opaque IDs; object keys derived from `asset_id` only; no semantic info in the object key.
+- **Target**: opaque `asset_id`; object key = `{partition_id}/assets/{asset_id}` where `partition_id` is an opaque tenant id (userid, taskid, mirror id)—not filenames, MIME types, or URL paths. Bucket name (`space`) carries storage class, not the object key tail.
 
 ## API Requirements
 
@@ -142,8 +157,8 @@ P0 = MoSCoW M; P1 = MoSCoW S; P2 = MoSCoW C; P3 = MoSCoW W.
 
 ## Data Requirements
 
-- **Metadata fields (minimum, per asset)**: `asset_id`, `space`, `aliases[]`, `mime`, `size_bytes`, `checksum_algo`, `checksum`, `state`, `created_at`, `updated_at`, `expires_at`, `annotations` (free-form map), `owner_service_id`.
-- **Indexing / search**: alias is the primary lookup (unique within space). Secondary lookups by `space`, `state`, `created_at` range, alias prefix. No full-text search in MVP.
+- **Metadata fields (minimum, per asset)**: `asset_id`, `space` (bucket name), `partition_id`, `storage_key`, `aliases[]`, `mime`, `size_bytes`, `checksum_algo`, `checksum`, `state`, `created_at`, `updated_at`, `expires_at`, `annotations` (free-form map), `owner_service_id`.
+- **Indexing / search**: alias is the primary lookup (unique within space). Secondary lookups by `space`, `partition_id`, `state`, `created_at` range, alias prefix. No full-text search in MVP.
 - **Retention / deletion policy**: assets with TTL transition to `expired` automatically; grace period (default 7 days) before garbage collection. Deleted assets keep audit history for at least 30 days.
 - **PII / sensitive data handling**: no PII stored by `asset-store` itself; callers must not put PII in alias names. Documented in security guidance.
 
@@ -161,7 +176,8 @@ P0 requirements must have an objective test or measurement that proves the targe
 - **FR-001 (Create asset)** - integration test creates an asset with two aliases and verifies that resolving each alias returns the same `asset_id`; conflict test attempts a duplicate alias and expects `409`.
 - **FR-002 (Resolve alias)** - integration test resolves alias to signed URL, downloads payload, verifies checksum; negative tests cover unknown / pending / expired / deleted aliases.
 - **FR-008 (Mutable alias)** - test creates an alias with `mutable: false`, attempts a rebind, expects `409`; creates an alias with `mutable: true`, performs a rebind, expects `200` plus an `alias.rebind` audit entry containing the before/after asset ids; immutable alias detach + name reuse before grace period expires expects `409`.
-- **FR-010..012 (Capabilities + scoping)** - dedicated test suite per S-4: a capability for prefix `u-42/uploads/` is exercised against 10 in-scope and 10 out-of-scope aliases; all 10 in-scope succeed, all 10 out-of-scope fail with 403.
+- **FR-010..012 (Capabilities + scoping)** - dedicated test suite per S-4: a capability for prefix `users/42/uploads/` is exercised against 10 in-scope and 10 out-of-scope aliases; all 10 in-scope succeed, all 10 out-of-scope fail with 403.
+- **FR-015 (Bucket allowlist)** - `upload-api` credential cannot mint write capability for `results/`; `fetcher` cannot mint for `users/`; expects `403`.
 - **FR-021 (Multipart upload)** - integration test uploads a 1 GB payload in multipart and verifies end-to-end checksum.
 - **FR-022 (Server-side checksum)** - integration test forces a body bit-flip via a test hook and expects `409` with rollback.
 - **FR-050..052 (Audit)** - test grep audit log after a scripted scenario covering create / capability mint / lifecycle / admin; all expected events present.

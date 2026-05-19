@@ -1,5 +1,7 @@
 # storage-guard
 
-Future FastAPI service for `FR-010..FR-014` and `FR-050..FR-052`.
+Future FastAPI capability broker (`FR-010`–`FR-015`, audit log).
 
-The first implementation slice lives in `src/asset_store_core/` and covers prefix-scoped capability checks independent of MinIO or HTTP.
+**Prototype shortcut:** not implemented yet. Use `InMemoryAssetRegistry` and `assert_service_bucket_allowed()` from `asset_store_core` in tests. See [`docs/IMPLEMENTATION_NOTES.md`](../../docs/IMPLEMENTATION_NOTES.md).
+
+The guard will wrap registry + MinIO: authenticate service identity, enforce bucket allowlist, mint presigned URLs, emit audit events.

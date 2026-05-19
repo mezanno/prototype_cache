@@ -1,5 +1,11 @@
 # 06 - OSS Survey
 
+## Relation to storage buckets (ADR-007)
+
+MinIO (and peers) provide **S3 buckets**, not nested sub-buckets. The MVP uses **four category buckets** (`cache`, `tmp`, `users`, `results`) with **prefix partitions** inside each. Per-user quota is **not** bucket-per-user; the registry aggregates `size_bytes` per `(space, partition_id)`. See [`03_ARCHITECTURE_AND_DECISIONS.md`](03_ARCHITECTURE_AND_DECISIONS.md). **Fetcher-service** is custom application code, not an OSS object-store candidate ([`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md)).
+
+---
+
 This document surveys off-the-shelf, open-source software that could implement all or part of the `asset-store` module. It feeds `ADR-001`, `ADR-002`, and `ADR-003` in `[03_ARCHITECTURE_AND_DECISIONS.md](03_ARCHITECTURE_AND_DECISIONS.md)`. It is structured as: criteria, per-layer candidates, comparison synthesis, two finalist architectures, recommendation, and time-boxed validation spikes.
 
 Important: dates, version numbers, performance claims, and license details below are based on the project's current state of knowledge and may need re-verification at spike time. Each candidate carries a `verify:` note pointing to what should be re-checked.
@@ -34,7 +40,7 @@ Goal: provide an S3-compatible distributed blob store satisfying NFR-001 (capaci
 - **C-4:** strong - STS (assume-role) + presigned URLs + bucket / IAM policies.
 - **C-5:** none (keys + metadata headers only).
 - **C-6:** lifecycle rules per prefix; bucket-level versioning.
-- **C-7:** buckets + IAM policies; bucket-per-space possible.
+- **C-7:** buckets + IAM policies; **bucket-per-category** (`cache`/`tmp`/`users`/`results`) per ADR-007; not bucket-per-user.
 - **C-8:** strong - well-known Docker image, single-binary, console UI; multi-node Swarm operability needs DNS or static hostnames - **verify:** test under Swarm overlay network.
 - **C-9:** official `minio-py` SDK; standard `boto3` works.
 - **C-10:** AGPL-3.0 (as of recent releases; commercial license available). **Risk:** AGPL implications for distributing the module - flagged in `[05_BACKLOG_AND_OPEN_QUESTIONS.md](05_BACKLOG_AND_OPEN_QUESTIONS.md)`. **verify:** confirm current license terms at spike time.

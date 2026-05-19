@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import unittest
 
-from asset_store_core import ValidationError, normalize_relative_alias, normalize_space, qualified_alias
+from asset_store_core import (
+    ValidationError,
+    normalize_bucket,
+    normalize_relative_alias,
+    normalize_space,
+    qualified_alias,
+    qualified_alias_for_partition,
+)
 
 
 class PathsTest(unittest.TestCase):
@@ -28,9 +35,19 @@ class PathsTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             normalize_relative_alias("a/../b")
 
-    def test_space_must_be_single_segment(self) -> None:
+    def test_bucket_must_be_single_segment(self) -> None:
         with self.assertRaises(ValidationError):
-            normalize_space("u-42/extra")
+            normalize_bucket("users/extra")
+
+    def test_unknown_bucket_rejected(self) -> None:
+        with self.assertRaises(ValidationError):
+            normalize_bucket("u-42")
+
+    def test_qualified_alias_for_partition(self) -> None:
+        self.assertEqual(
+            "users/42/uploads/photo.jpg",
+            qualified_alias_for_partition("users", "42", "uploads/photo.jpg"),
+        )
 
 
 if __name__ == "__main__":

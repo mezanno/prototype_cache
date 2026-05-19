@@ -1,5 +1,12 @@
 # compose
 
-Future local development stack for MinIO, Postgres, `asset-registry`, and `storage-guard`.
+Future local development stack:
 
-This folder intentionally starts as documentation-only while the core domain rules are stabilized under tests.
+| Component | Role |
+|-----------|------|
+| MinIO | Buckets: `cache`, `tmp`, `users`, `results` ([`docs/spec/03_ARCHITECTURE_AND_DECISIONS.md`](../../docs/spec/03_ARCHITECTURE_AND_DECISIONS.md)) |
+| Postgres | Registry + audit |
+| asset-registry, storage-guard | asset-store services |
+| fetcher (optional) | Remote URL ingestion ([`docs/spec/07_FETCHER_SERVICE.md`](../../docs/spec/07_FETCHER_SERVICE.md)) |
+
+Documentation-only until Phase 1 scaffold lands.

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime, timezone
+
+UTC = timezone.utc
+from asset_store_core.compat import StrEnum
 from types import MappingProxyType
 from typing import Mapping
 
@@ -58,6 +60,7 @@ class Asset:
 
     asset_id: str
     space: str
+    partition_id: str
     storage_key: str
     state: AssetState
     aliases: frozenset[str]

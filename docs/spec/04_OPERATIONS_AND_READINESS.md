@@ -1,5 +1,18 @@
 # 04 - Operations And Readiness
 
+## Observability at a glance
+
+| What to watch | Source | Labels |
+|---------------|--------|--------|
+| Per-user / per-task storage | Registry compactor | `space`, `partition_id` |
+| Per-bucket disk (ops) | MinIO exporter | `bucket` |
+| Cache effectiveness | fetcher-service | `fetch_cache_hit`, `fetch_remote_errors` |
+| API health | asset-registry, storage-guard | `endpoint`, `result_class` |
+
+**Quota enforcement** uses registry sums per `(space, partition_id)`, not MinIO alone ([`Q-004`](05_BACKLOG_AND_OPEN_QUESTIONS.md)).
+
+---
+
 ## Deployment Model
 
 - **Runtime target** - Docker Swarm in the target environment (NFR-011). Docker Compose for single-machine development.
@@ -18,15 +31,17 @@
 
 ### Metrics
 
-Per-service (`asset-registry`, `storage-guard`) Prometheus-style metrics. Labels: `service`, `endpoint`, `space`, `result_class` (`2xx`/`4xx`/`5xx`).
+Per-service (`asset-registry`, `storage-guard`, and later `fetcher`) Prometheus-style metrics. Labels: `service`, `endpoint`, `space` (bucket), `partition_id` where applicable, `result_class` (`2xx`/`4xx`/`5xx`).
 
 - **`asset_store_requests_total`** (counter) - request count by endpoint and result class.
 - **`asset_store_request_duration_seconds`** (histogram) - per-endpoint latency; standard quantiles via histogram_quantile.
 - **`asset_store_capability_issued_total`** (counter) - by `mode` (`presigned`/`token`), `op` (`read`/`write`), `outcome` (`granted`/`denied`).
 - **`asset_store_capability_issue_duration_seconds`** (histogram) - for NFR-003.
 - **`asset_store_alias_state_transitions_total`** (counter) - by `from`, `to`.
-- **`asset_store_storage_bytes`** (gauge) - per `space`; refreshed by a periodic compactor job.
-- **`asset_store_storage_assets`** (gauge) - per `space`, per `state`.
+- **`asset_store_storage_bytes`** (gauge) - per `space` and per `(space, partition_id)`; refreshed by a periodic compactor job (authoritative for quotas).
+- **`asset_store_storage_assets`** (gauge) - per `space`, per `partition_id`, per `state`.
+- **`minio_bucket_usage_bytes`** (gauge) - per bucket from MinIO exporter (coarse cost/ops view).
+- **`fetch_cache_hit_total`** / **`fetch_remote_errors_total`** / **`fetch_bytes_ingested_total`** (counter) - fetcher-service; labels `bucket` (`cache`|`tmp`), `mirror_id` optional.
 - **`asset_store_audit_events_total`** (counter) - by `action`.
 - **`asset_store_checksum_mismatch_total`** (counter) - durability canary.
 
@@ -76,7 +91,7 @@ Error budget for the read availability SLO: 0.1% of 30 days = ~43 minutes per 30
 ## Testing Strategy
 
 - **Unit tests** - per service; pytest; coverage targets `>= 80%` for new modules; mocks for the object-store layer when fast tests are needed.
-- **Integration tests** - run the full stack via Docker Compose; exercise SCN-001..005 end-to-end; CI runs them on every PR.
+- **Integration tests** - run the full stack via Docker Compose; exercise SCN-001..007 end-to-end; CI runs them on every PR.
 - **End-to-end tests** - same scenarios run against the staging Swarm cluster nightly; failure raises a SEV-3 alert.
 - **Load tests** - Locust- or k6-driven; reproduce S-2 and S-3 conditions; runs on demand and before each release candidate.
 - **Chaos / failure injection** - kill one `asset-registry` task, one `storage-guard` task, one MinIO node; verify that retries succeed and metrics report the impact within SLO error budget.

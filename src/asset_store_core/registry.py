@@ -11,8 +11,12 @@ Requirement mapping (subset implemented here):
 - ``FR-006`` / ``FR-007`` — expire and delete transitions.
 - ``FR-008`` — mutable alias rebind after explicit detach.
 - ``FR-022`` — optional expected checksum verification on commit.
+- ``FR-015`` — bucket allowlist lives in :mod:`service_policy` (not invoked here).
 
-This module intentionally does **not** implement HTTP, Postgres, or MinIO IO.
+This module intentionally does **not** implement HTTP, Postgres, MinIO IO, or
+storage-guard. Call :class:`~asset_store_core.registry.InMemoryAssetRegistry`
+directly in unit tests; enforce :mod:`service_policy` in integration tests when
+the guard adapter exists.
 """
 
 from __future__ import annotations
@@ -33,7 +37,13 @@ from asset_store_core.errors import (
 )
 from asset_store_core.ids import new_asset_id
 from asset_store_core.models import AliasBinding, Asset, AssetState, AuditEvent, utcnow
-from asset_store_core.paths import normalize_relative_alias, normalize_space, qualified_alias
+from asset_store_core.paths import (
+    normalize_relative_alias,
+    normalize_space,
+    qualified_alias,
+    qualified_alias_for_partition,
+)
+from asset_store_core.storage import build_storage_key, normalize_partition_id
 
 
 class InMemoryAssetRegistry:
@@ -75,6 +85,7 @@ class InMemoryAssetRegistry:
         self,
         *,
         space: str,
+        partition_id: str,
         aliases: Iterable[str] | Mapping[str, bool],
         owner_service_id: str,
         mime: str | None = None,
@@ -83,20 +94,24 @@ class InMemoryAssetRegistry:
         """Reserve aliases and create a pending asset shell (FR-004)."""
 
         norm_space = normalize_space(space)
+        norm_partition = normalize_partition_id(partition_id)
         alias_specs = _normalize_alias_specs(aliases)
 
         for alias in alias_specs:
-            self._require_alias_name_available(norm_space, alias)
+            scoped = _alias_under_partition(norm_partition, alias)
+            self._require_alias_name_available(norm_space, scoped)
 
         asset_id = new_asset_id()
         now = utcnow()
         qualified_aliases = frozenset(
-            qualified_alias(norm_space, alias_name) for alias_name in alias_specs
+            qualified_alias_for_partition(norm_space, norm_partition, alias_name)
+            for alias_name in alias_specs
         )
         asset = Asset(
             asset_id=asset_id,
             space=norm_space,
-            storage_key=f"assets/{asset_id}",
+            partition_id=norm_partition,
+            storage_key=build_storage_key(partition_id=norm_partition, asset_id=asset_id),
             state=AssetState.PENDING,
             aliases=qualified_aliases,
             mime=mime,
@@ -108,9 +123,10 @@ class InMemoryAssetRegistry:
         self._assets[asset_id] = asset
 
         for alias_name, mutable in alias_specs.items():
+            scoped = _alias_under_partition(norm_partition, alias_name)
             binding = AliasBinding(
                 space=norm_space,
-                alias=alias_name,
+                alias=scoped,
                 asset_id=asset_id,
                 mutable=mutable,
                 created_at=now,
@@ -146,7 +162,7 @@ class InMemoryAssetRegistry:
             )
 
         norm_space = normalize_space(asset.space)
-        alias_name = normalize_relative_alias(alias)
+        alias_name = _alias_under_partition(asset.partition_id, alias)
         self._require_alias_name_available(norm_space, alias_name)
 
         key = qualified_alias(norm_space, alias_name)
@@ -369,7 +385,9 @@ class InMemoryAssetRegistry:
 
         new_asset = self._get_asset(new_asset_id)
         if new_asset.space != binding.space:
-            raise AliasConflictError("cannot rebind an alias across spaces")
+            raise AliasConflictError("cannot rebind an alias across buckets")
+        if new_asset.partition_id != _partition_from_scoped_alias(binding.alias):
+            raise AliasConflictError("cannot rebind an alias across partitions")
         if new_asset.state is not AssetState.AVAILABLE:
             raise InvalidStateTransitionError(
                 f"rebind target asset {new_asset_id!r} must be available, "
@@ -506,3 +524,19 @@ def _normalize_alias_specs(aliases: Iterable[str] | Mapping[str, bool]) -> dict[
             normalize_relative_alias(alias): bool(mutable) for alias, mutable in aliases.items()
         }
     return {normalize_relative_alias(alias): False for alias in aliases}
+
+
+def _alias_under_partition(partition_id: str, relative_alias: str) -> str:
+    """Return alias path under ``partition_id`` (idempotent if already prefixed)."""
+
+    rel = normalize_relative_alias(relative_alias)
+    prefix = normalize_partition_id(partition_id)
+    if rel == prefix or rel.startswith(f"{prefix}/"):
+        return rel
+    return f"{prefix}/{rel}"
+
+
+def _partition_from_scoped_alias(scoped_alias: str) -> str:
+    """First path segment of a bucket-relative alias path."""
+
+    return normalize_partition_id(scoped_alias.split("/", 1)[0])

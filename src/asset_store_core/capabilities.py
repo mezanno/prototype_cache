@@ -7,8 +7,10 @@ single-use enforcement from ``FR-013`` via :class:`SingleUseLedger`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime, timezone
+
+UTC = timezone.utc
+from asset_store_core.compat import StrEnum
 
 from asset_store_core.errors import (
     CapabilityAlreadyConsumedError,
@@ -30,8 +32,8 @@ class Operation(StrEnum):
 class Capability:
     """Time-bounded, prefix-scoped authorization.
 
-    Scope matching is path-segment aware: ``u-42/uploads`` matches
-    ``u-42/uploads/a.jpg``, but not ``u-42/uploads2/a.jpg``.
+    Scope matching is path-segment aware: ``users/42/uploads`` matches
+    ``users/42/uploads/a.jpg``, but not ``users/42/uploads2/a.jpg``.
 
     ``expires_at`` must be timezone-aware; naive datetimes are rejected to avoid
     ambiguous comparisons.
@@ -51,7 +53,7 @@ class Capability:
         parts = raw.split("/")
         if len(parts) < 2:
             raise ValidationError(
-                "scope_prefix must include space and at least one segment, e.g. 'u-42/uploads'"
+                "scope_prefix must include bucket and at least one segment, e.g. 'users/42/uploads'"
             )
         try:
             normalize_space(parts[0])

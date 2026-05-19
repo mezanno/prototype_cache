@@ -11,7 +11,7 @@ The repo is named `prototype_cache` for historical reasons; the module name is `
 Before coding, read in this order:
 
 1. [`docs/PROJECT_ARCHITECTURE.md`](docs/PROJECT_ARCHITECTURE.md)
-2. [`docs/spec/README.md`](docs/spec/README.md) and the spec files it lists.
+2. [`docs/spec/README.md`](docs/spec/README.md) and the spec files it lists (start with [`00B_GLOSSARY_AND_ACRONYMS.md`](docs/spec/00B_GLOSSARY_AND_ACRONYMS.md) if jargon is unfamiliar).
 3. [`docs/WORKPLAN.md`](docs/WORKPLAN.md)
 
 If requirements conflict, update docs first, then implement.
