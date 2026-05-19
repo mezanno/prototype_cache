@@ -37,6 +37,7 @@ Heritage- and document-processing services need a single durable pivot for all b
 - **IIIF Image API or Presentation API serving** — separate IIIF-server module.
 - **IIIF manifest composition** — future `manifest-service`.
 - **`iiif_server_cache` bucket** — tile/cache storage managed by IIIF server directly, not via asset-store APIs.
+- **IIIF manifest relaying or rewriting** — `iiif-image-mirror` covers IIIF Image API only and must not relay or rewrite Presentation manifests; this is a firm constraint.
 - **End-user authentication** — upstream APIs; asset-store sees service identities only.
 - **Task orchestration**, **billing**, **virus scanning** (caller's duty), **format conversion**, **cross-region replication**, **encryption at rest** in MVP (`R-*`).
 
@@ -55,7 +56,8 @@ Heritage- and document-processing services need a single durable pivot for all b
 
 ### Surveyed for later
 
-- **IIIF server** — read `cache`, `users`; own `iiif_server_cache` bucket.
+- **IIIF server** (`iiif-server`) — read `cache`, `users`; own `iiif_server_cache` tile bucket; no writes to asset-store. See [service identity table](03_ARCHITECTURE_AND_DECISIONS.md).
+- **IIIF image mirror** (`iiif-image-mirror`) — future separate end-user-facing module; serves heritage images via IIIF Image API with its own access-control layer; delegates all cache writes to fetcher-service; reads `cache` only from asset-store; must not relay or rewrite Presentation manifests. Tracked as [`B-021`](05_BACKLOG_AND_OPEN_QUESTIONS.md).
 - **manifest-service** — composes manifests; may store JSON snapshots as assets.
 - **storage-guard policy provider** — external ABAC.
 

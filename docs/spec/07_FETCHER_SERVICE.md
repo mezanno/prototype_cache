@@ -126,9 +126,42 @@ Fetcher must **not** write `users` or `results`.
 
 ---
 
-## Relationship to archived “IIIF proxy”
+## Relationship to the IIIF server and the IIIF mirror/proxy
 
-Discovery and [`_archive/00A_USE_CASES_AND_SCENARIOS.md`](_archive/00A_USE_CASES_AND_SCENARIOS.md) described an “IIIF proxy” that prefetches remote images. **Fetcher-service** is the generalization: any task URL, not only IIIF. The IIIF **server** remains a separate reader of `cache` / `users`; it does not replace fetcher.
+The archived discovery docs described an "IIIF proxy" prefetching remote images. That concept has since split into **two distinct future modules** with different responsibilities. Fetcher-service is the general URL-materialization layer that both will rely on.
+
+| Aspect | IIIF server (`iiif-server`) | IIIF image mirror (`iiif-image-mirror`) |
+|--------|-----------------------------|-----------------------------|
+| **Role** | Serve stored assets via IIIF Image API | Relay heritage IIIF Image API requests; cache responses |
+| **Reads from asset-store** | `cache`, `users` (via presigned GET) | `cache` only (via presigned GET) |
+| **Writes to asset-store** | None — writes only to its own `iiif_server_cache` tile bucket | None directly — all cache writes delegated to fetcher-service |
+| **Fetches remote URLs** | No | Via fetcher-service (`cache/{mirror_id}/…`) |
+| **IIIF Presentation manifests** | May read; does not compose | Must **not** rewrite manifests to point at itself |
+| **IIIF Image API** | Serves from stored assets | Relays and caches from authoritative heritage endpoints |
+| **Client awareness** | Transparent to client | Client must actively point at mirror; no impersonation |
+| **In scope for asset-store MVP** | Surveyed for later | No (future separate module) |
+
+### IIIF server
+
+The IIIF server's goal is to serve content already stored in asset-store in a IIIF Image API-compatible format (other efficient distribution protocols may be studied in the future). It is a **reader** of asset-store, not a fetcher and not a mirror. It owns and manages `iiif_server_cache` independently for derived tile storage; that bucket is not provisioned or written by asset-store.
+
+### IIIF image mirror
+
+The IIIF image mirror (`iiif-image-mirror`) is a **separate future module** whose goal is reliable, user-accessible caching of heritage images served by national libraries and similar authoritative repositories via the IIIF Image API.
+
+Key characteristics:
+
+- **IIIF Image API only** — no Presentation API, no manifest relay, no manifest rewriting.
+- **End-user facing** — it has its own access-control layer for end users (outside asset-store’s service-identity model); asset-store only sees the module’s service identity (`iiif-image-mirror`).
+- **Cache backend** — uses fetcher-service and the asset-store `cache` bucket; all ingestion follows the standard reserve → PUT → commit flow.
+- **Reads from asset-store** — `cache` only, via presigned GET from storage-guard.
+- **No writes to asset-store** — cache population is delegated entirely to fetcher-service.
+- **Separate service** — distinct codebase and deployment from `iiif-server`.
+- **Client awareness** — clients must explicitly point requests at the mirror; the mirror does not impersonate the upstream repository.
+
+**Open question — derivative generation ([`Q-026`](05_BACKLOG_AND_OPEN_QUESTIONS.md)):** Full IIIF Image API compliance (beyond level 0) requires serving arbitrary region/size/rotation combinations, which typically means generating image derivatives rather than proxying verbatim responses. Generating derivatives internally risks subtle divergence from the upstream server’s rendering. The advantage (full Image API compliance, reduced upstream load) must be weighed against this risk before a decision is made. If derivatives are stored, a dedicated tile bucket (separate from the asset-store `cache` bucket) is the preferred approach, mirroring the `iiif_server_cache` pattern used by `iiif-server`.
+
+Whether this module is needed at all is tracked as [`B-021`](05_BACKLOG_AND_OPEN_QUESTIONS.md).
 
 ---
 

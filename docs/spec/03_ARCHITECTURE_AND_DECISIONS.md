@@ -73,8 +73,11 @@ Enforced by **FR-015**. Denied requests return `403`.
 | `task-api` | `cache`, `users`, `tmp` | `tmp` |
 | `admin` | all MVP buckets | all MVP buckets |
 | `iiif-server` | `cache`, `users` (read-only MVP) | — |
+| `iiif-image-mirror` | `cache` (read-only) | — (delegates writes to `fetcher`) |
 
 `iiif_server_cache` is **not** provisioned or written by asset-store; IIIF server manages it separately.
+
+`iiif-image-mirror` reads `cache` to serve cached heritage images via presigned GET. It never writes to asset-store directly; all cache-population writes go through `fetcher`. It does not access `tmp`, `users`, or `results`. It maintains its own end-user access-control layer outside the asset-store service-identity model; derived tile storage (if ever implemented) would use a dedicated bucket not managed by asset-store.
 
 ## Data Model Draft
 

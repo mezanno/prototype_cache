@@ -10,6 +10,8 @@
 | Q-022 | Domain cache allowlist | Open |
 | Q-023 | Fetcher MVP phasing | Open |
 | Q-024 | Promote `tmp` → `users` (if ever) | Open |
+| Q-025 | IIIF server integration phasing: formal service identity timing and `iiif_server_cache` read-path interaction | Open |
+| Q-026 | `iiif-image-mirror` derivative generation: level 0 proxy-only vs level 1/2 with derivative generation (risk of upstream divergence) | Open |
 
 Full table below.
 
@@ -43,6 +45,8 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | Q-022 | Domain cache allowlist: config file, DB, admin UI; who maintains entries? | SCN-007, fetcher | TBD | Phase 2 | Open |
 | Q-023 | Fetcher MVP: stub in asset-store repo vs separate service in Phase 2 vs 2b? | [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md), WORKPLAN | TBD | Phase 2 | Open |
 | Q-024 | Should upload-api ever promote `tmp` staging objects to `users` (copy + new alias) or always write directly to `users`? | SCN-003, SCN-006 | TBD | Phase 2 | Open |
+| Q-025 | IIIF server integration phasing: when does `iiif-server` get a formal service identity provisioned, and how does `iiif_server_cache` interact with the asset-store read path (separate bucket, no asset-store involvement)? | SCN-008, [`01_SCOPE.md`](01_SCOPE.md) | TBD | Phase 4 | Open |
+| Q-026 | `iiif-image-mirror` derivative generation: should the mirror generate image derivatives to achieve IIIF Image API level 1/2 compliance, or proxy level-0 URLs only? Generating derivatives risks subtle divergence from upstream rendering; if pursued, where are tiles stored (dedicated bucket outside asset-store)? | [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md), B-021 | TBD | Phase 3 | Open |
 
 ## Risks
 
@@ -85,6 +89,7 @@ Coarse-grained backlog. Refined into engineering tickets at Phase 1 kick-off. Or
 | B-017 | Backup hook to a second S3 target | Feature | P2 | B-009 | Documented and tested; FR-061 acceptance |
 | B-018 | Security review pass (STRIDE on storage-guard) + go-live checklist sweep | Doc | P1 | B-010, B-013 | Findings logged; checklist boxes ticked or risks accepted |
 | B-019 | Pilot plan + rollback rehearsal | Doc | P2 | B-015, B-018 | Plan reviewed; rehearsal report attached |
+| B-021 | Decide whether `iiif-image-mirror` is needed and scope it: end-user auth model, IIIF Image API compliance level, derivative generation decision ([`Q-026`](05_BACKLOG_AND_OPEN_QUESTIONS.md)) | Doc | P3 | B-010 | Decision recorded; if yes, `iiif-image-mirror` service identity provisioned in storage-guard |
 
 ## Exit Criteria To Start Build Phase
 

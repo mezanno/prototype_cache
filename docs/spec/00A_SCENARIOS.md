@@ -13,6 +13,7 @@
 | SCN-005 | Worker writes results | P1 | `results` |
 | SCN-006 | Task inline payload to tmp | P1 | `tmp` |
 | SCN-007 | Remote URL via fetcher | P0 | `cache` or `tmp` |
+| SCN-008 | IIIF server reads asset | P2 (future) | `cache`, `users` |
 
 Remote URL flows use **fetcher-service** ([`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md)). asset-store never calls HTTP.
 
@@ -159,6 +160,23 @@ Out-of-scope scenarios (IIIF tile cache, visualization) remain in [`_archive/00A
 - **Observability checks:** `fetch_cache_hit`, `fetch_remote_errors`, bytes to `cache` vs `tmp`.
 - **Open questions:** Q-021, Q-022, Q-023.
 
+### SCN-008 - IIIF server reads a stored asset
+
+- **Priority:** P2 (future; IIIF server not in MVP)
+- **Actors:** IIIF server, storage-guard, asset-registry, object-store
+- **Maps to:** FR-002, FR-010, FR-012 (read path); IIIF server integration surveyed for later in [`01_SCOPE.md`](01_SCOPE.md)
+- **Preconditions:** Asset `available` under `cache/{mirror_id}/…` or `users/{userid}/…`. IIIF server holds read capability for the relevant prefix.
+- **Trigger:** IIIF client requests an image (IIIF Image API).
+- **Main flow:**
+  1. IIIF server resolves the alias via storage-guard (same read-capability flow as workers, SCN-002).
+  2. Storage-guard validates scope; registry resolves; returns presigned GET for the correct bucket + key.
+  3. IIIF server streams bytes to the IIIF client (tile generation is internal to the IIIF server).
+  4. Derived tiles are written to `iiif_server_cache` — that bucket is owned by the IIIF server, not asset-store.
+- **Expected result:** IIIF client receives image data; no writes to asset-store.
+- **Error/failure paths:** 404/410 if asset not found or expired; 403 if capability does not cover the alias.
+- **Observability checks:** read latency; error rate; no write audit events from `iiif-server` identity.
+- **Open questions:** [`Q-025`](05_BACKLOG_AND_OPEN_QUESTIONS.md) (IIIF server integration phasing).
+
 ## Cross-scenario decisions
 
 - **Storage layout** — ADR-007; four buckets + `partition_id`.
@@ -176,3 +194,4 @@ Out-of-scope scenarios (IIIF tile cache, visualization) remain in [`_archive/00A
 - **SCN-005** → FR-001, FR-003, FR-004, FR-011, FR-013, FR-015, FR-021/022, FR-050, NFR-005
 - **SCN-006** → FR-001, FR-004, FR-011, FR-015, FR-020/022, FR-050
 - **SCN-007** → FR-002, FR-010..015, FR-020, FR-022, FR-050 + fetcher spec
+- **SCN-008** → FR-002, FR-010, FR-012 (read path; IIIF server future)

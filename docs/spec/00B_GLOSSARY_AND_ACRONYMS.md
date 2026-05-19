@@ -38,6 +38,8 @@ MoSCoW priority on requirements: **M** = must, **S** = should, **C** = could, **
 | **Asset-registry** | Service that stores metadata, aliases, and lifecycle state (`pending` → `available` → …). |
 | **Object-store** | MinIO (or any S3-compatible store) where bytes live. |
 | **Fetcher-service** | Separate module that downloads remote URLs and stores results in `cache` or `tmp`. |
+| **IIIF server** | Separate future module; serves stored assets via IIIF Image API; reads `cache` and `users` from asset-store; owns and writes only to `iiif_server_cache`; does not relay or mirror heritage repositories. |
+| **IIIF image mirror** | Future separate module (`iiif-image-mirror`); serves heritage images via IIIF Image API; end-user facing with its own access-control layer; uses fetcher-service + asset-store `cache` as its cache backend; does not relay or rewrite IIIF Presentation manifests. |
 | **Lifecycle state** | `pending` (reserved, no bytes yet), `available`, `expired`, `deleted`. |
 | **Audit log** | Append-only record of who did what (capabilities, alias changes, admin actions). |
 | **Mutable alias** | Rare opt-in: alias may be rebound to another asset after an audited detach. |
@@ -89,7 +91,7 @@ MoSCoW priority on requirements: **M** = must, **S** = should, **C** = could, **
 |--------|----------------|
 | “Sub-bucket” | **Prefix** inside a bucket (S3 has no nested buckets). |
 | “Space `u-42`” (legacy) | **`users/42/…`** qualified alias ([`03_ARCHITECTURE_AND_DECISIONS.md`](03_ARCHITECTURE_AND_DECISIONS.md)). |
-| “IIIF proxy” (legacy) | **Fetcher-service** ([`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md)). |
+| “IIIF proxy” (legacy) | Either **IIIF server** (serves platform assets via IIIF Image API) or **IIIF image mirror** (serves heritage images via IIIF Image API with its own end-user access control) — these are distinct modules with different responsibilities. See [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md). |
 | “Object key” in user APIs | **Alias** — keys are internal only. |
 
 ---
