@@ -1,7 +1,6 @@
 ---
-description: Spec writing quality rules for docs
-globs: docs/**/*.md
-alwaysApply: false
+description: Spec writing quality rules for documentation work.
+applyTo: "docs/**/*.md"
 ---
 
 # Specification Quality Rules
