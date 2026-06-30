@@ -16,7 +16,7 @@ foundation everything else wraps:
 - [`src/asset_store_core/`](../src/asset_store_core/) - in-memory registry, alias
   model, path/bucket normalization, object-key layout, prefix-scoped capabilities,
   and the FR-015 service-to-bucket allowlist. No HTTP, Postgres, or object store.
-- [`tests/`](../tests/) - 32 unit tests, all green, covering FR-001..008, FR-012,
+- [`tests/`](../tests/) - 36 unit tests, all green, covering FR-001..008, FR-012,
   FR-013, FR-015, and FR-022 invariants.
 - `services/`, `tools/`, `deploy/` - placeholders only.
 
@@ -29,8 +29,8 @@ work (B-009) extends an existing, tested core rather than starting from zero.
 
 **Core gaps already known** (carry into B-009 so they are not lost):
 
-- FR-003: an asset reaching zero aliases is not yet auto-marked for garbage collection.
-- FR-008: the `alias.rebind` audit event does not yet carry both `before`/`after` asset ids.
+- FR-003 (zero-alias GC mark) and FR-008 (rebind `before`/`after` audit ids) are
+  now **closed** in the in-memory core with tests.
 - `eviction_policy`, `PartitionQuota`, `BucketQuota` (FR-063..069, ADR-009) are not in
   the in-memory model yet; the spec requires them from the registry MVP.
 
@@ -182,7 +182,7 @@ reordered to **lock quality first, then grow the core into a running service**.
    *Done = one command runs lint, types, and tests green on a clean checkout.*
 2. **Close the known core gaps** (FR-003 zero-alias GC mark; FR-008 rebind
    `before`/`after` audit ids) with tests, while the core is still small and
-   infrastructure-free.
+   infrastructure-free. **(done 2026-06-30)**
 3. **Add the storage adapter seam.** Define the `storage` backend interface plus a
    local/in-memory implementation; defer Garage/OVH wiring. Cover
    reserve -> PUT -> commit -> resolve with integration tests against the fake backend.

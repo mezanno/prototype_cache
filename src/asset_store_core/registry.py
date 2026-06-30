@@ -6,10 +6,12 @@ Requirement mapping (subset implemented here):
 
 - ``FR-001``, ``FR-004`` — reserve aliases + pending asset shell.
 - ``FR-002`` — resolve only ``available`` assets; detached mutable aliases do not resolve.
-- ``FR-003`` — immutable detach + tombstone grace; mutable detach before rebind.
+- ``FR-003`` — immutable detach + tombstone grace; mutable detach before rebind;
+  zero-alias assets auto-marked for GC.
 - ``FR-005`` — annotation updates without touching payload metadata beyond timestamps.
 - ``FR-006`` / ``FR-007`` — expire and delete transitions.
-- ``FR-008`` — mutable alias rebind after explicit detach.
+- ``FR-008`` — mutable alias rebind after explicit detach, with before/after asset
+  ids recorded in the ``alias.rebind`` audit event.
 - ``FR-022`` — optional expected checksum verification on commit.
 - ``FR-015`` — bucket allowlist lives in :mod:`service_policy` (not invoked here).
 
@@ -325,6 +327,7 @@ class InMemoryAssetRegistry:
             before={"asset_id": asset_id},
             after={},
         )
+        self._mark_for_gc_if_orphaned(asset_id, caller_service_id)
 
     def detach_mutable_alias(
         self,
@@ -349,7 +352,9 @@ class InMemoryAssetRegistry:
 
         key = binding.qualified_alias
         self._remove_alias_from_asset(old_asset_id, key)
-        updated_binding = dc_replace(binding, asset_id=None, updated_at=utcnow())
+        updated_binding = dc_replace(
+            binding, asset_id=None, previous_asset_id=old_asset_id, updated_at=utcnow()
+        )
         self._aliases[key] = updated_binding
 
         self._audit(
@@ -360,6 +365,7 @@ class InMemoryAssetRegistry:
             before={"asset_id": old_asset_id},
             after={"asset_id": ""},
         )
+        self._mark_for_gc_if_orphaned(old_asset_id, caller_service_id)
         return updated_binding
 
     def rebind_alias(
@@ -393,7 +399,10 @@ class InMemoryAssetRegistry:
             )
 
         key = binding.qualified_alias
-        updated_binding = dc_replace(binding, asset_id=new_asset_id, updated_at=utcnow())
+        previous_asset_id = binding.previous_asset_id or ""
+        updated_binding = dc_replace(
+            binding, asset_id=new_asset_id, previous_asset_id=None, updated_at=utcnow()
+        )
         self._aliases[key] = updated_binding
         self._add_alias_to_asset(new_asset_id, key)
 
@@ -402,7 +411,7 @@ class InMemoryAssetRegistry:
             target=key,
             caller_service_id=caller_service_id,
             outcome="success",
-            before={"asset_id": ""},
+            before={"asset_id": previous_asset_id},
             after={"asset_id": new_asset_id},
         )
         return updated_binding
@@ -493,6 +502,30 @@ class InMemoryAssetRegistry:
         asset = self._get_asset(asset_id)
         aliases = frozenset(a for a in asset.aliases if a != qualified_key)
         self._assets[asset_id] = dc_replace(asset, aliases=aliases, updated_at=utcnow())
+
+    def _mark_for_gc_if_orphaned(self, asset_id: str, caller_service_id: str) -> None:
+        """Mark an asset with zero remaining aliases for garbage collection (FR-003).
+
+        Reuses the ``expired`` state so the normal GC sweep (FR-060) handles the
+        subsequent ``expired -> deleted`` transition; the distinct ``asset.gc_mark``
+        audit action records that the trigger was alias removal, not TTL or admin expiry.
+        """
+
+        asset = self._get_asset(asset_id)
+        if asset.aliases:
+            return
+        if asset.state in (AssetState.EXPIRED, AssetState.DELETED):
+            return
+        updated = dc_replace(asset, state=AssetState.EXPIRED, updated_at=utcnow())
+        self._assets[asset_id] = updated
+        self._audit(
+            action="asset.gc_mark",
+            target=asset_id,
+            caller_service_id=caller_service_id,
+            outcome="success",
+            before={"state": asset.state.value, "reason": "zero_aliases"},
+            after={"state": updated.state.value},
+        )
 
     def _audit(
         self,

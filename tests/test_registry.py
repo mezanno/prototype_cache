@@ -353,6 +353,106 @@ class InMemoryAssetRegistryTest(unittest.TestCase):
             self.registry.resolve_alias(space="cache", alias="m/secondary").asset_id,
         )
 
+    def test_zero_alias_asset_is_marked_for_gc(self) -> None:
+        reg = InMemoryAssetRegistry(alias_name_grace_period=timedelta(0))
+        a = reg.reserve_asset(
+            space="cache",
+            partition_id="m",
+            aliases=["only"],
+            owner_service_id="svc",
+        )
+        reg.commit_asset(
+            asset_id=a.asset_id,
+            size_bytes=1,
+            checksum="sha256:x",
+            caller_service_id="svc",
+        )
+        reg.detach_alias(space="cache", alias="m/only", caller_service_id="svc")
+
+        gc_events = [e for e in reg.audit_events if e.action == "asset.gc_mark"]
+        self.assertEqual(1, len(gc_events))
+        self.assertEqual(a.asset_id, gc_events[0].target)
+        self.assertEqual("expired", gc_events[0].after["state"])
+
+    def test_asset_with_remaining_aliases_is_not_marked_for_gc(self) -> None:
+        a = self.registry.reserve_asset(
+            space="cache",
+            partition_id="m",
+            aliases=["keep", "drop"],
+            owner_service_id="svc",
+        )
+        self.registry.commit_asset(
+            asset_id=a.asset_id,
+            size_bytes=1,
+            checksum="sha256:x",
+            caller_service_id="svc",
+        )
+        self.registry.detach_alias(space="cache", alias="m/drop", caller_service_id="svc")
+
+        gc_events = [e for e in self.registry.audit_events if e.action == "asset.gc_mark"]
+        self.assertEqual([], gc_events)
+        self.assertEqual(
+            a.asset_id,
+            self.registry.resolve_alias(space="cache", alias="m/keep").asset_id,
+        )
+
+    def test_mutable_detach_marks_orphaned_old_asset_for_gc(self) -> None:
+        a = self.registry.reserve_asset(
+            space="users",
+            partition_id="42",
+            aliases={"ptr": True},
+            owner_service_id="svc",
+        )
+        self.registry.commit_asset(
+            asset_id=a.asset_id,
+            size_bytes=1,
+            checksum="sha256:x",
+            caller_service_id="svc",
+        )
+        self.registry.detach_mutable_alias(space="users", alias="42/ptr", caller_service_id="svc")
+
+        gc_events = [e for e in self.registry.audit_events if e.action == "asset.gc_mark"]
+        self.assertEqual(1, len(gc_events))
+        self.assertEqual(a.asset_id, gc_events[0].target)
+
+    def test_rebind_audit_carries_before_and_after_asset_ids(self) -> None:
+        first = self.registry.reserve_asset(
+            space="users",
+            partition_id="42",
+            aliases={"ptr": True},
+            owner_service_id="svc",
+        )
+        first = self.registry.commit_asset(
+            asset_id=first.asset_id,
+            size_bytes=1,
+            checksum="sha256:first",
+            caller_service_id="svc",
+        )
+        second = self.registry.reserve_asset(
+            space="users",
+            partition_id="42",
+            aliases=["target"],
+            owner_service_id="svc",
+        )
+        second = self.registry.commit_asset(
+            asset_id=second.asset_id,
+            size_bytes=1,
+            checksum="sha256:second",
+            caller_service_id="svc",
+        )
+        self.registry.detach_mutable_alias(space="users", alias="42/ptr", caller_service_id="svc")
+        self.registry.rebind_alias(
+            space="users",
+            alias="42/ptr",
+            new_asset_id=second.asset_id,
+            caller_service_id="admin",
+        )
+
+        rebind_events = [e for e in self.registry.audit_events if e.action == "alias.rebind"]
+        self.assertEqual(1, len(rebind_events))
+        self.assertEqual(first.asset_id, rebind_events[0].before["asset_id"])
+        self.assertEqual(second.asset_id, rebind_events[0].after["asset_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

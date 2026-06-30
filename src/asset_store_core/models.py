@@ -32,12 +32,15 @@ class AliasBinding:
 
     ``asset_id`` may be ``None`` only for a **mutable** alias that has been
     explicitly detached and is awaiting ``rebind_alias`` (FR-003 / FR-008).
+    ``previous_asset_id`` retains the last-bound asset id while detached so the
+    next ``alias.rebind`` audit event can record both before and after ids (FR-008).
     """
 
     space: str
     alias: str
     asset_id: str | None
     mutable: bool = False
+    previous_asset_id: str | None = None
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
     created_by_service_id: str = "system"
