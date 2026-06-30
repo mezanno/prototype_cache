@@ -42,3 +42,26 @@ Without `.env.garage` exported, the integration tests **skip**, so the default
 > The credentials in [`garage.toml`](garage/garage.toml) and
 > [`garage-init.sh`](garage-init.sh) are **DEV-ONLY** and intentionally
 > committed; `.env.garage` is gitignored and real secrets are never committed.
+
+## Postgres dev stack (S-002)
+
+A Postgres 16 instance for the durable registry spike
+([`PostgresAssetRegistry`](../../src/asset_store_core/pg_registry.py)).
+
+```bash
+cd deploy/compose
+
+# 1. Start Postgres (bound to 127.0.0.1:5432).
+docker compose -f docker-compose.postgres.yml up -d
+
+# 2. Point the gated registry tests at it and run them.
+export ASSET_STORE_PG_DSN=postgresql://asset:asset@127.0.0.1:5432/asset_store
+uv run pytest tests/test_pg_registry.py -q
+
+# 3. Stop (named volume persists).
+docker compose -f docker-compose.postgres.yml down
+```
+
+The `asset:asset` credentials are **DEV-ONLY**. Without `ASSET_STORE_PG_DSN` the
+registry tests **skip**. The registry bootstraps its own tables
+(`CREATE TABLE IF NOT EXISTS`) on first connect.

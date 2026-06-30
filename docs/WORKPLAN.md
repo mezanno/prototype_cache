@@ -22,7 +22,11 @@ foundation everything else wraps:
   [`s3_object_store.py`](../src/asset_store_core/s3_object_store.py) `S3ObjectStore`
   (boto3, optional `s3` extra) implements the same `ObjectStoreBackend` seam
   against any S3-compatible service and is certified against Garage (see below).
-  No Postgres yet.
+  A thin durable registry adapter exists too:
+  [`pg_registry.py`](../src/asset_store_core/pg_registry.py) `PostgresAssetRegistry`
+  (psycopg 3, optional `pg` extra) implements reserve/commit/resolve + audit
+  behind the registry seam, certified against Postgres 16 (gated tests). The full
+  lifecycle/quota port + SQLAlchemy/Alembic remain B-009.
 - [`src/asset_store_core/api/`](../src/asset_store_core/api/) - a FastAPI app
   (single process per ADR-002) exposing `/healthz`, `/readyz`, `/metrics`,
   reserve/commit/resolve, capability mint, and a capability-guarded data plane
@@ -102,7 +106,7 @@ prototype:
 
 - B-001 - assign owners/dates to Q-001..017; resolve Q-001/Q-002/Q-009/Q-013/Q-016.
 - B-005 - Spike S-001: object-store baseline on Garage / OVH S3 (PUT/GET/multipart/presigned URLs/lifecycle). **In progress:** `S3ObjectStore` certified on Garage for PUT/GET/stat/delete + server-side `sha256` on PUT + transparent multipart upload (>= threshold, abort-on-failure) + presigned-GET; backend-native lifecycle still to exercise; OVH S3 tier pending real credentials.
-- B-006 - Spike S-002: minimal `asset-registry` against the object store (Garage); SCN-001 dry-run with 1k assets.
+- B-006 - Spike S-002: minimal `asset-registry` against the object store (Garage); SCN-001 dry-run with 1k assets. **In progress:** thin `PostgresAssetRegistry` (psycopg 3, reserve/commit/resolve + audit) certified on Postgres 16, proving the schema + registry seam durably (cross-connection). SCN-001 1k-asset dry-run and the full lifecycle/quota port remain (B-009).
 - B-007 - Spike S-003: InvenioRDM compare; confirm compose path is the right choice for our requirements.
 - B-008 - Spike S-004: Garage certified as the self-hosted backend. **In progress:** Garage v1.0.1 dev stack stood up and the `S3ObjectStore` adapter + full guarded HTTP data plane pass against it (`tests/test_s3_garage_integration.py`).
 

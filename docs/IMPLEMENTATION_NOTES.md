@@ -10,7 +10,7 @@ How the **current code** relates to the spec, and deliberate shortcuts for the p
 | storage-guard | **Implemented** as an in-process facade (`guard.py`) + HTTP guarded data plane (`PUT`/`GET /objects/{alias}`) |
 | HTTP API (`asset_store_core.api`) | **Implemented** — FastAPI app: `/healthz`, `/readyz`, `/metrics`, reserve/commit/resolve, capability mint, guarded data plane; RFC 7807 errors; metrics + JSON logs + correlation ids |
 | Object store (real S3) | **First backend landed** — `s3_object_store.py` `S3ObjectStore` (boto3, optional `s3` extra) implements the `ObjectStoreBackend` seam against any S3-compatible service; **certified on Garage v1.0.1** for PUT/GET/stat/delete + server-side `sha256` on PUT + presigned-GET + the full guarded HTTP data plane (`tests/test_s3_garage_integration.py`, skipped unless `deploy/compose/.env.garage` is exported) |
-| Postgres | **Not implemented** — registry/audit still in-memory; deferred behind the existing registry seam |
+| Postgres registry | **Thin spike landed** — `pg_registry.py` `PostgresAssetRegistry` (psycopg 3, optional `pg` extra) durably implements reserve/commit/resolve behind the registry seam with transactional `alias.create`/`asset.commit` audit rows; certified against Postgres 16 (`tests/test_pg_registry.py`, skipped unless `ASSET_STORE_PG_DSN` is set). Quota/lifecycle/alias-rebind + SQLAlchemy/Alembic deferred to B-009 |
 
 Run tests:
 
