@@ -37,4 +37,6 @@ class ObjectStoreLocation:
     @classmethod
     def for_asset(cls, *, space: str, partition_id: str, asset_id: str) -> ObjectStoreLocation:
         bucket = normalize_bucket(space)
-        return cls(bucket=bucket, key=build_storage_key(partition_id=partition_id, asset_id=asset_id))
+        return cls(
+            bucket=bucket, key=build_storage_key(partition_id=partition_id, asset_id=asset_id)
+        )

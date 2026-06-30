@@ -157,9 +157,7 @@ class InMemoryAssetRegistry:
 
         asset = self._get_asset(asset_id)
         if asset.state is AssetState.DELETED:
-            raise InvalidStateTransitionError(
-                f"cannot attach alias to deleted asset {asset_id!r}"
-            )
+            raise InvalidStateTransitionError(f"cannot attach alias to deleted asset {asset_id!r}")
 
         norm_space = normalize_space(asset.space)
         alias_name = _alias_under_partition(asset.partition_id, alias)

@@ -24,9 +24,7 @@ def normalize_bucket(bucket: str) -> str:
     if name in {".", ".."}:
         raise ValidationError(f"invalid bucket: {bucket!r}")
     if name not in STORAGE_BUCKETS:
-        raise ValidationError(
-            f"unknown bucket {name!r}; expected one of {sorted(STORAGE_BUCKETS)}"
-        )
+        raise ValidationError(f"unknown bucket {name!r}; expected one of {sorted(STORAGE_BUCKETS)}")
     return name
 
 
@@ -68,7 +66,5 @@ def qualified_alias_for_partition(
 ) -> str:
     """Return qualified alias for an asset under ``partition_id``."""
 
-    scoped = (
-        f"{normalize_partition_id(partition_id)}/{normalize_relative_alias(relative_alias)}"
-    )
+    scoped = f"{normalize_partition_id(partition_id)}/{normalize_relative_alias(relative_alias)}"
     return qualified_alias(space, scoped)

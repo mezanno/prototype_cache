@@ -5,8 +5,8 @@ description = "Prototype asset-store core for immutable assets, aliases, and sco
 requires-python = ">=3.11"
 dependencies = []
 
-[project.optional-dependencies]
-dev = ["ruff>=0.4", "mypy>=1.8"]
+[dependency-groups]
+dev = ["ruff>=0.4", "mypy>=1.8", "pytest>=8.0"]
 
 [tool.ruff]
 line-length = 100

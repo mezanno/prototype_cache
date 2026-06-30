@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-
-UTC = timezone.utc
-from asset_store_core.compat import StrEnum
+from datetime import UTC, datetime
+from enum import StrEnum
 from types import MappingProxyType
-from typing import Mapping
 
 from asset_store_core.paths import qualified_alias as build_qualified_alias
 

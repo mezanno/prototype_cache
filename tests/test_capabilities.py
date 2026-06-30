@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from asset_store_core import (
     Capability,
@@ -21,7 +21,7 @@ class CapabilityTest(unittest.TestCase):
             capability_id="cap-1",
             operation=Operation.READ,
             scope_prefix="users/42/uploads",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             caller_service_id="worker",
         )
 
@@ -49,7 +49,7 @@ class CapabilityTest(unittest.TestCase):
             capability_id="cap-2",
             operation=Operation.READ,
             scope_prefix="users/42/uploads",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             caller_service_id="worker",
         )
 
@@ -64,7 +64,7 @@ class CapabilityTest(unittest.TestCase):
             capability_id="cap-3",
             operation=Operation.READ,
             scope_prefix="users/42/uploads",
-            expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+            expires_at=datetime.now(UTC) - timedelta(seconds=1),
             caller_service_id="worker",
         )
 
@@ -90,7 +90,7 @@ class CapabilityTest(unittest.TestCase):
             capability_id="cap-su",
             operation=Operation.READ,
             scope_prefix="users/42/uploads",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             caller_service_id="worker",
             single_use=True,
         )

@@ -7,18 +7,16 @@ single-use enforcement from ``FR-013`` via :class:`SingleUseLedger`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-
-UTC = timezone.utc
-from asset_store_core.compat import StrEnum
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from asset_store_core.errors import (
     CapabilityAlreadyConsumedError,
     CapabilityDeniedError,
     ValidationError,
 )
-from asset_store_core.paths import normalize_relative_alias, normalize_space
 from asset_store_core.models import utcnow
+from asset_store_core.paths import normalize_relative_alias, normalize_space
 
 
 class Operation(StrEnum):
