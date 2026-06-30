@@ -17,8 +17,12 @@ foundation everything else wraps:
   model, path/bucket normalization, object-key layout, an object-store backend seam
   (`ObjectStoreBackend` + in-memory `LocalObjectStore`), prefix-scoped capabilities,
   the FR-015 service-to-bucket allowlist, and a `StorageGuard` facade that composes
-  capability + service-policy + registry/object-store calls. No Postgres or real S3
-  backend yet.
+  capability + service-policy + registry/object-store calls. A first **real**
+  backend adapter now exists too:
+  [`s3_object_store.py`](../src/asset_store_core/s3_object_store.py) `S3ObjectStore`
+  (boto3, optional `s3` extra) implements the same `ObjectStoreBackend` seam
+  against any S3-compatible service and is certified against Garage (see below).
+  No Postgres yet.
 - [`src/asset_store_core/api/`](../src/asset_store_core/api/) - a FastAPI app
   (single process per ADR-002) exposing `/healthz`, `/readyz`, `/metrics`,
   reserve/commit/resolve, capability mint, and a capability-guarded data plane
@@ -41,8 +45,20 @@ foundation everything else wraps:
   checksum invariants, the audit read endpoint, the asset/alias lifecycle
   endpoints, quota accounting + eviction policy (FR-063/FR-066/FR-068), the HTTP
   contract incl.
-  problem+json, and the metrics/log/correlation-id skeleton.
-- `services/`, `tools/`, `deploy/` - placeholders only.
+  problem+json, and the metrics/log/correlation-id skeleton. A further **8
+  Garage-gated integration tests**
+  ([`tests/test_s3_garage_integration.py`](../tests/test_s3_garage_integration.py))
+  certify `S3ObjectStore` and the full HTTP data plane against a live Garage;
+  they **skip** unless `deploy/compose/.env.garage` is exported, so the default
+  `uv run pytest` run stays Docker-free (104 passed, 8 skipped).
+- [`deploy/compose/`](../deploy/compose/) - a single-node **Garage dev stack**
+  ([`docker-compose.garage.yml`](../deploy/compose/docker-compose.garage.yml) +
+  [`garage.toml`](../deploy/compose/garage/garage.toml) +
+  idempotent [`garage-init.sh`](../deploy/compose/garage-init.sh) that provisions
+  the `cache`/`tmp`/`users`/`results` buckets and a fixed DEV-ONLY key, writing
+  gitignored `.env.garage`). DEV-ONLY credentials are intentionally committed in
+  `garage.toml`/`garage-init.sh`; real secrets are never committed.
+- `services/`, `tools/` - placeholders only.
 
 Run the suite: `PYTHONPATH=src python -m unittest discover -s tests` (or
 `uv run pytest` once the dev-tooling task below lands).
@@ -83,10 +99,10 @@ prototype:
 **Work items:**
 
 - B-001 - assign owners/dates to Q-001..017; resolve Q-001/Q-002/Q-009/Q-013/Q-016.
-- B-005 - Spike S-001: object-store baseline on Garage / OVH S3 (PUT/GET/multipart/presigned URLs/lifecycle).
+- B-005 - Spike S-001: object-store baseline on Garage / OVH S3 (PUT/GET/multipart/presigned URLs/lifecycle). **In progress:** `S3ObjectStore` certified on Garage for PUT/GET/stat/delete + server-side `sha256` on PUT + presigned-GET; multipart and backend lifecycle still to exercise; OVH S3 tier pending real credentials.
 - B-006 - Spike S-002: minimal `asset-registry` against the object store (Garage); SCN-001 dry-run with 1k assets.
 - B-007 - Spike S-003: InvenioRDM compare; confirm compose path is the right choice for our requirements.
-- B-008 - Spike S-004: Garage certified as the self-hosted backend.
+- B-008 - Spike S-004: Garage certified as the self-hosted backend. **In progress:** Garage v1.0.1 dev stack stood up and the `S3ObjectStore` adapter + full guarded HTTP data plane pass against it (`tests/test_s3_garage_integration.py`).
 
 **Exit criteria:**
 

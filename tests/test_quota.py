@@ -152,9 +152,10 @@ class QuotaAccountingTest(unittest.TestCase):
         )
         committed = self.registry.get_partition_quota(space="cache", partition_id="gallica")
         self.assertEqual(10, committed.used_bytes)
-        self.assertEqual(AssetState.AVAILABLE, self.registry.resolve_alias(
-            space="cache", alias="gallica/a.png"
-        ).state)
+        self.assertEqual(
+            AssetState.AVAILABLE,
+            self.registry.resolve_alias(space="cache", alias="gallica/a.png").state,
+        )
 
 
 if __name__ == "__main__":

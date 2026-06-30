@@ -1,0 +1,26 @@
+# Garage object-store dev stack for the asset-store backend spike (S-001/S-004).
+#
+# Brings up a single-node Garage exposing the S3 API on :3900 and the admin API
+# on :3903. Provision it with ./garage-init.sh, which creates the four category
+# buckets (cache/tmp/users/results), an access key, and writes .env.garage.
+#
+#   docker compose -f docker-compose.garage.yml up -d
+#   ./garage-init.sh
+#   set -a && source .env.garage && set +a   # export creds for the test suite
+
+services:
+  garage:
+    image: dxflrs/garage:v1.0.1
+    container_name: asset-store-garage
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3900:3900"
+      - "127.0.0.1:3903:3903"
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+
+volumes:
+  garage-meta:
+  garage-data:
