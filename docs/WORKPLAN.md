@@ -24,14 +24,15 @@ foundation everything else wraps:
   reserve/commit/resolve, capability mint, and a capability-guarded data plane
   (`PUT`/`GET /objects/{alias}`, FR-010..015) where minted capabilities double as
   opaque bearer tokens via `Authorization: Capability <id>` (ADR-003 proxy mode),
+  a `GET /audit` read endpoint over the registry's audit trail (FR-008/FR-016),
   with a uniform RFC 7807 `application/problem+json` error model. Observability is
   wired in (ADR-013): Prometheus metrics, structured JSON logs, and an
   `X-Correlation-Id` per request.
-- [`tests/`](../tests/) - 72 unit/integration/contract tests, all green, covering
-  FR-001..008, FR-010..015, FR-020..022 (reserve -> PUT -> commit -> resolve,
+- [`tests/`](../tests/) - 77 unit/integration/contract tests, all green, covering
+  FR-001..008, FR-010..016, FR-020..022 (reserve -> PUT -> commit -> resolve,
   guarded read/write incl. scope/operation/expiry/single-use denials), FR-022
-  checksum invariants, the HTTP contract incl. problem+json, and the
-  metrics/log/correlation-id skeleton.
+  checksum invariants, the audit read endpoint, the HTTP contract incl.
+  problem+json, and the metrics/log/correlation-id skeleton.
 - `services/`, `tools/`, `deploy/` - placeholders only.
 
 Run the suite: `PYTHONPATH=src python -m unittest discover -s tests` (or

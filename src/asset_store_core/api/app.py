@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import timedelta
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Query, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from asset_store_core.api.errors import register_exception_handlers
@@ -21,6 +21,7 @@ from asset_store_core.api.metrics import SERVICE_NAME, build_metrics
 from asset_store_core.api.observability import ObservabilityMiddleware, configure_logging
 from asset_store_core.api.schemas import (
     AssetOut,
+    AuditEventOut,
     CapabilityMintRequest,
     CapabilityOut,
     CommitRequest,
@@ -111,6 +112,22 @@ def create_app(
     @app.get("/resolve", response_model=AssetOut)
     def resolve(space: str, alias: str) -> AssetOut:
         return AssetOut.from_asset(registry.resolve_alias(space=space, alias=alias))
+
+    @app.get("/audit", response_model=list[AuditEventOut])
+    def list_audit(
+        action: str | None = None,
+        target: str | None = None,
+        caller_service_id: str | None = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> list[AuditEventOut]:
+        matched = [
+            event
+            for event in registry.audit_events
+            if (action is None or event.action == action)
+            and (target is None or event.target == target)
+            and (caller_service_id is None or event.caller_service_id == caller_service_id)
+        ]
+        return [AuditEventOut.from_event(event) for event in matched[-limit:]]
 
     @app.post("/capabilities", status_code=201, response_model=CapabilityOut)
     def mint_capability(body: CapabilityMintRequest) -> CapabilityOut:

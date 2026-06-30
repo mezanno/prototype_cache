@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from asset_store_core.capabilities import Operation
-from asset_store_core.models import Asset
+from asset_store_core.models import Asset, AuditEvent
 
 
 class AliasSpecIn(BaseModel):
@@ -93,3 +93,27 @@ class CapabilityOut(BaseModel):
     caller_service_id: str
     expires_at: datetime
     single_use: bool
+
+
+class AuditEventOut(BaseModel):
+    """One recorded audit event (FR-008/FR-016)."""
+
+    action: str
+    target: str
+    caller_service_id: str
+    outcome: str
+    before: dict[str, str]
+    after: dict[str, str]
+    ts: datetime
+
+    @classmethod
+    def from_event(cls, event: AuditEvent) -> AuditEventOut:
+        return cls(
+            action=event.action,
+            target=event.target,
+            caller_service_id=event.caller_service_id,
+            outcome=event.outcome,
+            before=dict(event.before),
+            after=dict(event.after),
+            ts=event.ts,
+        )
