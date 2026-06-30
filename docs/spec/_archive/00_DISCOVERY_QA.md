@@ -8,7 +8,7 @@ After this is filled, I will convert it into:
 
 - `01_SCOPE.md`
 - `02_REQUIREMENTS.md`
-- `03_ARCHITECTURE_AND_DECISIONS.md`
+- `03_ARCHITECTURE.md`
 - `04_OPERATIONS_AND_READINESS.md`
 - `05_BACKLOG_AND_OPEN_QUESTIONS.md`
 

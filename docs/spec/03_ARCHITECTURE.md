@@ -1,4 +1,6 @@
-# 03 - Architecture And Decisions
+# 03 - Architecture
+
+This is the canonical architecture specification for the `asset-store` module.
 
 > Terms and acronyms: [`README.md` glossary](README.md#glossary-and-acronyms)
 

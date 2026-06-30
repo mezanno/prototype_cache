@@ -15,5 +15,5 @@ Archived on 2026-05-18 as part of the Step 1 cleanup defined in the plan `Spec c
 ## How to use
 
 - Treat these files as historical context only. Do **not** edit them.
-- The cleaned, authoritative spec lives in [`../01_SCOPE.md`](../01_SCOPE.md), [`../02_REQUIREMENTS.md`](../02_REQUIREMENTS.md), [`../00A_SCENARIOS.md`](../00A_SCENARIOS.md), [`../03_ARCHITECTURE_AND_DECISIONS.md`](../03_ARCHITECTURE_AND_DECISIONS.md), [`../04_OPERATIONS_AND_READINESS.md`](../04_OPERATIONS_AND_READINESS.md), [`../05_BACKLOG_AND_OPEN_QUESTIONS.md`](../05_BACKLOG_AND_OPEN_QUESTIONS.md), and [`../06_OSS_SURVEY.md`](../06_OSS_SURVEY.md).
+- The cleaned, authoritative spec lives in [`../01_SCOPE.md`](../01_SCOPE.md), [`../02_REQUIREMENTS.md`](../02_REQUIREMENTS.md), [`../00A_SCENARIOS.md`](../00A_SCENARIOS.md), [`../03_ARCHITECTURE.md`](../03_ARCHITECTURE.md), [`../04_OPERATIONS_AND_READINESS.md`](../04_OPERATIONS_AND_READINESS.md), [`../05_BACKLOG_AND_OPEN_QUESTIONS.md`](../05_BACKLOG_AND_OPEN_QUESTIONS.md), and [`../06_OSS_SURVEY.md`](../06_OSS_SURVEY.md).
 - If a requirement seems missing from the active spec, check whether it was intentionally deferred. If it was overlooked, raise an `Q-*` row in `05_BACKLOG_AND_OPEN_QUESTIONS.md` rather than re-editing archived material.

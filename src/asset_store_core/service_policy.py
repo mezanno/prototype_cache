@@ -12,7 +12,7 @@ from asset_store_core.capabilities import Operation
 from asset_store_core.errors import CapabilityDeniedError
 from asset_store_core.paths import STORAGE_BUCKETS, normalize_bucket
 
-# Mirrors docs/spec/03_ARCHITECTURE_AND_DECISIONS.md service matrix.
+# Mirrors docs/spec/03_ARCHITECTURE.md service matrix.
 _SERVICE_READ_BUCKETS: dict[str, frozenset[str]] = {
     "fetcher": frozenset({"cache", "tmp"}),
     "upload-api": frozenset({"users", "tmp"}),
