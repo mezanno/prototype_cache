@@ -124,6 +124,26 @@ class S3ObjectStoreGarageTest(unittest.TestCase):
         self.assertEqual(b"second-and-longer", self.store.get_object(location))
         self.assertEqual(compute_checksum(b"second-and-longer"), stat.checksum)
 
+    def test_multipart_round_trip(self) -> None:
+        """Certify Garage multipart upload via the adapter (S-001).
+
+        12 MiB at the default 8 MiB threshold/part size spans two parts (8 MiB +
+        4 MiB), exercising create -> upload_part x2 -> complete on real Garage.
+        """
+
+        location = self._location()
+        payload = b"m" * (12 * 1024 * 1024)
+
+        stat = self.store.put_object(location, payload)
+        self.assertEqual(len(payload), stat.size_bytes)
+        self.assertEqual(compute_checksum(payload), stat.checksum)
+        self.assertEqual(payload, self.store.get_object(location))
+
+        readback = self.store.stat_object(location)
+        assert readback is not None
+        self.assertEqual(len(payload), readback.size_bytes)
+        self.assertEqual(compute_checksum(payload), readback.checksum)
+
     def test_presigned_get_url_round_trip(self) -> None:
         """Certify Garage presigned-URL GET works (S-001, future hybrid mode)."""
 

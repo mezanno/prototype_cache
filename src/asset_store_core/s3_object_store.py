@@ -10,6 +10,10 @@ canonical ``sha256:<hex>`` checksum itself on write (FR-022, never trusting the
 S3 ETag, which is MD5/multipart-dependent) and stashes it in object metadata so
 ``stat_object`` can return it without re-reading the payload.
 
+Large payloads are uploaded via S3 **multipart** transparently inside
+``put_object`` once they reach ``multipart_threshold``; the protocol seam stays a
+single ``put_object(location, bytes)`` call (S-001).
+
 ``boto3`` is an optional dependency; install it with the ``s3`` extra
 (``pip install asset-store-prototype[s3]``). Importing this module without boto3
 raises a clear :class:`ImportError`.
@@ -39,6 +43,11 @@ if TYPE_CHECKING:
 # Object-metadata key under which we persist our canonical checksum string.
 _CHECKSUM_META_KEY = "checksum"
 
+# S3 (and Garage) require every part except the last to be >= 5 MiB.
+_S3_MIN_PART_SIZE = 5 * 1024 * 1024
+_DEFAULT_MULTIPART_THRESHOLD = 8 * 1024 * 1024
+_DEFAULT_PART_SIZE = 8 * 1024 * 1024
+
 
 def _is_not_found(error: ClientError) -> bool:
     """Whether a botocore ``ClientError`` denotes a missing key (404 / NoSuchKey)."""
@@ -56,7 +65,7 @@ class S3ObjectStore:
     (virtual-host addressing needs per-bucket DNS we do not control in dev).
     """
 
-    __slots__ = ("_client",)
+    __slots__ = ("_client", "_multipart_threshold", "_part_size")
 
     def __init__(
         self,
@@ -65,7 +74,11 @@ class S3ObjectStore:
         region: str,
         access_key: str,
         secret_key: str,
+        multipart_threshold: int = _DEFAULT_MULTIPART_THRESHOLD,
+        part_size: int = _DEFAULT_PART_SIZE,
     ) -> None:
+        self._multipart_threshold = multipart_threshold
+        self._part_size = part_size
         self._client: Any = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
@@ -82,13 +95,57 @@ class S3ObjectStore:
     def put_object(self, location: ObjectStoreLocation, data: bytes) -> StoredObjectStat:
         payload = bytes(data)
         checksum = compute_checksum(payload)
-        self._client.put_object(
-            Bucket=location.bucket,
-            Key=location.key,
-            Body=payload,
-            Metadata={_CHECKSUM_META_KEY: checksum},
-        )
+        metadata = {_CHECKSUM_META_KEY: checksum}
+        if len(payload) >= self._multipart_threshold:
+            self._put_multipart(location, payload, metadata)
+        else:
+            self._client.put_object(
+                Bucket=location.bucket,
+                Key=location.key,
+                Body=payload,
+                Metadata=metadata,
+            )
         return StoredObjectStat(size_bytes=len(payload), checksum=checksum)
+
+    def _put_multipart(
+        self,
+        location: ObjectStoreLocation,
+        payload: bytes,
+        metadata: dict[str, str],
+    ) -> None:
+        """Upload ``payload`` via S3 multipart, aborting the upload on any failure.
+
+        ``part_size`` must be >= 5 MiB for real S3/Garage backends (every part but
+        the last is subject to that floor); the default satisfies it.
+        """
+
+        created = self._client.create_multipart_upload(
+            Bucket=location.bucket, Key=location.key, Metadata=metadata
+        )
+        upload_id = created["UploadId"]
+        try:
+            parts: list[dict[str, Any]] = []
+            for part_number, start in enumerate(range(0, len(payload), self._part_size), start=1):
+                chunk = payload[start : start + self._part_size]
+                result = self._client.upload_part(
+                    Bucket=location.bucket,
+                    Key=location.key,
+                    UploadId=upload_id,
+                    PartNumber=part_number,
+                    Body=chunk,
+                )
+                parts.append({"ETag": result["ETag"], "PartNumber": part_number})
+            self._client.complete_multipart_upload(
+                Bucket=location.bucket,
+                Key=location.key,
+                UploadId=upload_id,
+                MultipartUpload={"Parts": parts},
+            )
+        except Exception:
+            self._client.abort_multipart_upload(
+                Bucket=location.bucket, Key=location.key, UploadId=upload_id
+            )
+            raise
 
     def get_object(self, location: ObjectStoreLocation) -> bytes:
         try:

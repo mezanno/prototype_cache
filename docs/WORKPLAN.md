@@ -101,7 +101,7 @@ prototype:
 **Work items:**
 
 - B-001 - assign owners/dates to Q-001..017; resolve Q-001/Q-002/Q-009/Q-013/Q-016.
-- B-005 - Spike S-001: object-store baseline on Garage / OVH S3 (PUT/GET/multipart/presigned URLs/lifecycle). **In progress:** `S3ObjectStore` certified on Garage for PUT/GET/stat/delete + server-side `sha256` on PUT + presigned-GET; multipart and backend lifecycle still to exercise; OVH S3 tier pending real credentials.
+- B-005 - Spike S-001: object-store baseline on Garage / OVH S3 (PUT/GET/multipart/presigned URLs/lifecycle). **In progress:** `S3ObjectStore` certified on Garage for PUT/GET/stat/delete + server-side `sha256` on PUT + transparent multipart upload (>= threshold, abort-on-failure) + presigned-GET; backend-native lifecycle still to exercise; OVH S3 tier pending real credentials.
 - B-006 - Spike S-002: minimal `asset-registry` against the object store (Garage); SCN-001 dry-run with 1k assets.
 - B-007 - Spike S-003: InvenioRDM compare; confirm compose path is the right choice for our requirements.
 - B-008 - Spike S-004: Garage certified as the self-hosted backend. **In progress:** Garage v1.0.1 dev stack stood up and the `S3ObjectStore` adapter + full guarded HTTP data plane pass against it (`tests/test_s3_garage_integration.py`).

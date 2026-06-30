@@ -43,10 +43,11 @@ The `ObjectStoreBackend` protocol has two implementations, swappable via
 | Implementation | Use | Notes |
 |----------------|-----|-------|
 | `LocalObjectStore` | Default / unit tests | In-memory dict; infrastructure-free, fast |
-| `S3ObjectStore` | Real durable storage | boto3, path-style + SigV4; computes the canonical `sha256:<hex>` on PUT (FR-022, never the S3 ETag) and stores it in object metadata for `stat`; `NoSuchKey`/404 → `ObjectNotFoundError`; idempotent delete |
+| `S3ObjectStore` | Real durable storage | boto3, path-style + SigV4; computes the canonical `sha256:<hex>` on PUT (FR-022, never the S3 ETag) and stores it in object metadata for `stat`; **transparent multipart** upload above `multipart_threshold` (abort-on-failure); `NoSuchKey`/404 → `ObjectNotFoundError`; idempotent delete |
 
-`S3ObjectStore` is **certified on Garage** (ADR-001, S-004 in progress); the hosted
-OVH S3 tier and multipart/backend-lifecycle remain on the S-001 to-do list. See
+`S3ObjectStore` is **certified on Garage** (ADR-001, S-004 in progress): PUT/GET/
+stat/delete, multipart round-trip, and presigned-GET all pass; the hosted OVH S3
+tier and backend-native lifecycle remain on the S-001 to-do list. See
 [`deploy/compose/README.md`](../deploy/compose/README.md) for the local run recipe.
 
 ## “Are we just building a filesystem on S3?”
