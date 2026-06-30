@@ -46,7 +46,9 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(200, commit.status_code)
         self.assertEqual("available", commit.json()["state"])
 
-        resolved = self.client.get("/resolve", params={"space": "cache", "alias": "gallica/img.png"})
+        resolved = self.client.get(
+            "/resolve", params={"space": "cache", "alias": "gallica/img.png"}
+        )
         self.assertEqual(200, resolved.status_code)
         self.assertEqual(reserved["asset_id"], resolved.json()["asset_id"])
 
