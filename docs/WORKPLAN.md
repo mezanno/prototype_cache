@@ -8,6 +8,48 @@ The plan below is aligned with `ADR-001 = OVH S3 (hosted) + Garage (self-hosted)
 
 Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`spec/01_SCOPE.md`](spec/01_SCOPE.md) and [`spec/02_REQUIREMENTS.md`](spec/02_REQUIREMENTS.md). Backlog IDs (`B-*`) come from [`spec/05_BACKLOG_AND_OPEN_QUESTIONS.md`](spec/05_BACKLOG_AND_OPEN_QUESTIONS.md).
 
+## Current state (as of 2026-06-30)
+
+Ahead of the phase order below, a **pure domain core** already exists and is the
+foundation everything else wraps:
+
+- [`src/asset_store_core/`](../src/asset_store_core/) - in-memory registry, alias
+  model, path/bucket normalization, object-key layout, prefix-scoped capabilities,
+  and the FR-015 service-to-bucket allowlist. No HTTP, Postgres, or object store.
+- [`tests/`](../tests/) - 32 unit tests, all green, covering FR-001..008, FR-012,
+  FR-013, FR-015, and FR-022 invariants.
+- `services/`, `tools/`, `deploy/` - placeholders only.
+
+Run the suite: `PYTHONPATH=src python -m unittest discover -s tests` (or
+`uv run pytest` once the dev-tooling task below lands).
+
+This is a "domain-core-first" head start on Phase 2, built before the Phase 1
+scaffold. It does **not** move the phase boundaries; it means Phase 2's registry
+work (B-009) extends an existing, tested core rather than starting from zero.
+
+**Core gaps already known** (carry into B-009 so they are not lost):
+
+- FR-003: an asset reaching zero aliases is not yet auto-marked for garbage collection.
+- FR-008: the `alias.rebind` audit event does not yet carry both `before`/`after` asset ids.
+- `eviction_policy`, `PartitionQuota`, `BucketQuota` (FR-063..069, ADR-009) are not in
+  the in-memory model yet; the spec requires them from the registry MVP.
+
+## Engineering quality bar
+
+Non-negotiable for every PR, in service of a simple, clean, stable, well-tested
+prototype:
+
+- **Deeply tested:** every behaviour change ships with unit tests; every new
+  control-plane path ships with an integration test. Keep the domain core
+  infrastructure-free so it stays fast to test.
+- **Simple:** prefer the smallest design that satisfies the linked `FR-*`/`NFR-*`.
+  No speculative abstractions; one obvious way to do each operation.
+- **Documented:** public functions and endpoints carry docstrings linking the
+  requirement id; [`docs/IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) tracks
+  code-vs-spec status.
+- **Clean + stable:** `ruff`, `mypy --strict`, and the full test suite must pass
+  locally and in CI before merge; no skipped tests on the base branch.
+
 ## Phase 0 - Spec & survey close-out
 
 **Goal:** lock unknowns blocking the build; validate `ADR-001`/`ADR-002`/`ADR-003` via time-boxed spikes.
@@ -55,7 +97,7 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 
 **Work items:**
 
-- B-009 - `asset-registry` MVP: data model + Alembic migrations + endpoints implementing FR-001..007.
+- B-009 - `asset-registry` MVP: extend the existing [`src/asset_store_core/`](../src/asset_store_core/) domain core with a Postgres-backed adapter + Alembic migrations + endpoints implementing FR-001..007; add the `eviction_policy`, `PartitionQuota`, and `BucketQuota` entities (FR-063..069) and close the known core gaps listed under "Current state".
 - B-010 - `storage-guard` MVP: service-identity auth + FR-010..014 + audit log + presigned URL minting.
 - B-011 - `bulk-loader` CLI implementing SCN-001 against 10k assets.
 - B-012 - `worker-sim` CLI implementing SCN-002 (read path) and SCN-005 (write path).
@@ -125,15 +167,40 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 - Twice-weekly delivery sync: backlog progress, blockers, risks.
 - Single source of truth: `docs/spec/` and the ADR table.
 
-## Immediate Next 7 Tasks
+## Immediate next actions (revised 2026-06-30)
 
-1. Assign owners and dates to all `Q-*` rows in [`spec/05_BACKLOG_AND_OPEN_QUESTIONS.md`](spec/05_BACKLOG_AND_OPEN_QUESTIONS.md).
-2. Schedule Spikes S-001 and S-002 (B-005, B-006); allocate 4-5 working days total.
-3. Schedule Spike S-003 (B-007) immediately after S-002 to confirm the compose-vs-adopt choice.
-4. Schedule Spike S-004 (B-008) opportunistically; non-blocking.
-5. Create the repo scaffold tickets per B-002 (six directories listed in Phase 1).
-6. Define CI pipeline as B-003 (ruff, mypy, pytest, build, trivy).
-7. Stand up the observability skeleton (B-004) so every following PR can be reasoned about.
+The earlier "next 7 tasks" were spec close-out and spike-scheduling items written
+when no code existed. The domain core is now in place and ADR-001/002 are
+effectively settled (MinIO disqualified; compose chosen), so the next actions are
+reordered to **lock quality first, then grow the core into a running service**.
+
+1. **Lock the test + tooling baseline (B-003, brought forward).** `pytest` is
+   configured in [`pyproject.toml`](../pyproject.toml) but is not a declared dev
+   dependency, so `uv run pytest` currently fails and tests only run via
+   `PYTHONPATH=src ... unittest`. Add `pytest` to the dev extra, wire `ruff` +
+   `mypy --strict`, add pre-commit, and a minimal CI job running all three.
+   *Done = one command runs lint, types, and tests green on a clean checkout.*
+2. **Close the known core gaps** (FR-003 zero-alias GC mark; FR-008 rebind
+   `before`/`after` audit ids) with tests, while the core is still small and
+   infrastructure-free.
+3. **Add the storage adapter seam.** Define the `storage` backend interface plus a
+   local/in-memory implementation; defer Garage/OVH wiring. Cover
+   reserve -> PUT -> commit -> resolve with integration tests against the fake backend.
+4. **Add the guard facade.** One place that composes `service_policy` (FR-015) +
+   capability checks (FR-010..013) + registry calls, so auth is never spread across
+   callers. Re-run the S-4 scoping suite through it.
+5. **Stand up the FastAPI app (B-002/B-010 slice).** Expose reserve/commit/resolve
+   and capability mint over HTTP with `/healthz` and `/readyz`; contract-test the
+   RFC 7807 error model. One process per ADR-002.
+6. **Observability skeleton (B-004).** Structured logs + `/metrics` from the first
+   endpoint, so every later PR is observable end to end.
+7. **Resume deferred spikes as needed:** S-001 object-store baseline and S-004
+   Garage certification (B-005, B-008) before real-backend wiring; S-003 InvenioRDM
+   compare (B-007) is now low priority since ADR-002 is effectively settled.
+
+Parallel doc hygiene (non-blocking): assign owners/dates to the remaining open
+`Q-*` rows (B-001) and flip ADR-001/002/003 from *Proposed* to *Accepted* in
+[`spec/03_ARCHITECTURE.md`](spec/03_ARCHITECTURE.md) once S-001/S-004 confirm them.
 
 ## Phase Dependency Diagram
 
