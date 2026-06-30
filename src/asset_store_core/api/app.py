@@ -1,9 +1,11 @@
 """FastAPI application factory for the asset-store prototype (ADR-002).
 
-One process exposing the reserve/commit/resolve registry operations and capability
-minting over HTTP, plus ``/healthz`` and ``/readyz`` probes. Storage is the
-in-memory core; Postgres and a real S3 backend are wired later behind the same
-interfaces.
+One process exposing the reserve/commit/resolve registry operations, capability
+minting, and a capability-guarded data plane (``PUT``/``GET /objects/{alias}``) over
+HTTP, plus ``/healthz``, ``/readyz`` and ``/metrics``. Minted capabilities double as
+opaque bearer tokens presented via ``Authorization: Capability <id>`` (ADR-003 proxy
+mode). Storage is the in-memory core; Postgres and a real S3 backend are wired later
+behind the same interfaces.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from __future__ import annotations
 from datetime import timedelta
 from uuid import uuid4
 
-from fastapi import FastAPI, Response
+from fastapi import Depends, FastAPI, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from asset_store_core.api.errors import register_exception_handlers
@@ -26,11 +28,14 @@ from asset_store_core.api.schemas import (
 )
 from asset_store_core.capabilities import Capability
 from asset_store_core.errors import CapabilityDeniedError
+from asset_store_core.guard import StorageGuard
 from asset_store_core.models import utcnow
 from asset_store_core.object_store import LocalObjectStore, ObjectStoreBackend
 from asset_store_core.paths import normalize_space
 from asset_store_core.registry import InMemoryAssetRegistry
 from asset_store_core.service_policy import assert_service_bucket_allowed
+
+CAPABILITY_SCHEME = "capability"
 
 
 def create_app(
@@ -42,15 +47,30 @@ def create_app(
 
     registry = registry if registry is not None else InMemoryAssetRegistry()
     store = store if store is not None else LocalObjectStore()
+    guard = StorageGuard(registry, store)
+    capabilities: dict[str, Capability] = {}
     metrics = build_metrics()
     logger = configure_logging()
 
     app = FastAPI(title="asset-store", version="0.1.0")
     app.state.registry = registry
     app.state.store = store
+    app.state.guard = guard
+    app.state.capabilities = capabilities
     app.state.metrics = metrics
     app.add_middleware(ObservabilityMiddleware, metrics=metrics, logger=logger)
     register_exception_handlers(app)
+
+    def require_capability(request: Request) -> Capability:
+        """Resolve the bearer capability from ``Authorization: Capability <id>``."""
+
+        scheme, _, token = request.headers.get("authorization", "").partition(" ")
+        if scheme.lower() != CAPABILITY_SCHEME or not token.strip():
+            raise CapabilityDeniedError("missing capability credential")
+        capability = capabilities.get(token.strip())
+        if capability is None:
+            raise CapabilityDeniedError("unknown capability credential")
+        return capability
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -111,6 +131,7 @@ def create_app(
             single_use=body.single_use,
         )
         metrics.capability_issued_total.labels(SERVICE_NAME, body.operation.value, "granted").inc()
+        capabilities[cap.capability_id] = cap
         return CapabilityOut(
             capability_id=cap.capability_id,
             operation=cap.operation.value,
@@ -119,5 +140,33 @@ def create_app(
             expires_at=cap.expires_at,
             single_use=cap.single_use,
         )
+
+    @app.put("/objects/{alias:path}", status_code=201, response_model=AssetOut)
+    async def write_object(
+        alias: str,
+        request: Request,
+        capability: Capability = Depends(require_capability),
+        mutable: bool = False,
+        expected_checksum: str | None = None,
+    ) -> AssetOut:
+        data = await request.body()
+        mime = request.headers.get("content-type")
+        asset = guard.write_object(
+            capability=capability,
+            alias=alias,
+            data=data,
+            mutable=mutable,
+            mime=mime,
+            expected_checksum=expected_checksum,
+        )
+        return AssetOut.from_asset(asset)
+
+    @app.get("/objects/{alias:path}")
+    def read_object(
+        alias: str,
+        capability: Capability = Depends(require_capability),
+    ) -> Response:
+        data = guard.read_bytes(capability=capability, alias=alias)
+        return Response(content=data, media_type="application/octet-stream")
 
     return app

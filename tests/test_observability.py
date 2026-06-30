@@ -54,7 +54,7 @@ class MetricsEndpointTest(unittest.TestCase):
             },
         )
         body = self.client.get("/metrics").text
-        self.assertIn('asset_store_capability_issued_total', body)
+        self.assertIn("asset_store_capability_issued_total", body)
         self.assertIn('outcome="granted"', body)
         self.assertIn('outcome="denied"', body)
 
