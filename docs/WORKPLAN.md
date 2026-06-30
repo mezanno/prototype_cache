@@ -73,8 +73,10 @@ work (B-009) extends an existing, tested core rather than starting from zero.
   now **closed** in the in-memory core with tests.
 - `eviction_policy`, `PartitionQuota`, `BucketQuota` (FR-063/FR-066/FR-068, ADR-009)
   are now **in the in-memory model** with commit-time ceilings, usage accounting,
-  and HTTP endpoints; the async LFU eviction sweeps (FR-064/FR-067) and warn-ratio
-  metrics remain deferred to the lifecycle worker.
+  HTTP endpoints, and a commit-time bucket fill-ratio gauge
+  (`asset_store_bucket_fill_ratio`) plus a `quota.bucket_warn` log on
+  `warn_threshold` crossing; the async LFU eviction sweeps (FR-064/FR-067) remain
+  deferred to the lifecycle worker.
 
 ## Engineering quality bar
 

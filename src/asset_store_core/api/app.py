@@ -73,6 +73,30 @@ def create_app(
     app.add_middleware(ObservabilityMiddleware, metrics=metrics, logger=logger)
     register_exception_handlers(app)
 
+    def observe_bucket_fill(space: str) -> None:
+        """Publish the bucket fill ratio and warn when it crosses ``warn_threshold``.
+
+        Called after every successful commit (FR-068, ADR-009). The async LFU
+        eviction sweep (FR-064/FR-067) stays deferred to the lifecycle worker;
+        this only surfaces the warn signal for dashboards and alerts.
+        """
+
+        quota = registry.get_bucket_quota(space=space)
+        if quota.quota_bytes is None or quota.quota_bytes <= 0:
+            return
+        ratio = quota.used_bytes / quota.quota_bytes
+        metrics.bucket_fill_ratio.labels(SERVICE_NAME, quota.space).set(ratio)
+        if ratio >= quota.warn_threshold:
+            logger.warning(
+                "bucket %s at %.1f%% of quota (%d/%d bytes, warn>=%.0f%%)",
+                quota.space,
+                ratio * 100,
+                quota.used_bytes,
+                quota.quota_bytes,
+                quota.warn_threshold * 100,
+                extra={"event": "quota.bucket_warn", "space": quota.space},
+            )
+
     def require_capability(request: Request) -> Capability:
         """Resolve the bearer capability from ``Authorization: Capability <id>``."""
 
@@ -119,6 +143,7 @@ def create_app(
             mime=body.mime,
             expected_checksum=body.expected_checksum,
         )
+        observe_bucket_fill(asset.space)
         return AssetOut.from_asset(asset)
 
     @app.get("/resolve", response_model=AssetOut)
@@ -271,6 +296,7 @@ def create_app(
             mime=mime,
             expected_checksum=expected_checksum,
         )
+        observe_bucket_fill(asset.space)
         return AssetOut.from_asset(asset)
 
     @app.get("/objects/{alias:path}")

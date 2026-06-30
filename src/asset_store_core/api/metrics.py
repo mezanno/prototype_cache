@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from prometheus_client import CollectorRegistry, Counter, Histogram
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 SERVICE_NAME = "asset-store"
 
@@ -22,6 +22,7 @@ class Metrics:
     requests_total: Counter
     request_duration_seconds: Histogram
     capability_issued_total: Counter
+    bucket_fill_ratio: Gauge
 
 
 def build_metrics() -> Metrics:
@@ -46,9 +47,16 @@ def build_metrics() -> Metrics:
         ["service", "op", "outcome"],
         registry=registry,
     )
+    bucket_fill_ratio = Gauge(
+        "asset_store_bucket_fill_ratio",
+        "Bucket usage as a fraction of its configured quota_bytes (FR-068, ADR-009).",
+        ["service", "space"],
+        registry=registry,
+    )
     return Metrics(
         registry=registry,
         requests_total=requests_total,
         request_duration_seconds=request_duration_seconds,
         capability_issued_total=capability_issued_total,
+        bucket_fill_ratio=bucket_fill_ratio,
     )
