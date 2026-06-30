@@ -25,13 +25,18 @@ foundation everything else wraps:
   (`PUT`/`GET /objects/{alias}`, FR-010..015) where minted capabilities double as
   opaque bearer tokens via `Authorization: Capability <id>` (ADR-003 proxy mode),
   a `GET /audit` read endpoint over the registry's audit trail (FR-008/FR-016),
+  and the asset/alias lifecycle transitions over HTTP (`PATCH
+  /assets/{id}/annotations`, `POST /assets/{id}/expire`, `POST /assets/{id}/delete`,
+  `POST /aliases/detach`, `POST /aliases/detach-mutable`, `POST /aliases/rebind`,
+  FR-003/FR-005..008),
   with a uniform RFC 7807 `application/problem+json` error model. Observability is
   wired in (ADR-013): Prometheus metrics, structured JSON logs, and an
   `X-Correlation-Id` per request.
-- [`tests/`](../tests/) - 77 unit/integration/contract tests, all green, covering
+- [`tests/`](../tests/) - 84 unit/integration/contract tests, all green, covering
   FR-001..008, FR-010..016, FR-020..022 (reserve -> PUT -> commit -> resolve,
   guarded read/write incl. scope/operation/expiry/single-use denials), FR-022
-  checksum invariants, the audit read endpoint, the HTTP contract incl.
+  checksum invariants, the audit read endpoint, the asset/alias lifecycle
+  endpoints, the HTTP contract incl.
   problem+json, and the metrics/log/correlation-id skeleton.
 - `services/`, `tools/`, `deploy/` - placeholders only.
 

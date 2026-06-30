@@ -1,11 +1,12 @@
 """FastAPI application factory for the asset-store prototype (ADR-002).
 
-One process exposing the reserve/commit/resolve registry operations, capability
-minting, and a capability-guarded data plane (``PUT``/``GET /objects/{alias}``) over
-HTTP, plus ``/healthz``, ``/readyz`` and ``/metrics``. Minted capabilities double as
-opaque bearer tokens presented via ``Authorization: Capability <id>`` (ADR-003 proxy
-mode). Storage is the in-memory core; Postgres and a real S3 backend are wired later
-behind the same interfaces.
+One process exposing the reserve/commit/resolve registry operations, asset and
+alias lifecycle transitions (expire/delete/annotations, alias detach/rebind),
+capability minting, and a capability-guarded data plane (``PUT``/``GET
+/objects/{alias}``) over HTTP, plus ``/healthz``, ``/readyz`` and ``/metrics``.
+Minted capabilities double as opaque bearer tokens presented via
+``Authorization: Capability <id>`` (ADR-003 proxy mode). Storage is the in-memory
+core; Postgres and a real S3 backend are wired later behind the same interfaces.
 """
 
 from __future__ import annotations
@@ -20,11 +21,16 @@ from asset_store_core.api.errors import register_exception_handlers
 from asset_store_core.api.metrics import SERVICE_NAME, build_metrics
 from asset_store_core.api.observability import ObservabilityMiddleware, configure_logging
 from asset_store_core.api.schemas import (
+    AliasBindingOut,
+    AliasDetachRequest,
+    AliasRebindRequest,
+    AnnotationsUpdateRequest,
     AssetOut,
     AuditEventOut,
     CapabilityMintRequest,
     CapabilityOut,
     CommitRequest,
+    LifecycleRequest,
     ReserveRequest,
 )
 from asset_store_core.capabilities import Capability
@@ -112,6 +118,50 @@ def create_app(
     @app.get("/resolve", response_model=AssetOut)
     def resolve(space: str, alias: str) -> AssetOut:
         return AssetOut.from_asset(registry.resolve_alias(space=space, alias=alias))
+
+    @app.patch("/assets/{asset_id}/annotations", response_model=AssetOut)
+    def update_annotations(asset_id: str, body: AnnotationsUpdateRequest) -> AssetOut:
+        asset = registry.update_annotations(
+            asset_id=asset_id,
+            patch=body.patch,
+            caller_service_id=body.caller_service_id,
+            overwrite=body.overwrite,
+        )
+        return AssetOut.from_asset(asset)
+
+    @app.post("/assets/{asset_id}/expire", response_model=AssetOut)
+    def expire(asset_id: str, body: LifecycleRequest) -> AssetOut:
+        asset = registry.expire_asset(asset_id=asset_id, caller_service_id=body.caller_service_id)
+        return AssetOut.from_asset(asset)
+
+    @app.post("/assets/{asset_id}/delete", response_model=AssetOut)
+    def delete(asset_id: str, body: LifecycleRequest) -> AssetOut:
+        asset = registry.delete_asset(asset_id=asset_id, caller_service_id=body.caller_service_id)
+        return AssetOut.from_asset(asset)
+
+    @app.post("/aliases/detach", status_code=204)
+    def detach_alias(body: AliasDetachRequest) -> Response:
+        registry.detach_alias(
+            space=body.space, alias=body.alias, caller_service_id=body.caller_service_id
+        )
+        return Response(status_code=204)
+
+    @app.post("/aliases/detach-mutable", response_model=AliasBindingOut)
+    def detach_mutable_alias(body: AliasDetachRequest) -> AliasBindingOut:
+        binding = registry.detach_mutable_alias(
+            space=body.space, alias=body.alias, caller_service_id=body.caller_service_id
+        )
+        return AliasBindingOut.from_binding(binding)
+
+    @app.post("/aliases/rebind", response_model=AliasBindingOut)
+    def rebind_alias(body: AliasRebindRequest) -> AliasBindingOut:
+        binding = registry.rebind_alias(
+            space=body.space,
+            alias=body.alias,
+            new_asset_id=body.new_asset_id,
+            caller_service_id=body.caller_service_id,
+        )
+        return AliasBindingOut.from_binding(binding)
 
     @app.get("/audit", response_model=list[AuditEventOut])
     def list_audit(

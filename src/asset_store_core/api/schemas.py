@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from asset_store_core.capabilities import Operation
-from asset_store_core.models import Asset, AuditEvent
+from asset_store_core.models import AliasBinding, Asset, AuditEvent
 
 
 class AliasSpecIn(BaseModel):
@@ -116,4 +116,57 @@ class AuditEventOut(BaseModel):
             before=dict(event.before),
             after=dict(event.after),
             ts=event.ts,
+        )
+
+
+class LifecycleRequest(BaseModel):
+    """Body for the asset state transitions ``expire``/``delete`` (FR-006/FR-007)."""
+
+    caller_service_id: str
+
+
+class AnnotationsUpdateRequest(BaseModel):
+    """Body for ``PATCH /assets/{asset_id}/annotations`` (FR-005)."""
+
+    patch: dict[str, str]
+    caller_service_id: str
+    overwrite: bool = False
+
+
+class AliasDetachRequest(BaseModel):
+    """Body for the alias detach endpoints (FR-003)."""
+
+    space: str
+    alias: str
+    caller_service_id: str
+
+
+class AliasRebindRequest(BaseModel):
+    """Body for ``POST /aliases/rebind`` (FR-008)."""
+
+    space: str
+    alias: str
+    new_asset_id: str
+    caller_service_id: str
+
+
+class AliasBindingOut(BaseModel):
+    """Alias binding projection returned by the detach/rebind endpoints."""
+
+    space: str
+    alias: str
+    asset_id: str | None
+    mutable: bool
+    previous_asset_id: str | None
+    updated_at: datetime
+
+    @classmethod
+    def from_binding(cls, binding: AliasBinding) -> AliasBindingOut:
+        return cls(
+            space=binding.space,
+            alias=binding.alias,
+            asset_id=binding.asset_id,
+            mutable=binding.mutable,
+            previous_asset_id=binding.previous_asset_id,
+            updated_at=binding.updated_at,
         )
