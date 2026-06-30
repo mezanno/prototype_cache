@@ -1,13 +1,13 @@
 # 02 - Requirements
 
-> Terms and acronyms: [`00B_GLOSSARY_AND_ACRONYMS.md`](00B_GLOSSARY_AND_ACRONYMS.md)
+> Terms and acronyms: [`README.md` glossary](README.md#glossary-and-acronyms)
 
 ## At a glance
 
 | Layer | Key requirements |
 |-------|------------------|
 | Registry | FR-001..008, FR-063..069 — assets, aliases, lifecycle, eviction policy, quota |
-| Guard | FR-010..015 — capabilities, service auth, **bucket allowlist** |
+| Guard | FR-010..016 — capabilities, service auth, **bucket allowlist**, **bucket provisioning only at init** |
 | Data plane | FR-020..022 — PUT, multipart, commit + checksum |
 | Workers | FR-030..031 — resolve by alias only |
 | Admin | FR-040..042 |
@@ -23,7 +23,7 @@ Priority codes: **M** = must, **S** = should, **C** = could, **W** = won't. P0 =
 
 ### Asset and alias model
 
-- **FR-001 (M)** Create an asset by submitting a payload, one or more aliases, a **`space`** (storage bucket: `cache`, `tmp`, `users`, or `results`), a **`partition_id`** (e.g. mirror id, user id; for `results` always `{userid}` — task identity lives in the alias path; anonymous tasks use the reserved value `anon`), an optional TTL (seconds), and an optional declared MIME. Each alias may carry an explicit `mutable` boolean flag (default `false`, see FR-008). The server returns an opaque `asset_id` and the canonical list of aliases. Each alias is unique within its space namespace; conflict yields `409 Conflict` without overwriting the existing binding. The registry assigns `storage_key` = `{partition_id}/assets/{asset_id}` in the target bucket ([`ADR-007`](03_ARCHITECTURE_AND_DECISIONS.md)).
+- **FR-001 (M)** Create an asset by submitting a payload, one or more aliases, a **`space`** (storage bucket: `cache`, `tmp`, `users`, or `results`), a **`partition_id`** (e.g. mirror id, user id; for `results` always `{userid}` — task identity lives in the alias path; anonymous tasks use the reserved value `anon`), an optional TTL (seconds), and an optional declared MIME. Each alias may carry an explicit `mutable` boolean flag (default `false`, see FR-008). The server returns an opaque `asset_id` and the canonical list of aliases. Each alias is unique within its space namespace; conflict yields `409 Conflict` without overwriting the existing binding. The registry assigns `storage_key` = `{partition_id}/assets/{asset_id}` in the target bucket ([`ADR-007`](03_ARCHITECTURE.md)).
 - **FR-002 (M)** Resolve an alias to an `asset_id` and to a redirect or signed URL for download. Deny if the alias is unknown, `pending`, `expired`, or `deleted`.
 - **FR-003 (M)** Add a *new* alias to an existing asset (subject to namespace uniqueness; new alias inherits `mutable=false` unless explicitly set). Detach an alias from its asset: for immutable aliases (the default), detach permanently destroys the alias; the name is reserved for a grace period (default 7 days) before it can be reused. For mutable aliases (FR-008), detach is the prerequisite to rebind. An asset with zero remaining aliases is automatically marked for garbage collection.
 - **FR-004 (M)** Reserve an alias before its payload exists (state `pending`) so an uploader can stream the payload via a signed URL and commit afterwards.
@@ -39,7 +39,8 @@ Priority codes: **M** = must, **S** = should, **C** = could, **W** = won't. P0 =
 - **FR-012 (M)** Reject any operation whose alias is outside the capability's declared scope; return `403 Forbidden`. Enforcement verified by the test suite covering S-4.
 - **FR-013 (S)** Issue a "single-use" write capability that is invalidated after one successful PUT.
 - **FR-014 (M)** Authenticate calling services via static service credentials (shared secret or mTLS, choice in `ADR-006`); user-level authentication is delegated to upstream APIs.
-- **FR-015 (M)** Enforce a **bucket allowlist** per service identity on every capability issue and registry write. A caller authenticated as `upload-api` cannot obtain write capabilities for `results`; a caller as `fetcher` cannot write `users`. Cross-bucket attempts return `403 Forbidden`. The allowlist is defined in [`03_ARCHITECTURE_AND_DECISIONS.md`](03_ARCHITECTURE_AND_DECISIONS.md). Verified together with S-4 and FR-012.
+- **FR-015 (M)** Enforce a **bucket allowlist** per service identity on every capability issue and registry write. A caller authenticated as `upload-api` cannot obtain write capabilities for `results`; a caller as `fetcher` cannot write `users`. Cross-bucket attempts return `403 Forbidden`. The allowlist is defined in [`03_ARCHITECTURE.md`](03_ARCHITECTURE.md). Verified together with S-4 and FR-012.
+- **FR-016 (M)** *Buckets are provisioned only at initialization.* The fixed set of category buckets (`cache`, `tmp`, `users`, `results`) is created by an administrator during system bootstrap with the correct policies and retention; **no service identity may create or delete buckets during normal operation**. Any runtime bucket-creation/deletion attempt is rejected and audited. This bounds the blast radius of a compromised or mis-scoped service to existing buckets with known policies.
 
 ### Upload path
 
@@ -128,7 +129,7 @@ Priority codes: **M** = must, **S** = should, **C** = could, **W** = won't. P0 =
 
 - **Category**: Security
 - **Requirement**: all external traffic over HTTPS/TLS; mTLS optional within the cluster (`ADR-006`).
-- **Target**: TLS 1.2+; no plaintext credentials in logs (redaction policy in [`04_OPERATIONS_AND_READINESS.md`](04_OPERATIONS_AND_READINESS.md)).
+- **Target**: TLS 1.2+; no plaintext credentials in logs (redaction policy in [`04_OPERATIONS.md`](04_OPERATIONS.md)).
 
 ### NFR-008 - Capability scoping (least privilege)
 

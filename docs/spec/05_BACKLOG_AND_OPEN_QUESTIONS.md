@@ -4,7 +4,7 @@
 
 | ID | Topic | Status |
 |----|--------|--------|
-| Q-004 | Quota: registry per `(bucket, partition_id)` vs MinIO | Resolved — see FR-066..068, ADR-009 |
+| Q-004 | Quota: registry per `(bucket, partition_id)` vs object store | Resolved — see FR-066..068, ADR-009 |
 | Q-006 | Grace period `expired → deleted`; per-space override | Resolved — 7 d (`cache`/`users`/`results`), 24 h (`tmp`) |
 | Q-020 | Default `tmp` TTL and GC | Resolved — 24 h default, per-partition max 7 d |
 | Q-021 | Cache alias derivation (fetcher) | Open |
@@ -17,6 +17,8 @@
 | Q-028 | FR-065 batch policy reset: sync vs async | Open |
 | Q-029 | `results` partition as `{userid}` with `anon` reserved | Resolved |
 | Q-030 | Per-write size cap on `results` via capability | Open |
+| Q-031 | Sharding-on-top-of-S3 (multiple buckets per category, hash-distributed) for balancing/perf | Open (post-MVP) |
+| Q-032 | Capability operation verb taxonomy (list/add/read/write-once/delete/mkdir) | Open |
 
 Full table below.
 
@@ -28,13 +30,13 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 |---|---|---|---|---|---|
 | Q-001 | What are the transactional semantics of a bulk batch? All-or-nothing per batch, per-N-item chunk, or best-effort with a manifest? | SCN-001 main flow + error behavior; bulk-loader UX | TBD | Phase 0 exit | Open |
 | Q-002 | What is the maximum batch size before the bulk-loader must request a fresh capability? | Operational, capability TTL bounds | TBD | Phase 0 exit | Open |
-| Q-003 | In which deployment topologies should `storage-guard` proxy the bytes instead of issuing presigned URLs? Default mode per environment? | ADR-003, NFR-007, NFR-008 | TBD | Phase 2 spike S-002 | Open |
-| Q-004 | Quota enforcement model: per-`(space, partition_id)` hard limit, soft warn + alert, both? **Resolved:** two-tier enforcement — `PartitionQuota` (thresholds: 80% warn, 90% async-evict trigger, 105% hard block `413`) and `BucketQuota` (80% warn, 100% hard block `413`); sums tracked in registry at commit time via atomic `UPDATE … RETURNING`; MinIO bucket metrics for coarse ops/cost only. | FR-066, FR-067, FR-068, ADR-009 | TBD | Phase 3 | Resolved |
+| Q-003 | In which deployment topologies should `storage-guard` proxy the bytes instead of issuing presigned URLs? Default mode per environment? *Proposed heuristic:* external callers → proxy (tighter control + complete audit); intra-cluster services → presigned URLs (lower latency). Both backends (OVH, Garage) sit behind a single endpoint, so this is compatible with either mode. Confirm defaults per environment. | ADR-003, NFR-007, NFR-008 | TBD | Phase 2 spike S-002 | Open |
+| Q-004 | Quota enforcement model: per-`(space, partition_id)` hard limit, soft warn + alert, both? **Resolved:** two-tier enforcement — `PartitionQuota` (thresholds: 80% warn, 90% async-evict trigger, 105% hard block `413`) and `BucketQuota` (80% warn, 100% hard block `413`); sums tracked in registry at commit time via atomic `UPDATE … RETURNING`; object-store bucket metrics for coarse ops/cost only. | FR-066, FR-067, FR-068, ADR-009 | TBD | Phase 3 | Resolved |
 | Q-005 | MIME sniffing on commit (server-side) vs trust the caller? Trade-off between content-agnostic posture and operational safety. | FR-022, security guidance | TBD | Phase 2 | Open |
 | Q-006 | Default grace period between `expired` and `deleted` (current draft: 7 days)? Per-space override? **Resolved:** 7 days for `cache`, `users`, and `results`; 24 h for `tmp`. Per-space values are operator-configurable. | FR-060, ADR-009 | TBD | Phase 2 | Resolved |
 | Q-007 | Should the admin be allowed to override TTL/expire on system-managed buckets (e.g. `cache`)? | SCN-004, ADR-005 | TBD | Phase 3 | Open |
 | Q-008 | Atomic-group write semantics: is the manifest-marker pattern enough or do we need a real transactional "commit bundle" endpoint? | FR-001..003, SCN-005 | TBD | Phase 3 | Open |
-| Q-009 | Is MinIO's current license and commercial trajectory acceptable for our use? If not, do we pivot to Garage now or retain optionality? | ADR-001 | TBD | Phase 0 spike S-001/S-004 | Open |
+| Q-009 | Is MinIO's current license and commercial trajectory acceptable for our use? **Resolved:** No — MinIO is **disqualified on licensing / commercial trajectory**. The self-hosted backend is **Garage** (AGPL, used purely as an S3 client — no linking); **OVH S3** is the hosted target. An older permissively-licensed MinIO build may serve throwaway local testing only. | ADR-001 | TBD | Phase 0 | Resolved |
 | Q-010 | Audit storage: shared Postgres DB with the registry, or a dedicated append-only journal? Retention/export hook? | FR-050..053, NFR-009 | TBD | Phase 2 | Open |
 | Q-011 | Identifier scheme for public/published aliases: do we adopt ARK as a special alias namespace and obtain a NAAN? When? | ADR-004; future IIIF module | TBD | Phase 4 | Open |
 | Q-012 | Encryption at rest: required for any space (e.g. `u-*`) in MVP or fully deferred? | NFR-007, R-001 | TBD | Phase 3 | Open |
@@ -46,23 +48,25 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | Q-018 | Exact semantics of `mutable: true` aliases (FR-008): what can change (asset binding only? annotations are always editable regardless), grace period for name reuse on detach of an immutable alias, and which service identities are allowed to set the flag at create time | FR-001, FR-003, FR-008, ADR-005 | TBD | Phase 2 | Open |
 | Q-019 | When do we scope the future `manifest-service` that composes IIIF manifests from editable descriptive metadata + immutable structural references? Does descriptive-metadata storage live in the manifest-service's own DB or in another shared module? | downstream module roadmap; cross-references 01_SCOPE.md | TBD | Phase 4 | Open |
 | Q-020 | Default TTL and GC for `tmp` bucket assets (e.g. 24 h vs 7 d)? Per-partition override? **Resolved:** default TTL = 24 h; per-partition override allowed, max 7 d; grace period = 24 h (shorter than other spaces to contain `tmp` growth). | SCN-006, SCN-007, ADR-009 | TBD | Phase 2 | Resolved |
-| Q-021 | Cache alias derivation for fetcher: single canonical alias per normalized URL vs multiple aliases per mirror ([`_archive/00A_USE_CASES_AND_SCENARIOS.md`](_archive/00A_USE_CASES_AND_SCENARIOS.md) SCN-003)? | SCN-007, [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md) | TBD | Phase 2 | Open |
+| Q-021 | Cache alias derivation for fetcher: single canonical alias per normalized URL vs multiple aliases per mirror ([`_archive/00A_USE_CASES_AND_SCENARIOS.md`](_archive/00A_USE_CASES_AND_SCENARIOS.md) SCN-003)? | SCN-007, [`../services/fetcher-service.md`](../services/fetcher-service.md) | TBD | Phase 2 | Open |
 | Q-022 | Domain cache allowlist: config file, DB, admin UI; who maintains entries? | SCN-007, fetcher | TBD | Phase 2 | Open |
-| Q-023 | Fetcher MVP: stub in asset-store repo vs separate service in Phase 2 vs 2b? | [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md), WORKPLAN | TBD | Phase 2 | Open |
+| Q-023 | Fetcher MVP: stub in asset-store repo vs separate service in Phase 2 vs 2b? | [`../services/fetcher-service.md`](../services/fetcher-service.md), WORKPLAN | TBD | Phase 2 | Open |
 | Q-024 | Should upload-api ever promote `tmp` staging objects to `users` (copy + new alias) or always write directly to `users`? | SCN-003, SCN-006 | TBD | Phase 2 | Open |
 | Q-025 | IIIF server integration phasing: when does `iiif-server` get a formal service identity provisioned, and how does `iiif_server_cache` interact with the asset-store read path (separate bucket, no asset-store involvement)? | SCN-008, [`01_SCOPE.md`](01_SCOPE.md) | TBD | Phase 4 | Open |
-| Q-026 | `iiif-image-mirror` derivative generation: should the mirror generate image derivatives to achieve IIIF Image API level 1/2 compliance, or proxy level-0 URLs only? Generating derivatives risks subtle divergence from upstream rendering; if pursued, where are tiles stored (dedicated bucket outside asset-store)? | [`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md), B-021 | TBD | Phase 3 | Open |
+| Q-026 | `iiif-image-mirror` derivative generation: should the mirror generate image derivatives to achieve IIIF Image API level 1/2 compliance, or proxy level-0 URLs only? Generating derivatives risks subtle divergence from upstream rendering; if pursued, where are tiles stored (dedicated bucket outside asset-store)? | [`../services/fetcher-service.md`](../services/fetcher-service.md), B-021 | TBD | Phase 3 | Open |
 | Q-027 | Eviction sweep exhaustion: when the lifecycle worker has swept all non-`exempt` candidates and still cannot reach the low-water mark, what should it do? **Resolved:** emit `gc_eviction_exhausted{space}` Prometheus alert and stop — the system never auto-escalates to evict `exempt` assets in MVP. | FR-064 | TBD | Phase 3 | Resolved |
 | Q-028 | FR-065 batch partition eviction-policy reset: should the implementation be synchronous (simple, may time out for large partitions) or async with a job-status endpoint (complex, requires a reliability model for the job worker)? | FR-065, reliability model | TBD | Phase 3 | Open |
 | Q-029 | Does the worker always receive the `userid` in its dispatched context, and is changing `results` `partition_id` to `{userid}` zero-cost to worker implementations? **Resolved:** task-api embeds `userid` (or reserved `anon` for anonymous tasks) transparently in the capability scope; worker code is unchanged. | FR-001, SCN-005, ADR-009 | TBD | Phase 2 | Resolved |
 | Q-030 | Should the asset-store enforce a per-write size cap on `results` via the capability (e.g. capability carries a `max_bytes` field enforced at commit)? This would defend against a single runaway worker consuming an entire user's quota in one write. | FR-066, capability model | TBD | Phase 3 | Open |
+| Q-031 | Should the storage layer shard a single category (e.g. `cache`) across **multiple buckets** with hash/dispersion-based placement, to work around Garage's no-sharding behaviour and balance node storage? The registry would track which shard bucket holds each asset. Premature for MVP (scenario A chosen, ADR-007); revisit if node imbalance or per-bucket hotspots appear. | ADR-007, ADR-011, NFR-001 | TBD | Post-MVP | Open |
+| Q-032 | What is the full **capability operation verb taxonomy**? Initial set: prefix listing, add-file (append, e.g. worker result upload), file read, file write-once (only before commit), delete, create-prefix. Define the closed list and whether verbs are per-alias or per-prefix. | ADR-003, ADR-010, FR-010..015 | TBD | Phase 2 | Open |
 
 ## Risks
 
 | ID | Risk | Probability (L/M/H) | Impact (L/M/H) | Mitigation | Owner |
 |---|---|---|---|---|---|
 | R-001 | No encryption-at-rest in MVP could become a compliance blocker before pilot | M | M | Track Q-012; design space layout to allow per-space SSE-S3 enablement without payload rewrites | TBD |
-| R-002 | MinIO license terms or commercial trajectory could become unacceptable mid-prototype | M | M | Garage validated as drop-in alternative (Spike S-004); object-store usage is pure S3, no MinIO-specific extensions in code paths | TBD |
+| R-002 | MinIO license / commercial trajectory unacceptable — **materialized**: MinIO disqualified (ADR-001, Q-009) | H | M | **Garage** adopted as the self-hosted backend, **OVH S3** as hosted; object-store usage is pure S3 with no vendor-specific extensions, so the change is code-neutral | TBD |
 | R-003 | Capability scope bugs grant cross-bucket or cross-partition access | L | H | S-4 suite; FR-015 bucket allowlist tests; fuzz capability strings; default-deny in `storage-guard` | TBD |
 | R-004 | Postgres becomes a single point of failure as load grows | L | H | Schema kept conservative; backups and PITR set up in Phase 4; read replica plan documented; horizontal scaling option (Citus or partitioning) noted for post-pilot | TBD |
 | R-005 | Garbage collection misfire deletes payloads still referenced | L | H | Two-step lifecycle (`expired` then `deleted` after grace); sweeper is dry-run by default; metrics + alert on unexpected GC volume; restore-from-backup plan rehearsed | TBD |
@@ -79,32 +83,33 @@ Coarse-grained backlog. Refined into engineering tickets at Phase 1 kick-off. Or
 | ID | Work Item | Type | Priority | Dependency | Done Definition |
 |---|---|---|---|---|---|
 | B-001 | Spec close-out: assign owners and dates to Q-001..017; mark Q-001/Q-002/Q-009/Q-013/Q-016 Resolved before Phase 1 | Doc | P0 | - | All Q-* rows above have an owner and a due date; the five listed are Resolved |
-| B-002 | Repo scaffold: `services/asset-registry/`, `services/storage-guard/`, `tools/bulk-loader/`, `tools/worker-sim/`, `tools/admin-ui/`, `deploy/compose/`, `deploy/swarm/` | Infra | P0 | B-001 | `docker compose up` in `deploy/compose/` brings up MinIO + Postgres + asset-registry + storage-guard placeholders responding on `/healthz` |
+| B-002 | Repo scaffold: `services/asset-store/` (single deployable, internal `registry`/`capabilities`/`storage` modules per ADR-002), `tools/bulk-loader/`, `tools/worker-sim/`, `tools/admin-ui/`, `deploy/compose/`, `deploy/swarm/` | Infra | P0 | B-001 | `docker compose up` in `deploy/compose/` brings up the object store (Garage) + Postgres + asset-store placeholder responding on `/healthz` |
 | B-003 | CI baseline: lint (ruff), format (ruff/black), type-check (mypy), unit tests (pytest), container build, image scan (trivy) | Infra | P0 | B-002 | Green CI on the base branch; pre-commit hooks installed |
 | B-004 | Observability skeleton: structured logs, OpenTelemetry instrumentation, Prometheus `/metrics`, dev Grafana dashboard | Infra | P0 | B-002 | Each service exposes `/metrics`; a request flow traced end-to-end in the local stack |
-| B-005 | Spike S-001 (MinIO baseline) | Spike | P0 | B-002 | Notes appended to 06_OSS_SURVEY.md; Q-009 resolved |
-| B-006 | Spike S-002 (asset-registry MVP) | Spike | P0 | B-002, B-005 | SCN-001 runs end-to-end against 1k assets; notes appended to 06_OSS_SURVEY.md |
+| B-005 | Spike S-001 (object-store baseline on Garage / OVH S3) | Spike | P0 | B-002 | Notes appended to A_OSS_SURVEY.md; backend baseline (PUT/GET/multipart/presign/lifecycle) confirmed |
+| B-006 | Spike S-002 (asset-registry MVP) | Spike | P0 | B-002, B-005 | SCN-001 runs end-to-end against 1k assets; notes appended to A_OSS_SURVEY.md |
 | B-007 | Spike S-003 (InvenioRDM compare) | Spike | P0 | B-002 | Adopt-vs-compose decision confirmed; ADR-002 status updated |
-| B-008 | Spike S-004 (Garage fallback) | Spike | P0 | B-005 | ADR-001 fallback validated; notes appended |
+| B-008 | Spike S-004 (Garage certification as self-hosted backend) | Spike | P0 | B-005 | Garage validated as the self-hosted backend (STS-style tokens, lifecycle parity); notes appended |
 | B-009 | Asset-registry MVP: data model + migrations + FR-001..007 endpoints | Feature | P0 | B-006, B-007 | Integration tests covering SCN-001..005 happy paths green |
 | B-010 | Storage-guard MVP: service identity auth + FR-010..015 endpoints + audit log + bucket allowlist | Feature | P0 | B-009 | Capability scoping (S-4) and cross-bucket denial (FR-015) green |
-| B-020 | Fetcher-service MVP: ensure_url + cache/tmp policy ([`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md)) | Feature | P0 | B-010 | SCN-007 green |
+| B-020 | Fetcher-service MVP: ensure_url + cache/tmp policy ([`../services/fetcher-service.md`](../services/fetcher-service.md)) | Feature | P0 | B-010 | SCN-007 green |
 | B-011 | Bulk-loader CLI | Feature | P0 | B-009, B-010 | SCN-001 acceptance test green at 10k assets |
 | B-012 | Worker-sim CLI | Feature | P0 | B-009, B-010 | SCN-002 and SCN-005 acceptance tests green |
 | B-013 | Admin-UI (minimum: list, inspect, expire/delete, audit view) | Feature | P1 | B-009, B-010 | SCN-004 acceptance test green |
 | B-014 | Lifecycle worker: (a) sweep `pending` orphans; (b) transition `expired → deleted` after grace period (FR-060); (c) capacity-triggered eviction sweep for spaces above the soft-ceiling (FR-064); (d) quota-triggered eviction sweep for `eviction_sweep_enabled` partitions above the 90% trigger (FR-067); (e) size-weighted eviction scoring (`age_days × size_bytes`); (f) dry-run mode by default (`--dry-run` flag). Metrics: `gc_evicted_total{space,reason}` where `reason ∈ {ttl_expired, pressure_lfu, quota_lfu, orphan}`; `gc_eviction_exhausted{space}` when sweep runs dry. | Feature | P1 | B-009 | Test forces expiry and verifies state transitions; dry-run mode logs candidates without acting; eviction metrics emitted correctly |
 | B-015 | Load tests for S-2 / S-3 (locust or k6) | Test | P1 | B-011, B-012 | Numbers attached to NFR-002/003/004 acceptance |
-| B-016 | Chaos suite: kill-one of each service and one object-store node | Test | P2 | B-015 | Service replicas survive; failure modes match `03_ARCHITECTURE_AND_DECISIONS.md` |
+| B-016 | Chaos suite: kill-one of each service and one object-store node | Test | P2 | B-015 | Service replicas survive; failure modes match `03_ARCHITECTURE.md` |
 | B-017 | Backup hook to a second S3 target | Feature | P2 | B-009 | Documented and tested; FR-061 acceptance |
 | B-018 | Security review pass (STRIDE on storage-guard) + go-live checklist sweep | Doc | P1 | B-010, B-013 | Findings logged; checklist boxes ticked or risks accepted |
 | B-019 | Pilot plan + rollback rehearsal | Doc | P2 | B-015, B-018 | Plan reviewed; rehearsal report attached |
 | B-021 | Decide whether `iiif-image-mirror` is needed and scope it: end-user auth model, IIIF Image API compliance level, derivative generation decision ([`Q-026`](05_BACKLOG_AND_OPEN_QUESTIONS.md)) | Doc | P3 | B-010 | Decision recorded; if yes, `iiif-image-mirror` service identity provisioned in storage-guard |
 | B-022 | Quota reconciliation job: periodically scan `available` assets per `(space, partition_id)`, recompute `PartitionQuota.used_bytes` and `BucketQuota.used_bytes` from live asset rows, emit `quota_drift_detected{space,partition_id}` when drift exceeds configurable tolerance. Mitigates crash-between-commit-and-SQL-update divergence. | Feature | P2 | B-009 | Reconciliation job runs against a live registry without errors; `quota_drift_detected` fires correctly when drift is artificially injected above the tolerance threshold |
+| B-023 | **Legal hold / retention** (post-MVP): decide whether assets need an admin-settable legal-hold/WORM flag that blocks deletion and GC until cleared, layered on top of TTL expiry. Expiry + grace already cover routine lifecycle (ADR-009); legal hold is an additional protection. If pursued, map to backend WORM (OVH) where available, but keep the registry authoritative (ADR-011). | Doc | P3 | B-009 | Decision recorded; if yes, legal-hold field added to the asset model, honoured by the lifecycle worker, and audited on set/clear |
 
 ## Exit Criteria To Start Build Phase
 
 - [ ] All P0 requirements have acceptance criteria (see [`02_REQUIREMENTS.md`](02_REQUIREMENTS.md) section "Acceptance Criteria").
 - [ ] Storage and metadata decisions accepted (ADR-001 through ADR-006), at least provisionally; spikes scheduled.
-- [ ] Security and observability baselines specified (this file plus [`04_OPERATIONS_AND_READINESS.md`](04_OPERATIONS_AND_READINESS.md)).
+- [ ] Security and observability baselines specified (this file plus [`04_OPERATIONS.md`](04_OPERATIONS.md)).
 - [ ] Initial backlog (B-001..B-019) reviewed and sequenced.
 - [ ] All Q-* rows have an owner and a due date; the five blocking spec questions (Q-001, Q-002, Q-009, Q-013, Q-016) are Resolved.

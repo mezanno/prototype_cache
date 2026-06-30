@@ -2,11 +2,11 @@
 
 ## Relation to storage buckets (ADR-007)
 
-MinIO (and peers) provide **S3 buckets**, not nested sub-buckets. The MVP uses **four category buckets** (`cache`, `tmp`, `users`, `results`) with **prefix partitions** inside each. Per-user quota is **not** bucket-per-user; the registry aggregates `size_bytes` per `(space, partition_id)`. See [`03_ARCHITECTURE_AND_DECISIONS.md`](03_ARCHITECTURE_AND_DECISIONS.md). **Fetcher-service** is custom application code, not an OSS object-store candidate ([`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md)).
+S3 object stores (Garage, OVH S3, and peers) provide **S3 buckets**, not nested sub-buckets. The MVP uses **four category buckets** (`cache`, `tmp`, `users`, `results`) with **prefix partitions** inside each. Per-user quota is **not** bucket-per-user; the registry aggregates `size_bytes` per `(space, partition_id)`. See [`03_ARCHITECTURE.md`](03_ARCHITECTURE.md). **Fetcher-service** is custom application code, not an OSS object-store candidate ([`../services/fetcher-service.md`](../services/fetcher-service.md)).
 
 ---
 
-This document surveys off-the-shelf, open-source software that could implement all or part of the `asset-store` module. It feeds `ADR-001`, `ADR-002`, and `ADR-003` in `[03_ARCHITECTURE_AND_DECISIONS.md](03_ARCHITECTURE_AND_DECISIONS.md)`. It is structured as: criteria, per-layer candidates, comparison synthesis, two finalist architectures, recommendation, and time-boxed validation spikes.
+This document surveys off-the-shelf, open-source software that could implement all or part of the `asset-store` module. It feeds `ADR-001`, `ADR-002`, and `ADR-003` in `[03_ARCHITECTURE.md](03_ARCHITECTURE.md)`. It is structured as: criteria, per-layer candidates, comparison synthesis, two finalist architectures, recommendation, and time-boxed validation spikes.
 
 Important: dates, version numbers, performance claims, and license details below are based on the project's current state of knowledge and may need re-verification at spike time. Each candidate carries a `verify:` note pointing to what should be re-checked.
 
@@ -31,7 +31,7 @@ Each criterion is testable. Candidates are scored against these in the per-candi
 
 Goal: provide an S3-compatible distributed blob store satisfying NFR-001 (capacity), NFR-005 (durability), and NFR-011 (Swarm deployability).
 
-### MinIO
+### MinIO — DISQUALIFIED (license)
 
 - **What:** widely-used S3-compatible object server; erasure-coded distributed mode; native presigned URLs; STS support.
 - **C-1:** strong - one of the most complete S3 reimplementations outside AWS.
@@ -43,7 +43,7 @@ Goal: provide an S3-compatible distributed blob store satisfying NFR-001 (capaci
 - **C-7:** buckets + IAM policies; **bucket-per-category** (`cache`/`tmp`/`users`/`results`) per ADR-007; not bucket-per-user.
 - **C-8:** strong - well-known Docker image, single-binary, console UI; multi-node Swarm operability needs DNS or static hostnames - **verify:** test under Swarm overlay network.
 - **C-9:** official `minio-py` SDK; standard `boto3` works.
-- **C-10:** AGPL-3.0 (as of recent releases; commercial license available). **Risk:** AGPL implications for distributing the module - flagged in `[05_BACKLOG_AND_OPEN_QUESTIONS.md](05_BACKLOG_AND_OPEN_QUESTIONS.md)`. **verify:** confirm current license terms at spike time.
+- **C-10:** AGPL-3.0 plus a changed commercial trajectory / feature removal. **DISQUALIFIED:** MinIO is **not an eligible backend** on licensing / commercial-trajectory grounds ([`ADR-001`](03_ARCHITECTURE.md), [`Q-009`](05_BACKLOG_AND_OPEN_QUESTIONS.md)). An older permissively-licensed MinIO build may be used for throwaway local testing only — never as a deployment target.
 - **C-11:** very active.
 - **C-12:** lean; runs in well under 1 GB RAM idle.
 
@@ -111,15 +111,27 @@ Goal: provide an S3-compatible distributed blob store satisfying NFR-001 (capaci
 - **C-11:** maintenance pace lower than MinIO. **verify.**
 - **C-12:** moderate.
 
+### OVH Object Storage (hosted, non-OSS) - field experience
+
+Not open-source, but it is the **first hosted backend** targeted by `ADR-001`, so the hands-on evidence is recorded here.
+
+- **What:** OVHcloud S3-compatible Object Storage (multiple storage classes and locations available).
+- **Field notes (from project experiments):** cheap; easy to use; fast in first experiments. Base S3 API plus useful extras: bucket locking (**WORM**) against accidental deletion; per-object **expiration date** (useful for cache); public/private bucket toggle; **legal hold and retention** policies; **encryption at rest**; multiple users with distinct permissions (fits the multi-service access model); **presigned URLs**.
+- **C-1:** strong (presign, multipart, lifecycle/expiry, WORM).
+- **C-4:** presigned URLs; per-user credentials.
+- **C-6:** native expiry + retention - used as the **safety-net** only, since the asset layer is authoritative (`ADR-011`).
+- **C-10:** proprietary hosted service (no license/footprint concern; not self-hosted).
+- **verify:** STS-style short-lived tokens vs static-key + presign; lifecycle-rule parity with MinIO at spike time.
+
 ### Per-layer synthesis (object store)
 
-- **MinIO** is the best fit by community familiarity, S3 coverage, Swarm friendliness, and feature density. AGPL is the main concern; mitigated because the module talks to MinIO as a client, not by linking it.
-- **Garage** is the strongest "lean alternative" if AGPL or MinIO's commercial trajectory becomes problematic; needs a spike to confirm STS-style features and lifecycle parity.
+- **Garage** is the chosen **self-hosted** backend: lean, S3-compatible, Swarm-friendly, community-governed (Deuxfleurs). AGPL, but used purely as an S3 client (no linking). Needs a spike to confirm STS-style features and lifecycle parity (S-004).
+- **MinIO** would be the strongest fit on pure technical merit (community familiarity, S3 coverage, feature density) but is **DISQUALIFIED** on licensing / commercial trajectory (ADR-001, Q-009); tolerated only as an older permissively-licensed build for throwaway local testing.
 - **SeaweedFS** is interesting at very high object counts but adds ops surface for our scale.
 - **Ceph RGW** is overkill for a 1 TB prototype and violates NFR-010.
-- **Zenko** is no longer differentiated enough to prefer over MinIO/Garage.
+- **Zenko** is no longer differentiated enough to prefer over Garage.
 
-Top picks for `ADR-001`: **MinIO** (primary), **Garage** (alternative if AGPL or operational concerns push us off MinIO).
+Top picks for `ADR-001`: **OVH S3** (hosted, primary target) and **Garage** (self-hosted, to certify via S-004). **MinIO is disqualified** on licensing (Q-009).
 
 ## 3. Layer 2 candidates - asset registry
 
@@ -209,7 +221,7 @@ Top picks for `ADR-002`: **Compose path** (primary), with **InvenioRDM** retaine
 
 Goal: a capability broker that authenticates service identities, mints time-bounded prefix-scoped credentials, and emits an audit log.
 
-### MinIO STS (or equivalent on the chosen object store) + native presigned URLs
+### Object-store STS (Garage / OVH S3) + native presigned URLs
 
 - **What:** delegate scope enforcement to the object store; the storage-guard mints a temporary access key (STS `AssumeRole`) tied to a bucket policy and TTL, or directly returns a presigned URL.
 - **Pros:** least new code; enforcement happens where the bytes are; the object store already has battle-tested ACLs.
@@ -244,18 +256,18 @@ Goal: a capability broker that authenticates service identities, mints time-boun
 
 ## 5. Two finalist architectures
 
-### Architecture A - Adopt InvenioRDM on top of MinIO
+### Architecture A - Adopt InvenioRDM on top of an S3 object store (Garage / OVH S3)
 
 ```mermaid
 flowchart LR
     Client["Upload API / bulk-loader / worker"]
     Invenio["InvenioRDM<br/>(Flask + Celery + RabbitMQ + Redis + OpenSearch + Postgres)"]
-    MinIO["MinIO<br/>S3-compatible"]
+    ObjStore["Garage / OVH S3<br/>S3-compatible"]
     Admin["Invenio admin / OAI-PMH / API"]
 
     Client -->|"deposit"| Invenio
     Client -->|"resolve PID / fetch file"| Invenio
-    Invenio -->|"store binary"| MinIO
+    Invenio -->|"store binary"| ObjStore
     Admin -->|"curate"| Invenio
 ```
 
@@ -266,20 +278,20 @@ flowchart LR
 - **Estimated effort to MVP:** medium (a lot of platform learning, less custom code).
 - **Risk:** high coupling to platform; future requirements that do not fit Invenio's record model would force a rewrite.
 
-### Architecture B - Compose: MinIO + custom `asset-registry` + `storage-guard` over Postgres
+### Architecture B - Compose: object store (Garage / OVH S3) + custom `asset-registry` + `storage-guard` over Postgres
 
 ```mermaid
 flowchart LR
     Client["Upload API / bulk-loader / worker"]
     Guard["storage-guard<br/>FastAPI + Postgres (audit)"]
     Registry["asset-registry<br/>FastAPI + Postgres (metadata)"]
-    MinIO["MinIO<br/>S3-compatible"]
+    ObjStore["Garage / OVH S3<br/>S3-compatible"]
     Admin["admin-ui (React or HTMX)"]
 
     Client -->|"request capability"| Guard
     Guard -->|"resolve / mutate"| Registry
     Guard -->|"mint presigned URL"| Client
-    Client -->|"PUT / GET via signed URL"| MinIO
+    Client -->|"PUT / GET via signed URL"| ObjStore
     Admin -->|"manage"| Registry
     Admin -->|"inspect audit"| Guard
     Registry -.->|"shares Postgres"| Guard
@@ -287,7 +299,7 @@ flowchart LR
 
 
 
-- **Pros:** exact match to the spec; lean (3 services + MinIO + Postgres + observability stack); fast to ship; full control over the capability model, the alias semantics, and the audit log; trivial to swap MinIO for Garage later.
+- **Pros:** exact match to the spec; lean (3 services + object store + Postgres + observability stack); fast to ship; full control over the capability model, the alias semantics, and the audit log; the backend is pure S3, so swapping between Garage and OVH S3 is code-neutral.
 - **Cons:** we own the code for metadata indexing, lifecycle, admin endpoints, and the audit pipeline.
 - **Estimated effort to MVP:** medium-low (well-scoped service work; predictable).
 - **Risk:** lower; downside is custom code we maintain.
@@ -298,16 +310,16 @@ flowchart LR
 
 To remain honest about this recommendation, **before locking it as `ADR-002 = compose`**, run the following time-boxed spikes:
 
-- **Spike S-001 (1-2 days):** stand up MinIO single-node in Docker Compose, exercise PUT/GET, multipart, presigned URLs, lifecycle. Confirm AGPL implications acceptable (or pivot to Garage and re-run the spike there).
+- **Spike S-001 (1-2 days):** stand up the object-store baseline (Garage single-node in Docker Compose, and/or an OVH S3 test bucket), exercise PUT/GET, multipart, presigned URLs, lifecycle.
 - **Spike S-002 (2-3 days):** prototype a minimal `asset-registry` (FastAPI + Postgres) with `POST /assets`, `GET /resolve`, alias-uniqueness constraints, and a state machine. Run SCN-001 end-to-end with the `bulk-loader` at 1 000 small assets.
 - **Spike S-003 (1-2 days):** stand up InvenioRDM from its Docker recipe; deposit 1 000 small assets; observe required services and how alias-prefix capabilities would be expressed. Compare lines of code, ops surface, and feature overshoot with Spike S-002.
-- **Spike S-004 (1-2 days):** stand up Garage as an alternative to MinIO; rerun S-001 against it; confirm presigned URLs and lifecycle work as needed.
+- **Spike S-004 (1-2 days):** certify Garage as the self-hosted backend; rerun S-001 against it; confirm STS-style tokens, presigned URLs, and lifecycle parity.
 
 Total spike budget: about 1.5 to 2 working weeks for a single contributor, 1 week with two.
 
 `ADR-001` (object store), `ADR-002` (asset registry approach), and `ADR-003` (capability mode) are accepted once the spikes report. The currently-recommended ADR outcomes are:
 
-- **ADR-001 = MinIO** (with Garage as documented fallback).
+- **ADR-001 = OVH S3 (hosted) + Garage (self-hosted)**; MinIO disqualified on licensing.
 - **ADR-002 = compose** (custom Python `asset-registry`).
 - **ADR-003 = hybrid capability mode** (presigned by default; opaque token + proxy for single-use semantics).
 
@@ -315,8 +327,8 @@ Total spike budget: about 1.5 to 2 working weeks for a single contributor, 1 wee
 
 Items flagged `verify:` above should be confirmed at spike time and recorded as `Q-`* rows in `[05_BACKLOG_AND_OPEN_QUESTIONS.md](05_BACKLOG_AND_OPEN_QUESTIONS.md)` until resolved. Re-survey this document if any of the following change:
 
-- MinIO's license terms or commercial trajectory.
-- Garage's coverage of S3 STS / lifecycle reaches parity with MinIO.
+- Garage's coverage of S3 STS / lifecycle proves insufficient for the self-hosted backend.
+- OVH S3 pricing, performance, or feature set changes materially.
 - We need cross-region or geo-distributed replication (revisits the object-store choice toward Garage or Ceph).
 - A new requirement appears that fundamentally needs typed metadata search or PID-as-first-class semantics (revisits the adopt path toward InvenioRDM or Fedora).
 

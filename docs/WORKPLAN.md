@@ -2,9 +2,9 @@
 
 ## Objective
 
-Deliver a deployable, testable, monitored prototype of the **`asset-store`** module along the "compose" architecture recommended in [`spec/06_OSS_SURVEY.md`](spec/06_OSS_SURVEY.md), with a clear path from prototype to production.
+Deliver a deployable, testable, monitored prototype of the **`asset-store`** module along the "compose" architecture recommended in [`spec/A_OSS_SURVEY.md`](spec/A_OSS_SURVEY.md), with a clear path from prototype to production.
 
-The plan below is aligned with `ADR-001 = MinIO`, `ADR-002 = compose`, `ADR-003 = hybrid capability mode` (all provisional pending Phase 0 spikes). If a spike reverses one of these ADRs, the Phase 1+ tasks adapt but the phase boundaries do not.
+The plan below is aligned with `ADR-001 = OVH S3 (hosted) + Garage (self-hosted), MinIO disqualified`, `ADR-002 = compose`, `ADR-003 = hybrid capability mode` (all provisional pending Phase 0 spikes). If a spike reverses one of these ADRs, the Phase 1+ tasks adapt but the phase boundaries do not.
 
 Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`spec/01_SCOPE.md`](spec/01_SCOPE.md) and [`spec/02_REQUIREMENTS.md`](spec/02_REQUIREMENTS.md). Backlog IDs (`B-*`) come from [`spec/05_BACKLOG_AND_OPEN_QUESTIONS.md`](spec/05_BACKLOG_AND_OPEN_QUESTIONS.md).
 
@@ -15,17 +15,17 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 **Work items:**
 
 - B-001 - assign owners/dates to Q-001..017; resolve Q-001/Q-002/Q-009/Q-013/Q-016.
-- B-005 - Spike S-001: MinIO baseline (PUT/GET/multipart/presigned URLs/lifecycle).
-- B-006 - Spike S-002: minimal `asset-registry` against MinIO; SCN-001 dry-run with 1k assets.
+- B-005 - Spike S-001: object-store baseline on Garage / OVH S3 (PUT/GET/multipart/presigned URLs/lifecycle).
+- B-006 - Spike S-002: minimal `asset-registry` against the object store (Garage); SCN-001 dry-run with 1k assets.
 - B-007 - Spike S-003: InvenioRDM compare; confirm compose path is the right choice for our requirements.
-- B-008 - Spike S-004: Garage as fallback validated.
+- B-008 - Spike S-004: Garage certified as the self-hosted backend.
 
 **Exit criteria:**
 
 - All `Q-*` rows have owner + due date.
 - Q-001, Q-002, Q-009, Q-013, Q-016 marked Resolved.
-- ADR-001, ADR-002, ADR-003 status changed from Proposed to Accepted (or revised) in `spec/03_ARCHITECTURE_AND_DECISIONS.md`.
-- Spike notes appended to `spec/06_OSS_SURVEY.md` section 7.
+- ADR-001, ADR-002, ADR-003 status changed from Proposed to Accepted (or revised) in `spec/03_ARCHITECTURE.md`.
+- Spike notes appended to `spec/A_OSS_SURVEY.md` section 7.
 
 ## Phase 1 - Foundations
 
@@ -34,12 +34,11 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 **Work items:**
 
 - B-002 - Repository scaffold:
-  - `services/asset-registry/` (Python/FastAPI, async, alembic migrations).
-  - `services/storage-guard/` (Python/FastAPI).
+  - `services/asset-store/` (single Python/FastAPI deployable; internal `registry`, `capabilities`, `storage` modules; async, alembic migrations) per ADR-002.
   - `tools/bulk-loader/` (Python click CLI).
   - `tools/worker-sim/` (Python click CLI).
   - `tools/admin-ui/` (static SPA or HTMX; final pick at code time).
-  - `deploy/compose/` (dev stack: MinIO + Postgres + asset-registry + storage-guard + admin-ui + observability sidecars).
+  - `deploy/compose/` (dev stack: object store (Garage) + Postgres + asset-store + admin-ui + observability sidecars).
   - `deploy/swarm/` (target Swarm stack file; mirrors compose with replica counts and Swarm secrets).
 - B-003 - CI baseline (ruff, mypy, pytest, build, trivy image scan).
 - B-004 - Observability skeleton (structured JSON logs, OpenTelemetry, Prometheus `/metrics`, sample Grafana dashboard).
@@ -84,9 +83,9 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 **Exit criteria:**
 
 - SCN-004 acceptance test green.
-- All P0 alerts in `spec/04_OPERATIONS_AND_READINESS.md` configured against the local stack and firing on synthetic faults.
+- All P0 alerts in `spec/04_OPERATIONS.md` configured against the local stack and firing on synthetic faults.
 - Security-review findings either fixed or accepted with a `R-*` risk row.
-- Backup of Postgres + MinIO snapshot exercised; restore drill documented.
+- Backup of Postgres + object-store snapshot exercised; restore drill documented.
 
 ## Phase 4 - Load test, capacity, SLO baseline
 
@@ -95,8 +94,8 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 **Work items:**
 
 - B-015 - Locust/k6 load tests for S-2 (30 concurrent readers) and S-3 (10k assets ingest).
-- B-016 - Chaos suite: kill-one of each service; kill one MinIO node.
-- Capacity baseline run: ingest 100k assets to ~1 TB; measure read latencies, registry query times, MinIO disk usage.
+- B-016 - Chaos suite: kill-one of each service; kill one object-store node.
+- Capacity baseline run: ingest 100k assets to ~1 TB; measure read latencies, registry query times, object-store disk usage.
 
 **Exit criteria:**
 
@@ -113,7 +112,7 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 - B-019 - Pilot plan + rollback rehearsal; success metrics defined.
 - Documentation pass: runbooks `RUNBOOK-001..006` finalised in `docs/runbooks/`.
 - Cost and performance report based on Phase 4 numbers.
-- Go-live checklist sweep (from `spec/04_OPERATIONS_AND_READINESS.md`).
+- Go-live checklist sweep (from `spec/04_OPERATIONS.md`).
 
 **Exit criteria:**
 

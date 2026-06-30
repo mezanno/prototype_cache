@@ -4,9 +4,9 @@ Future local development stack:
 
 | Component | Role |
 |-----------|------|
-| MinIO | Buckets: `cache`, `tmp`, `users`, `results` ([`docs/spec/03_ARCHITECTURE_AND_DECISIONS.md`](../../docs/spec/03_ARCHITECTURE_AND_DECISIONS.md)) |
+| Object store (Garage) | Buckets: `cache`, `tmp`, `users`, `results` ([`docs/spec/03_ARCHITECTURE.md`](../../docs/spec/03_ARCHITECTURE.md)) |
 | Postgres | Registry + audit |
-| asset-registry, storage-guard | asset-store services |
-| fetcher (optional) | Remote URL ingestion ([`docs/spec/07_FETCHER_SERVICE.md`](../../docs/spec/07_FETCHER_SERVICE.md)) |
+| asset-store | Single FastAPI service (internal `registry` / `capabilities` / `storage` modules, ADR-002) |
+| fetcher (optional) | Remote URL ingestion ([`docs/services/fetcher-service.md`](../../docs/services/fetcher-service.md)) |
 
 Documentation-only until Phase 1 scaffold lands.

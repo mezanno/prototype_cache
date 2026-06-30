@@ -1,10 +1,10 @@
 # 03 - Architecture And Decisions
 
-> Terms and acronyms: [`00B_GLOSSARY_AND_ACRONYMS.md`](00B_GLOSSARY_AND_ACRONYMS.md)
+> Terms and acronyms: [`README.md` glossary](README.md#glossary-and-acronyms)
 
 ## At a glance — storage layout
 
-Physical bytes live in **four MinIO buckets**. Logical names are **aliases**. The registry stores both.
+Physical bytes live in **four object-store buckets**. Logical names are **aliases**. The registry stores both.
 
 ```mermaid
 flowchart TB
@@ -12,7 +12,7 @@ flowchart TB
     Alias["Qualified alias: users/42/uploads/photo.jpg"]
     AssetRow["Asset: space=users, partition_id=42, storage_key=42/assets/{asset_id}"]
   end
-  subgraph physical [Physical layer MinIO]
+  subgraph physical [Physical layer (object store)]
     BucketUsers["bucket: users"]
     Key["object key: 42/assets/{asset_id}"]
   end
@@ -28,7 +28,7 @@ flowchart TB
 | `users` | `{userid}` | `users/42/uploads/{suffix}` | upload-api |
 | `results` | `{userid}` | `results/42/987/attempt-1/out.zip` | worker |
 
-**Partition notes:** `results` uses `{userid}` as `partition_id`; the task identity lives in the alias path. Anonymous tasks use the reserved value `partition_id = anon`. **Quota:** two-tier enforcement — per `(space, partition_id)` via `PartitionQuota` and per-bucket via `BucketQuota` (FR-066..068, ADR-009); **MinIO** bucket totals for ops/cost only.
+**Partition notes:** `results` uses `{userid}` as `partition_id`; the task identity lives in the alias path. Anonymous tasks use the reserved value `partition_id = anon`. **Quota:** two-tier enforcement — per `(space, partition_id)` via `PartitionQuota` and per-bucket via `BucketQuota` (FR-066..068, ADR-009); **object-store** bucket totals for ops/cost only.
 
 **Legacy alias migration** (old docs → new):
 
@@ -47,28 +47,28 @@ Five principles govern the whole design (see ADR log for rationale and rejected 
 1. **One service, conceptual layers** ([`ADR-002`](#adr-log)). `asset-store` ships as a single Python/FastAPI service with three internal modules — `registry` (assets/aliases/lifecycle), `capabilities` (the guard/broker), `storage` (backend adapter). The `object-store` / `asset-registry` / `storage-guard` layering is conceptual, not a deployment boundary; the guard may be split into its own deployable later if the hot path needs independent scaling.
 2. **Aliases are the core access primitive** ([`ADR-010`](#adr-log)). Every caller-facing read or write names an **alias** (or alias prefix) in some space — never a raw object key. This is what lets cache, tmp, users and results share one contract instead of each consumer building its own naming + permission store.
 3. **Asset layer is authoritative; the backend is dumb** ([`ADR-011`](#adr-log)). The S3 backend stores opaque durable bytes plus presign/multipart. Lifecycle, deletion, quota, eviction and retention truth live in the registry. Backend-native lifecycle (where it exists) is only a safety net.
-4. **Single pluggable backend behind an adapter seam** ([`ADR-001`](#adr-log), [`ADR-012`](#adr-log)). MVP runs one active S3-compatible backend (OVH S3 first; MinIO for local dev; Garage next). The seam preserves a clean path to multiple backends later; the word *region* is dropped.
+4. **Single pluggable backend behind an adapter seam** ([`ADR-001`](#adr-log), [`ADR-012`](#adr-log)). MVP runs one active S3-compatible backend: **OVH S3** (hosted) first and **Garage** (self-hosted) to certify; MinIO is disqualified on licensing. The seam preserves a clean path to multiple backends later; the word *region* is dropped.
 5. **Tenancy is partition-based; billing ownership is out of scope** ([`ADR-012`](#adr-log)). Multi-tenant isolation is expressed via `partition_id`; the notion of a project/team that *pays* for storage is deferred.
 
 ## Proposed Architecture
 
 The `asset-store` module is a single service composed of off-the-shelf object storage (accessed through a backend adapter) and a thin custom Python/FastAPI process that hosts the `registry`, `capabilities`, and `storage` modules over a shared Postgres database for metadata and audit. Data-plane payloads transit directly between caller and the object store via short-lived presigned URLs whenever possible; object payloads live exclusively in the object store. Internal module calls are in-process; the only network protocol on the control plane is HTTP+JSON over TLS between callers and the service.
 
-This architecture is the "compose" finalist recommended by [`06_OSS_SURVEY.md`](06_OSS_SURVEY.md), collapsed from two services into one deployable for the prototype. The "adopt InvenioRDM" alternative remains documented and can be revisited if a future requirement justifies it.
+This architecture is the "compose" finalist recommended by [`A_OSS_SURVEY.md`](A_OSS_SURVEY.md), collapsed from two services into one deployable for the prototype. The "adopt InvenioRDM" alternative remains documented and can be revisited if a future requirement justifies it.
 
 ## Component Responsibilities
 
-The table below is a summary; per-component contracts are documented in [`02_REQUIREMENTS.md`](02_REQUIREMENTS.md) and [`PROJECT_ARCHITECTURE.md`](../PROJECT_ARCHITECTURE.md). `asset-registry` and `storage-guard` are **internal modules of the single `asset-store` service** ([`ADR-002`](#adr-log)), not separately-deployed processes; they are listed separately to describe responsibilities.
+The table below is a summary; per-component contracts are documented in [`02_REQUIREMENTS.md`](02_REQUIREMENTS.md). `asset-registry` and `storage-guard` are **internal modules of the single `asset-store` service** ([`ADR-002`](#adr-log)), not separately-deployed processes; they are listed separately to describe responsibilities.
 
 | Component | Responsibility | Inputs | Outputs |
 |---|---|---|---|
-| `object-store` (MinIO) | Durable storage of binary payloads; multipart; lifecycle on prefixes; checksum on PUT/GET | Payloads via signed URLs; lifecycle policy | Stored objects; STS / presigned URLs; storage metrics |
+| `object-store` (Garage / OVH S3) | Durable storage of binary payloads; multipart; lifecycle on prefixes; checksum on PUT/GET | Payloads via signed URLs; lifecycle policy | Stored objects; STS / presigned URLs; storage metrics |
 | `asset-registry` (custom Python/FastAPI) | Aliases, metadata, lifecycle, admin API; one row per asset, one row per alias | Create/commit/expire/delete RPCs from `storage-guard` and admin; SQL queries from `admin-ui` | Asset/alias state in Postgres; API responses; metrics; lifecycle audit events |
 | `storage-guard` (custom Python/FastAPI) | Capability broker; authenticates service identities; mints presigned URLs and opaque tokens; emits audit log | Service credential + capability request | Capability (signed URL or token); audit log entries |
 | `admin-ui` (custom static SPA or HTMX) | Operator surface for list/inspect/lifecycle/audit | Operator clicks/forms | Admin-API calls; rendered views |
 | `bulk-loader` (CLI) | Bulk-ingest fixtures or real preload batches | Manifest file + payload directory | Asset creations; summary report |
 | `worker-sim` (CLI) | Simulate worker read path and result write path | Task definition + capability | Reads + writes + summary report |
-| `fetcher-service` (platform) | Remote URL → `cache` or `tmp` via asset-store | URL + policy | Asset reference ([`07_FETCHER_SERVICE.md`](07_FETCHER_SERVICE.md)) |
+| `fetcher-service` (platform) | Remote URL → `cache` or `tmp` via asset-store | URL + policy | Asset reference ([`../services/fetcher-service.md`](../services/fetcher-service.md)) |
 
 ## Service identity → bucket permissions
 
@@ -88,6 +88,46 @@ Enforced by **FR-015**. Denied requests return `403`.
 `iiif_server_cache` is **not** provisioned or written by asset-store; IIIF server manages it separately.
 
 `iiif-image-mirror` reads `cache` to serve cached heritage images via presigned GET. It never writes to asset-store directly; all cache-population writes go through `fetcher`. It does not access `tmp`, `users`, or `results`. It maintains its own end-user access-control layer outside the asset-store service-identity model; derived tile storage (if ever implemented) would use a dedicated bucket not managed by asset-store.
+
+## Core data flows
+
+Although the three layers are internal modules of one service, the control plane and data plane are distinct: control calls (capability, reserve, commit) hit the service; payload bytes move directly between the caller and the object store via presigned URLs.
+
+### Write path
+
+```mermaid
+flowchart LR
+    Client["Client upload_api bulk_loader fetcher"]
+    Guard["storage_guard"]
+    Registry["asset_registry"]
+    Object["object_store bucket plus key"]
+
+    Client -->|"1 write capability"| Guard
+    Guard -->|"2 reserve pending"| Registry
+    Guard -->|"3 presigned PUT"| Client
+    Client -->|"4 PUT bytes"| Object
+    Client -->|"5 commit"| Guard
+    Guard -->|"6 available"| Registry
+```
+
+### Read path
+
+```mermaid
+flowchart LR
+    Worker["Worker"]
+    Guard["storage_guard"]
+    Registry["asset_registry"]
+    Object["object_store"]
+
+    Worker -->|"1 resolve alias"| Guard
+    Guard -->|"2 asset_id plus bucket key"| Registry
+    Guard -->|"3 presigned GET"| Worker
+    Worker -->|"4 GET bytes"| Object
+```
+
+### Remote URL flow
+
+Owned by **fetcher-service** ([`../services/fetcher-service.md`](../services/fetcher-service.md)); asset-store never performs outbound HTTP ([`ADR-008`](#adr-log)). See the sequence diagram in that contract.
 
 ## Data Model Draft
 
@@ -191,17 +231,17 @@ Normative defaults; all thresholds are operator-configurable per deployment.
 
 ## ADR Log
 
-All ADRs are accepted **provisionally**, pending the time-boxed spikes listed in [`06_OSS_SURVEY.md`](06_OSS_SURVEY.md) section 6. Each ADR records its rationale, rejected alternatives, and the spike(s) that may reverse it.
+All ADRs are accepted **provisionally**, pending the time-boxed spikes listed in [`A_OSS_SURVEY.md`](A_OSS_SURVEY.md) section 6. Each ADR records its rationale, rejected alternatives, and the spike(s) that may reverse it.
 
 | ADR ID | Decision | Status | Rationale | Alternatives Rejected |
 |---|---|---|---|---|
-| ADR-001 | `object-store` is a **pluggable S3-compatible backend behind an adapter seam**; MVP runs a **single active backend**: **OVH S3** as the first hosted target, **MinIO** for local dev, **Garage** as the next backend to certify | Proposed (pending Spike S-001, S-004) | S3 is the common contract across OVH/MinIO/Garage; the adapter seam lets us add backends later without touching the asset layer; OVH S3 is cheap, fast, and already validated in our experiments (presign, WORM, object expiry) | **Hard-coding MinIO** (couples the spec to one vendor; MinIO stays as the local-dev backend); **Ceph RGW** (overkill for 1 TB / NFR-010); **SeaweedFS** (more ops surface); **multi-backend routing now** (premature — one backend suffices for MVP, see ADR-012) |
+| ADR-001 | `object-store` is a **pluggable S3-compatible backend behind an adapter seam**; MVP runs a **single active backend**: **OVH S3** as the first hosted target and **Garage** as the self-hosted backend to certify. **MinIO is disqualified** on licensing / commercial trajectory — only an older permissively-licensed MinIO build is tolerated for throwaway local testing, never as a deployment target | Proposed (pending Spike S-004) | S3 is the common contract across OVH and Garage; the adapter seam lets us add backends later without touching the asset layer; OVH S3 is cheap, fast, and already validated in our experiments (presign, WORM, object expiry); Garage is AGPL but used purely as an S3 client (no linking) and is community-governed | **MinIO** (disqualified on licensing/commercial trajectory despite strong S3 fidelity); **Ceph RGW** (overkill for 1 TB / NFR-010); **SeaweedFS** (more ops surface); **multi-backend routing now** (premature — one backend suffices for MVP, see ADR-012) |
 | ADR-002 | Ship **one custom `asset-store` service** (Python/FastAPI over Postgres) with **internal modules** — `registry` (assets/aliases/lifecycle), `capabilities` (guard/broker), `storage` (backend adapter); the three-layer model is **conceptual, not a deployment boundary** | Proposed (pending Spike S-002, S-003) | Minimal moving parts for a prototype; atomic *reserve → mint capability* within one process; matches the `src/asset_store_core` module layout; guard can be split into its own deployable later if the read hot path needs independent scaling | **Two separate services (registry + guard)** (extra network hop and a distributed transaction for reserve→presign, more ops surface, yet they already share one Postgres DB); **InvenioRDM** (high feature overshoot — Elasticsearch, RabbitMQ, Redis, Celery; record-centric data model); **Fedora 6 + OCFL** (Java + RDF surface we do not need; adopt the OCFL idea via OCFL-py if useful); **Hyrax/DSpace/Goobi** (wrong layer or language); **Nextcloud** (user-facing file sync, wrong data model) |
-| ADR-003 | Capability mode = **hybrid**: default to **S3 presigned URLs**; fall back to **opaque token + `storage-guard` proxy** for single-use semantics and any capability where the bytes must transit the guard | Proposed | Best latency for the common case; uniform single-use semantics when needed; keeps audit logs centralised at the guard | "Presigned only" (no clean single-use); "always-proxy" (extra hop and bandwidth on every read) |
+| ADR-003 | Capability mode = **hybrid**: default to **S3 presigned URLs**; fall back to **opaque token + `storage-guard` proxy** for single-use semantics and any capability where the bytes must transit the guard | Proposed | Best latency for the common case; uniform single-use semantics when needed; keeps audit logs centralised at the guard. *Proposed topology heuristic:* intra-cluster services may take presigned URLs directly; **external callers default to the proxy path** for tighter access control and a complete audit trail — to be confirmed per environment (`Q-003`). | "Presigned only" (no clean single-use); "always-proxy" (extra hop and bandwidth on every read) |
 | ADR-004 | Identifier scheme = **opaque server-assigned `asset_id` (UUID v7) + zero-or-more aliases unique per space**; no ARK or DOI in MVP | Proposed | Time-sortable id; aliases satisfy the user-facing naming needs without requiring a national/global resolver; ARK / DOI can be layered on later as a special alias namespace | **ARK as primary id** (premature centralisation; requires a NAAN); **UUID v4** (not time-sortable); content-addressed (CAS) ids (lookups become bytes-driven, complicates updates of mutable metadata) |
 | ADR-005 | Mutability = **payload write-once**, **annotations mutable**, **alias single-binding-for-life by default with explicit `mutable: true` opt-in for rebind**; per-alias TTL with grace period before garbage collection | Proposed | Matches discovery answers (Q9-Q11) and resolves the IIIF-manifest concern (Q-018) by keeping asset-store content-agnostic and pushing structural-vs-descriptive composition to a future `manifest-service`; preserves the immutability invariant that historians and citation systems rely on; the `mutable: true` flag is a tiny escape hatch for genuinely-mutating use cases without weakening the default | Full mutability (lose immutability guarantees and audit clarity); alias versioning inside asset-store (forces the registry to model document semantics it should not own); per-asset TTL only (forces alias-rename to extend life of a single payload) |
 | ADR-006 | Language/runtime = **Python 3.12+ with FastAPI** for the custom services; service-to-service auth = **shared secret with rotation** for MVP; mTLS and OIDC (Keycloak) tracked as forward steps | Proposed | Team Python familiarity (Q26); FastAPI gives OpenAPI + async with minimum ceremony; shared secret is sufficient for service identities while user identity is out of scope | Go / Rust (would not leverage team skills); mTLS-from-day-1 (operationally heavier); Keycloak-from-day-1 (premature, no end-user identities in MVP) |
-| ADR-007 | Physical storage = **four category buckets** (`cache`, `tmp`, `users`, `results`) + **`partition_id` prefix**; object key `{partition_id}/assets/{asset_id}`; two-tier quota tracking via `PartitionQuota` (per partition) and `BucketQuota` (per space). *Refinement (2026-05-20):* `results` `partition_id` is `{userid}` — task identity lives in the alias path; anonymous tasks use reserved `partition_id = anon`. | Proposed (refined 2026-05-20) | MinIO per-bucket ops metrics; `PartitionQuota` for per-user fairness; `BucketQuota` for infrastructure capacity. `{userid}` partition for `results` enables per-user quota without cross-partition aggregation at commit time. | Bucket-per-user (explosion); semantic object keys (`photo.jpg`); single bucket only (weak isolation); `{taskid}` as `results` partition (prevents per-user quota without expensive cross-partition sum) |
+| ADR-007 | Physical storage = **four category buckets** (`cache`, `tmp`, `users`, `results`) + **`partition_id` prefix**; object key `{partition_id}/assets/{asset_id}`; two-tier quota tracking via `PartitionQuota` (per partition) and `BucketQuota` (per space). *Refinement (2026-05-20):* `results` `partition_id` is `{userid}` — task identity lives in the alias path; anonymous tasks use reserved `partition_id = anon`. | Proposed (refined 2026-05-20) | object-store per-bucket ops metrics; `PartitionQuota` for per-user fairness; `BucketQuota` for infrastructure capacity. `{userid}` partition for `results` enables per-user quota without cross-partition aggregation at commit time. Garage replicates buckets geographically but does **not** shard them, so a few uneven buckets imbalance node storage — this confirms the **service-level category buckets + `partition_id` prefix** layout (scenario A) over **bucket-per-user** (scenario B) or **bucket-per-(user×service)** (scenario C); quota is enforced in the registry (`ADR-011`), not the backend. A future per-category sharding-on-top-of-S3 optimisation is tracked as `Q-031`. | Bucket-per-user (explosion); bucket-per-(user×service) (bucket explosion on every new user); semantic object keys (`photo.jpg`); single bucket only (weak isolation); `{taskid}` as `results` partition (prevents per-user quota without expensive cross-partition sum) |
 | ADR-008 | **fetcher-service** owns remote URL materialization; asset-store never performs outbound HTTP | Proposed | SSRF and fetch policy in one place; clear audit boundary | Fetch inside storage-guard; workers fetch remote URLs directly |
 | ADR-009 | Per-space lifecycle and eviction policy: `eviction_policy` enum (`inherit` \| `exempt`) on every asset; per-space sweep defaults (see Per-Space Lifecycle Policy table); three-threshold model for capacity (80% warn / 90% sweep trigger / 95% hard block) and quota (80% warn / 90% sweep trigger / 105% hard block); eviction scoring = `age_days × size_bytes`; `results` excluded from all LFU sweeps — housekeeping is task-engine-driven via TTL hints and bulk-expire-by-prefix (FR-069); `PartitionQuota` and `BucketQuota` as dual enforcement entities (FR-066, FR-068) | Proposed | `exempt` is more expressive than a `pinned: bool` flag (settable at write time by creating service, clearable by admin, audited on change). Overloading `expires_at = null` as a pin proxy is ambiguous in `cache` — un-expired ≠ intentionally protected. Dual quota entities allow independent monitoring of per-user fairness (`PartitionQuota`) vs. overall infrastructure capacity (`BucketQuota`). `results` LFU exclusion prevents evicting valuable unique computation outputs that are typically downloaded only once (the normal outcome). | `pinned: bool` (coarser, no audit trail on set/clear); `expires_at = null` as pin proxy (ambiguous in `cache`); single quota entity (either loses per-user fairness or total-capacity protection); LFU sweep on `results` (wrong signal — download count of one is normal, not a sign of low value) |
 | ADR-010 | **Aliases are the core access primitive** for every space (`cache`/`tmp`/`users`/`results`), not just cache URL mapping; every caller-facing read or write names an **alias** (or alias prefix), never a raw object key; capabilities are scoped to alias prefixes | Proposed | One contract across all spaces; the task scratch-space pattern falls out directly (a worker writes under `results/{userid}/{taskid}/attempt-1/`, the user later reads the same prefix at will); avoids every consumer building its own naming + ACL store (a separate cache DB, results DB, tmp DB); central audit and lifecycle authority | **Drop aliases / expose object keys** (forces per-service naming + permission stores, loses central audit and the single deletion authority); **aliases for cache only** (inconsistent model across spaces); content-addressed ids as the public name (bytes-driven lookups complicate mutable metadata) |
@@ -225,7 +265,7 @@ All ADRs are accepted **provisionally**, pending the time-boxed spikes listed in
 - **Partitioning approach** - by `space` (bucket) and `partition_id` for routing and quotas; Postgres tables partitioned by `space` only if/when volume warrants (NFR-001 does not need it at 1 TB).
 - **Bottleneck assumptions** - the `storage-guard` is the hot path for both reads and writes; sizing focuses there. Postgres serves 1-10k qps on commodity hardware which is far above target load.
 - **Horizontal scale points** - `asset-registry` and `storage-guard` are stateless and horizontally scaled behind a load balancer; `object-store` scales by adding nodes per its own model; Postgres scaled vertically first, with replicas for read-only admin queries when needed.
-- **Cost controls** - per-`(space, partition_id)` quotas in registry; bucket-level MinIO metrics; aggressive lifecycle on `tmp`; observability per bucket and partition.
+- **Cost controls** - per-`(space, partition_id)` quotas in registry; bucket-level object-store metrics; aggressive lifecycle on `tmp`; observability per bucket and partition.
 
 ## Open architectural questions
 
