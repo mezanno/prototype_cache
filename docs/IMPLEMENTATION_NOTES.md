@@ -6,14 +6,15 @@ How the **current code** relates to the spec, and deliberate shortcuts for the p
 
 | Layer | Status |
 |-------|--------|
-| `asset_store_core` | In-memory registry, paths, buckets/partitions, object keys, capabilities, service policy |
-| storage-guard (HTTP) | **Not implemented** — see below |
-| Object store / Postgres | **Not implemented** |
+| `asset_store_core` | In-memory registry, paths, buckets/partitions, object keys, capabilities, service policy, object-store seam (`LocalObjectStore`), `StorageGuard` facade |
+| storage-guard | **Implemented** as an in-process facade (`guard.py`) + HTTP guarded data plane (`PUT`/`GET /objects/{alias}`) |
+| HTTP API (`asset_store_core.api`) | **Implemented** — FastAPI app: `/healthz`, `/readyz`, `/metrics`, reserve/commit/resolve, capability mint, guarded data plane; RFC 7807 errors; metrics + JSON logs + correlation ids |
+| Object store / Postgres | **Not implemented** — in-memory only; real S3 backend and Postgres deferred behind the existing seams |
 
 Run tests:
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests
+uv run pytest -q
 ```
 
 ### Spec alignment (ADR-007)
@@ -21,25 +22,17 @@ PYTHONPATH=src python -m unittest discover -s tests
 - Registry `space` = object-store bucket (`cache`, `tmp`, `users`, `results`).
 - `partition_id` on every asset; `storage_key` = `{partition_id}/assets/{asset_id}`.
 - Qualified aliases: `{bucket}/{partition_id}/…` (e.g. `users/42/uploads/photo.jpg`).
-- `service_policy` encodes FR-015 bucket allowlists (used in tests; not wired into registry calls).
+- `service_policy` encodes FR-015 bucket allowlists (enforced inside `StorageGuard` and at capability mint).
 
-## Deferring storage-guard for early development
+## storage-guard build order (done)
 
-**Yes — reasonable for this prototype phase**, because:
+The phased order below was followed; the guard is no longer deferred.
 
-1. **There is no guard service yet** — only domain types (`Capability`, `SingleUseLedger`) and `assert_service_bucket_allowed()`.
-2. **Unit tests already bypass the guard** — they call `InMemoryAssetRegistry` directly, which matches how you validate registry rules quickly.
-3. **Recommended order:**
-   - Registry + object-store adapter (reserve / PUT / commit / resolve) with direct calls in integration tests.
-   - Add a thin **guard facade** that composes `service_policy` + capability checks + registry.
-   - HTTP server last.
+1. **Registry + object-store adapter** (reserve / PUT / commit / resolve) with direct calls in integration tests. **Done.**
+2. **Thin guard facade** (`guard.py`) composing `service_policy` + capability checks + registry/object-store. **Done.**
+3. **HTTP server** exposing the registry ops, capability mint, and a capability-guarded data plane. **Done.**
 
-**Do not delete guard concepts from the spec** — FR-010–FR-015 remain the production contract. When adding HTTP, re-enable policy checks in one place rather than spreading auth in every caller.
-
-For integration tests before the guard exists, either:
-
-- Call registry + object store directly (documented shortcut), or
-- Call `assert_service_bucket_allowed()` manually before writes to rehearse FR-015.
+FR-010–FR-015 remain the production contract; auth lives in one place (`StorageGuard`) rather than spread across callers. Capabilities are still **unsigned** in this slice — minted ids act as opaque bearer tokens held in an in-process store (ADR-003 proxy mode); presigned URLs and signed tokens are deferred.
 
 ## “Are we just building a filesystem on S3?”
 

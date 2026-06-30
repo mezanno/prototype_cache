@@ -54,9 +54,7 @@ class DataPlaneTest(unittest.TestCase):
         alias = "users/42/uploads/a.txt"
         payload = b"hello world"
 
-        write_cap = self._mint(
-            operation="write", scope="users/42/uploads", service="upload-api"
-        )
+        write_cap = self._mint(operation="write", scope="users/42/uploads", service="upload-api")
         written = self.client.put(
             f"/objects/{alias}", content=payload, headers=self._auth(write_cap)
         )
@@ -85,9 +83,7 @@ class DataPlaneTest(unittest.TestCase):
         self.assertEqual("CapabilityDeniedError", response.json()["title"])
 
     def test_scope_mismatch_is_denied(self) -> None:
-        write_cap = self._mint(
-            operation="write", scope="users/42/uploads", service="upload-api"
-        )
+        write_cap = self._mint(operation="write", scope="users/42/uploads", service="upload-api")
         response = self.client.put(
             "/objects/users/42/other/a.txt", content=b"x", headers=self._auth(write_cap)
         )

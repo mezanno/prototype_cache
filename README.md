@@ -9,21 +9,31 @@ Define and validate a production-grade design for a deployable, testable, observ
 
 ## Current implementation slice
 
-The first code slice is deliberately small and infrastructure-free:
+The slice is infrastructure-free (in-memory backend; no Postgres or real S3 yet) but
+now spans the full request path end to end:
 
 - `src/asset_store_core/` — registry, **four storage buckets** (`cache`, `tmp`,
   `users`, `results`), `partition_id`, object keys `{partition}/assets/{asset_id}`,
-  capabilities, and **service→bucket policy** (FR-015).
-- `tests/` — spec invariants (32 tests); no HTTP, Postgres, or object store yet.
-- **storage-guard** — not implemented; tests call the registry directly (see
-  [`docs/IMPLEMENTATION_NOTES.md`](docs/IMPLEMENTATION_NOTES.md)).
+  an object-store backend seam (`ObjectStoreBackend` + in-memory `LocalObjectStore`),
+  prefix-scoped capabilities, **service→bucket policy** (FR-015), and a `StorageGuard`
+  facade composing capability + policy + registry/object-store calls.
+- `src/asset_store_core/api/` — a FastAPI app (single process, ADR-002):
+  `/healthz`, `/readyz`, `/metrics`, reserve/commit/resolve, capability mint, and a
+  capability-guarded data plane (`PUT`/`GET /objects/{alias}`, FR-010..015) using
+  `Authorization: Capability <id>` bearer tokens. Errors use RFC 7807
+  `application/problem+json`; observability (ADR-013) adds Prometheus metrics,
+  structured JSON logs, and an `X-Correlation-Id` per request.
+- `tests/` — 72 unit/integration/contract tests, all green.
 - `services/`, `tools/`, `deploy/` — placeholders per `docs/WORKPLAN.md`.
 
-Run tests locally:
+Run the tests locally (uv-managed env):
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests
+uv run pytest -q
 ```
+
+The app is exposed as a factory at `asset_store_core.api:create_app` for an ASGI
+server (e.g. `uvicorn ... --factory`); no server dependency is bundled in this slice.
 
 ## Documentation
 
