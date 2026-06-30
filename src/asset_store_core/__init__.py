@@ -18,6 +18,7 @@ from asset_store_core.errors import (
     ObjectNotFoundError,
     ValidationError,
 )
+from asset_store_core.guard import GuardedRead, StorageGuard
 from asset_store_core.ids import new_asset_id
 from asset_store_core.models import AliasBinding, Asset, AssetState, AuditEvent
 from asset_store_core.object_store import (
@@ -68,6 +69,8 @@ __all__ = [
     "ValidationError",
     "new_asset_id",
     "CHECKSUM_ALGO",
+    "GuardedRead",
+    "StorageGuard",
     "STORAGE_BUCKETS",
     "ObjectStoreLocation",
     "assert_service_bucket_allowed",

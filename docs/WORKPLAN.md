@@ -16,10 +16,12 @@ foundation everything else wraps:
 - [`src/asset_store_core/`](../src/asset_store_core/) - in-memory registry, alias
   model, path/bucket normalization, object-key layout, an object-store backend seam
   (`ObjectStoreBackend` + in-memory `LocalObjectStore`), prefix-scoped capabilities,
-  and the FR-015 service-to-bucket allowlist. No HTTP, Postgres, or real S3 backend.
-- [`tests/`](../tests/) - 43 unit/integration tests, all green, covering FR-001..008,
-  FR-012, FR-013, FR-015, FR-020..022 (reserve -> PUT -> commit -> resolve), and FR-022
-  checksum invariants.
+  the FR-015 service-to-bucket allowlist, and a `StorageGuard` facade that composes
+  capability + service-policy + registry/object-store calls. No HTTP, Postgres, or
+  real S3 backend.
+- [`tests/`](../tests/) - 51 unit/integration tests, all green, covering FR-001..008,
+  FR-010..013, FR-015, FR-020..022 (reserve -> PUT -> commit -> resolve, guarded read),
+  and FR-022 checksum invariants.
 - `services/`, `tools/`, `deploy/` - placeholders only.
 
 Run the suite: `PYTHONPATH=src python -m unittest discover -s tests` (or
@@ -191,7 +193,7 @@ reordered to **lock quality first, then grow the core into a running service**.
    **(done 2026-06-30)**
 4. **Add the guard facade.** One place that composes `service_policy` (FR-015) +
    capability checks (FR-010..013) + registry calls, so auth is never spread across
-   callers. Re-run the S-4 scoping suite through it.
+   callers. Re-run the S-4 scoping suite through it. **(done 2026-06-30)**
 5. **Stand up the FastAPI app (B-002/B-010 slice).** Expose reserve/commit/resolve
    and capability mint over HTTP with `/healthz` and `/readyz`; contract-test the
    RFC 7807 error model. One process per ADR-002.
