@@ -24,6 +24,7 @@ from asset_store_core.errors import (
     ChecksumMismatchError,
     InvalidStateTransitionError,
     ObjectNotFoundError,
+    QuotaExceededError,
     ValidationError,
 )
 
@@ -40,6 +41,7 @@ _STATUS_BY_ERROR: dict[type[AssetStoreError], int] = {
     AliasImmutableError: 409,
     ChecksumMismatchError: 409,
     InvalidStateTransitionError: 409,
+    QuotaExceededError: 413,
 }
 
 
@@ -63,9 +65,12 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     async def handle_domain(request: Request, exc: Exception) -> Response:
         status = 500
+        extra: dict[str, Any] = {}
         if isinstance(exc, AssetStoreError):
             status = _STATUS_BY_ERROR.get(type(exc), 500)
-        return _problem(status=status, title=type(exc).__name__, detail=str(exc))
+        if isinstance(exc, QuotaExceededError):
+            extra["scope"] = exc.scope
+        return _problem(status=status, title=type(exc).__name__, detail=str(exc), **extra)
 
     async def handle_validation(request: Request, exc: Exception) -> Response:
         errors = exc.errors() if isinstance(exc, RequestValidationError) else []

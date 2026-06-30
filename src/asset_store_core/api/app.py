@@ -27,10 +27,15 @@ from asset_store_core.api.schemas import (
     AnnotationsUpdateRequest,
     AssetOut,
     AuditEventOut,
+    BucketQuotaOut,
+    BucketQuotaRequest,
     CapabilityMintRequest,
     CapabilityOut,
     CommitRequest,
+    EvictionPolicyRequest,
     LifecycleRequest,
+    PartitionQuotaOut,
+    PartitionQuotaRequest,
     ReserveRequest,
 )
 from asset_store_core.capabilities import Capability
@@ -100,6 +105,7 @@ def create_app(
             owner_service_id=body.owner_service_id,
             mime=body.mime,
             annotations=body.annotations,
+            eviction_policy=body.eviction_policy,
         )
         return AssetOut.from_asset(asset)
 
@@ -162,6 +168,45 @@ def create_app(
             caller_service_id=body.caller_service_id,
         )
         return AliasBindingOut.from_binding(binding)
+
+    @app.patch("/assets/{asset_id}/eviction-policy", response_model=AssetOut)
+    def set_eviction_policy(asset_id: str, body: EvictionPolicyRequest) -> AssetOut:
+        asset = registry.set_eviction_policy(
+            asset_id=asset_id,
+            eviction_policy=body.eviction_policy,
+            caller_service_id=body.caller_service_id,
+        )
+        return AssetOut.from_asset(asset)
+
+    @app.put("/quotas/partition", response_model=PartitionQuotaOut)
+    def set_partition_quota(body: PartitionQuotaRequest) -> PartitionQuotaOut:
+        quota = registry.set_partition_quota(
+            space=body.space,
+            partition_id=body.partition_id,
+            quota_bytes=body.quota_bytes,
+            quota_asset_count=body.quota_asset_count,
+            eviction_sweep_enabled=body.eviction_sweep_enabled,
+        )
+        return PartitionQuotaOut.from_quota(quota)
+
+    @app.get("/quotas/partition", response_model=PartitionQuotaOut)
+    def get_partition_quota(space: str, partition_id: str) -> PartitionQuotaOut:
+        quota = registry.get_partition_quota(space=space, partition_id=partition_id)
+        return PartitionQuotaOut.from_quota(quota)
+
+    @app.put("/quotas/bucket", response_model=BucketQuotaOut)
+    def set_bucket_quota(body: BucketQuotaRequest) -> BucketQuotaOut:
+        quota = registry.set_bucket_quota(
+            space=body.space,
+            quota_bytes=body.quota_bytes,
+            warn_threshold=body.warn_threshold,
+            hard_ceiling=body.hard_ceiling,
+        )
+        return BucketQuotaOut.from_quota(quota)
+
+    @app.get("/quotas/bucket", response_model=BucketQuotaOut)
+    def get_bucket_quota(space: str) -> BucketQuotaOut:
+        return BucketQuotaOut.from_quota(registry.get_bucket_quota(space=space))
 
     @app.get("/audit", response_model=list[AuditEventOut])
     def list_audit(

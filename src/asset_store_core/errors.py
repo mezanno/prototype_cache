@@ -56,3 +56,15 @@ class CapabilityAlreadyConsumedError(AssetStoreError):
 
 class InvalidStateTransitionError(AssetStoreError):
     """Raised when an asset lifecycle transition is not allowed."""
+
+
+class QuotaExceededError(AssetStoreError):
+    """Raised when a commit would exceed a partition or bucket quota (FR-066/FR-068).
+
+    ``scope`` is ``"partition"`` or ``"bucket"`` to tell the caller which limit was
+    hit, mirroring the distinct ``413`` responses in the spec.
+    """
+
+    def __init__(self, message: str, *, scope: str) -> None:
+        super().__init__(message)
+        self.scope = scope

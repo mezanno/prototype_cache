@@ -7,7 +7,14 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from asset_store_core.capabilities import Operation
-from asset_store_core.models import AliasBinding, Asset, AuditEvent
+from asset_store_core.models import (
+    AliasBinding,
+    Asset,
+    AuditEvent,
+    BucketQuota,
+    EvictionPolicy,
+    PartitionQuota,
+)
 
 
 class AliasSpecIn(BaseModel):
@@ -26,6 +33,7 @@ class ReserveRequest(BaseModel):
     owner_service_id: str
     mime: str | None = None
     annotations: dict[str, str] | None = None
+    eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT
 
 
 class CommitRequest(BaseModel):
@@ -54,6 +62,7 @@ class AssetOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     owner_service_id: str
+    eviction_policy: str
 
     @classmethod
     def from_asset(cls, asset: Asset) -> AssetOut:
@@ -71,6 +80,7 @@ class AssetOut(BaseModel):
             created_at=asset.created_at,
             updated_at=asset.updated_at,
             owner_service_id=asset.owner_service_id,
+            eviction_policy=asset.eviction_policy.value,
         )
 
 
@@ -169,4 +179,74 @@ class AliasBindingOut(BaseModel):
             mutable=binding.mutable,
             previous_asset_id=binding.previous_asset_id,
             updated_at=binding.updated_at,
+        )
+
+
+class EvictionPolicyRequest(BaseModel):
+    """Body for ``PATCH /assets/{asset_id}/eviction-policy`` (FR-063)."""
+
+    eviction_policy: EvictionPolicy
+    caller_service_id: str
+
+
+class PartitionQuotaRequest(BaseModel):
+    """Body for ``PUT /quotas/partition`` (FR-066/FR-067)."""
+
+    space: str
+    partition_id: str
+    quota_bytes: int | None = Field(default=None, ge=0)
+    quota_asset_count: int | None = Field(default=None, ge=0)
+    eviction_sweep_enabled: bool | None = None
+
+
+class PartitionQuotaOut(BaseModel):
+    """Partition quota projection with live usage counters."""
+
+    space: str
+    partition_id: str
+    quota_bytes: int | None
+    quota_asset_count: int | None
+    used_bytes: int
+    used_asset_count: int
+    eviction_sweep_enabled: bool
+
+    @classmethod
+    def from_quota(cls, quota: PartitionQuota) -> PartitionQuotaOut:
+        return cls(
+            space=quota.space,
+            partition_id=quota.partition_id,
+            quota_bytes=quota.quota_bytes,
+            quota_asset_count=quota.quota_asset_count,
+            used_bytes=quota.used_bytes,
+            used_asset_count=quota.used_asset_count,
+            eviction_sweep_enabled=quota.eviction_sweep_enabled,
+        )
+
+
+class BucketQuotaRequest(BaseModel):
+    """Body for ``PUT /quotas/bucket`` (FR-068)."""
+
+    space: str
+    quota_bytes: int | None = Field(default=None, ge=0)
+    warn_threshold: float = Field(default=0.80, ge=0.0, le=1.0)
+    hard_ceiling: float = Field(default=1.00, ge=0.0, le=2.0)
+
+
+class BucketQuotaOut(BaseModel):
+    """Bucket quota projection with live usage counters."""
+
+    space: str
+    quota_bytes: int | None
+    used_bytes: int
+    warn_threshold: float
+    hard_ceiling: float
+
+    @classmethod
+    def from_quota(cls, quota: BucketQuota) -> BucketQuotaOut:
+        return cls(
+            space=quota.space,
+            quota_bytes=quota.quota_bytes,
+            used_bytes=quota.used_bytes,
+            warn_threshold=quota.warn_threshold,
+            hard_ceiling=quota.hard_ceiling,
         )

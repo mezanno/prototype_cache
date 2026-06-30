@@ -20,6 +20,18 @@ class AssetState(StrEnum):
     DELETED = "deleted"
 
 
+class EvictionPolicy(StrEnum):
+    """Per-asset eviction posture (FR-063, ADR-009).
+
+    ``inherit``: the asset follows the per-space eviction sweep policy.
+    ``exempt``: the asset is excluded from all capacity- and quota-triggered
+    eviction sweeps; TTL expiry (FR-006/FR-060) still applies normally.
+    """
+
+    INHERIT = "inherit"
+    EXEMPT = "exempt"
+
+
 def utcnow() -> datetime:
     """Return timezone-aware UTC time."""
 
@@ -74,6 +86,7 @@ class Asset:
     updated_at: datetime = field(default_factory=utcnow)
     expires_at: datetime | None = None
     owner_service_id: str = "system"
+    eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT
 
     @property
     def is_resolvable(self) -> bool:
@@ -93,3 +106,37 @@ class AuditEvent:
     before: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     after: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     ts: datetime = field(default_factory=utcnow)
+
+
+@dataclass(frozen=True, slots=True)
+class PartitionQuota:
+    """Per-``(space, partition_id)`` quota counters (FR-066/FR-067, ADR-009).
+
+    ``used_bytes`` / ``used_asset_count`` track only ``available`` assets and are
+    maintained incrementally by the registry on commit and on every transition
+    out of ``available``. ``quota_bytes`` / ``quota_asset_count`` are ``None``
+    when no limit is configured.
+    """
+
+    space: str
+    partition_id: str
+    quota_bytes: int | None = None
+    quota_asset_count: int | None = None
+    used_bytes: int = 0
+    used_asset_count: int = 0
+    eviction_sweep_enabled: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class BucketQuota:
+    """Per-``space`` aggregate quota counters (FR-068, ADR-009).
+
+    ``used_bytes`` mirrors the sum of the space's ``PartitionQuota.used_bytes``
+    and is maintained atomically alongside per-partition updates.
+    """
+
+    space: str
+    quota_bytes: int | None = None
+    used_bytes: int = 0
+    warn_threshold: float = 0.80
+    hard_ceiling: float = 1.00

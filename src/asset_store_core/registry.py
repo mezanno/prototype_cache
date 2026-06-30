@@ -14,6 +14,8 @@ Requirement mapping (subset implemented here):
   ids recorded in the ``alias.rebind`` audit event.
 - ``FR-022`` — optional expected checksum verification on commit.
 - ``FR-015`` — bucket allowlist lives in :mod:`service_policy` (not invoked here).
+- ``FR-063`` — per-asset ``eviction_policy`` flag with ``asset.eviction_policy_set`` audit.
+- ``FR-066`` / ``FR-068`` — partition and bucket quota accounting + commit-time ceilings.
 
 This module intentionally does **not** implement HTTP, Postgres, MinIO IO, or
 storage-guard. Call :class:`~asset_store_core.registry.InMemoryAssetRegistry`
@@ -35,10 +37,20 @@ from asset_store_core.errors import (
     AssetNotFoundError,
     ChecksumMismatchError,
     InvalidStateTransitionError,
+    QuotaExceededError,
     ValidationError,
 )
 from asset_store_core.ids import new_asset_id
-from asset_store_core.models import AliasBinding, Asset, AssetState, AuditEvent, utcnow
+from asset_store_core.models import (
+    AliasBinding,
+    Asset,
+    AssetState,
+    AuditEvent,
+    BucketQuota,
+    EvictionPolicy,
+    PartitionQuota,
+    utcnow,
+)
 from asset_store_core.paths import (
     normalize_relative_alias,
     normalize_space,
@@ -46,6 +58,14 @@ from asset_store_core.paths import (
     qualified_alias_for_partition,
 )
 from asset_store_core.storage import build_storage_key, normalize_partition_id
+
+# Partition commits are rejected once prospective usage reaches 105% of the configured
+# byte quota; the 5% band absorbs concurrent in-flight uploads that pre-checked quota
+# (FR-066, ADR-009). Bucket commits use the configurable ``BucketQuota.hard_ceiling``.
+_PARTITION_HARD_RATIO = 1.05
+
+# Spaces whose partitions enable quota-triggered eviction sweeps by default (FR-067).
+_SWEEP_DEFAULT_SPACES = frozenset({"cache", "tmp"})
 
 
 class InMemoryAssetRegistry:
@@ -56,6 +76,8 @@ class InMemoryAssetRegistry:
         "_aliases",
         "_assets",
         "_audit_events",
+        "_bucket_quotas",
+        "_partition_quotas",
         "_tombstones",
     )
 
@@ -70,6 +92,8 @@ class InMemoryAssetRegistry:
         self._aliases: dict[str, AliasBinding] = {}
         self._audit_events: list[AuditEvent] = []
         self._tombstones: dict[str, datetime] = {}
+        self._partition_quotas: dict[tuple[str, str], PartitionQuota] = {}
+        self._bucket_quotas: dict[str, BucketQuota] = {}
         if alias_name_grace_period is None:
             self._alias_grace = timedelta(days=7)
         else:
@@ -92,6 +116,7 @@ class InMemoryAssetRegistry:
         owner_service_id: str,
         mime: str | None = None,
         annotations: Mapping[str, str] | None = None,
+        eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT,
     ) -> Asset:
         """Reserve aliases and create a pending asset shell (FR-004)."""
 
@@ -121,6 +146,7 @@ class InMemoryAssetRegistry:
             created_at=now,
             updated_at=now,
             owner_service_id=owner_service_id,
+            eviction_policy=eviction_policy,
         )
         self._assets[asset_id] = asset
 
@@ -217,6 +243,10 @@ class InMemoryAssetRegistry:
                 f"asset {asset_id!r} cannot be committed from state {asset.state.value!r}"
             )
 
+        self._enforce_quota(
+            space=asset.space, partition_id=asset.partition_id, new_bytes=size_bytes
+        )
+
         updated = dc_replace(
             asset,
             state=AssetState.AVAILABLE,
@@ -226,6 +256,7 @@ class InMemoryAssetRegistry:
             updated_at=utcnow(),
         )
         self._assets[asset_id] = updated
+        self._acquire_quota(space=asset.space, partition_id=asset.partition_id, nbytes=size_bytes)
         self._audit(
             action="asset.commit",
             target=asset_id,
@@ -427,6 +458,7 @@ class InMemoryAssetRegistry:
 
         updated = dc_replace(asset, state=AssetState.EXPIRED, updated_at=utcnow())
         self._assets[asset_id] = updated
+        self._release_quota(asset)
         self._audit(
             action="asset.expire",
             target=asset_id,
@@ -448,6 +480,7 @@ class InMemoryAssetRegistry:
 
         updated = dc_replace(asset, state=AssetState.DELETED, updated_at=utcnow())
         self._assets[asset_id] = updated
+        self._release_quota(asset)
         self._audit(
             action="asset.delete",
             target=asset_id,
@@ -457,6 +490,166 @@ class InMemoryAssetRegistry:
             after={"state": updated.state.value},
         )
         return updated
+
+    def set_eviction_policy(
+        self,
+        *,
+        asset_id: str,
+        eviction_policy: EvictionPolicy,
+        caller_service_id: str,
+    ) -> Asset:
+        """Set an asset's eviction policy and audit the change (FR-063)."""
+
+        asset = self._get_asset(asset_id)
+        if asset.state is AssetState.DELETED:
+            raise InvalidStateTransitionError(
+                f"cannot set eviction policy on deleted asset {asset_id!r}"
+            )
+
+        updated = dc_replace(asset, eviction_policy=eviction_policy, updated_at=utcnow())
+        self._assets[asset_id] = updated
+        self._audit(
+            action="asset.eviction_policy_set",
+            target=asset_id,
+            caller_service_id=caller_service_id,
+            outcome="success",
+            before={"eviction_policy": asset.eviction_policy.value},
+            after={"eviction_policy": updated.eviction_policy.value},
+        )
+        return updated
+
+    def set_partition_quota(
+        self,
+        *,
+        space: str,
+        partition_id: str,
+        quota_bytes: int | None = None,
+        quota_asset_count: int | None = None,
+        eviction_sweep_enabled: bool | None = None,
+    ) -> PartitionQuota:
+        """Configure a partition's quota limits, preserving live usage counters (FR-066)."""
+
+        if quota_bytes is not None and quota_bytes < 0:
+            raise ValidationError("quota_bytes must not be negative")
+        if quota_asset_count is not None and quota_asset_count < 0:
+            raise ValidationError("quota_asset_count must not be negative")
+
+        current = self._partition_quota(space, partition_id)
+        if eviction_sweep_enabled is None:
+            sweep = current.eviction_sweep_enabled
+        else:
+            sweep = eviction_sweep_enabled
+        updated = dc_replace(
+            current,
+            quota_bytes=quota_bytes,
+            quota_asset_count=quota_asset_count,
+            eviction_sweep_enabled=sweep,
+        )
+        self._partition_quotas[(updated.space, updated.partition_id)] = updated
+        return updated
+
+    def set_bucket_quota(
+        self,
+        *,
+        space: str,
+        quota_bytes: int | None = None,
+        warn_threshold: float = 0.80,
+        hard_ceiling: float = 1.00,
+    ) -> BucketQuota:
+        """Configure a space's bucket-wide quota, preserving live usage counters (FR-068)."""
+
+        if quota_bytes is not None and quota_bytes < 0:
+            raise ValidationError("quota_bytes must not be negative")
+
+        current = self._bucket_quota(space)
+        updated = dc_replace(
+            current,
+            quota_bytes=quota_bytes,
+            warn_threshold=warn_threshold,
+            hard_ceiling=hard_ceiling,
+        )
+        self._bucket_quotas[updated.space] = updated
+        return updated
+
+    def get_partition_quota(self, *, space: str, partition_id: str) -> PartitionQuota:
+        """Return the (possibly default) partition quota counters."""
+
+        return self._partition_quota(space, partition_id)
+
+    def get_bucket_quota(self, *, space: str) -> BucketQuota:
+        """Return the (possibly default) bucket quota counters."""
+
+        return self._bucket_quota(space)
+
+    def _partition_quota(self, space: str, partition_id: str) -> PartitionQuota:
+        norm_space = normalize_space(space)
+        norm_partition = normalize_partition_id(partition_id)
+        key = (norm_space, norm_partition)
+        existing = self._partition_quotas.get(key)
+        if existing is not None:
+            return existing
+        return PartitionQuota(
+            space=norm_space,
+            partition_id=norm_partition,
+            eviction_sweep_enabled=norm_space in _SWEEP_DEFAULT_SPACES,
+        )
+
+    def _bucket_quota(self, space: str) -> BucketQuota:
+        norm_space = normalize_space(space)
+        existing = self._bucket_quotas.get(norm_space)
+        if existing is not None:
+            return existing
+        return BucketQuota(space=norm_space)
+
+    def _enforce_quota(self, *, space: str, partition_id: str, new_bytes: int) -> None:
+        """Reject a prospective commit that would breach a partition or bucket ceiling."""
+
+        pq = self._partition_quota(space, partition_id)
+        if pq.quota_bytes is not None and (
+            pq.used_bytes + new_bytes >= pq.quota_bytes * _PARTITION_HARD_RATIO
+        ):
+            raise QuotaExceededError(
+                f"partition quota exceeded for {pq.space}/{pq.partition_id}",
+                scope="partition",
+            )
+        if pq.quota_asset_count is not None and pq.used_asset_count + 1 > pq.quota_asset_count:
+            raise QuotaExceededError(
+                f"partition asset-count quota exceeded for {pq.space}/{pq.partition_id}",
+                scope="partition",
+            )
+
+        bq = self._bucket_quota(space)
+        if bq.quota_bytes is not None and (
+            bq.used_bytes + new_bytes >= bq.quota_bytes * bq.hard_ceiling
+        ):
+            raise QuotaExceededError(f"bucket quota exceeded for {bq.space}", scope="bucket")
+
+    def _acquire_quota(self, *, space: str, partition_id: str, nbytes: int) -> None:
+        """Increment partition and bucket usage counters after a successful commit."""
+
+        pq = self._partition_quota(space, partition_id)
+        self._partition_quotas[(pq.space, pq.partition_id)] = dc_replace(
+            pq,
+            used_bytes=pq.used_bytes + nbytes,
+            used_asset_count=pq.used_asset_count + 1,
+        )
+        bq = self._bucket_quota(space)
+        self._bucket_quotas[bq.space] = dc_replace(bq, used_bytes=bq.used_bytes + nbytes)
+
+    def _release_quota(self, asset: Asset) -> None:
+        """Decrement usage counters when an ``available`` asset leaves that state."""
+
+        if asset.state is not AssetState.AVAILABLE:
+            return
+        nbytes = asset.size_bytes or 0
+        pq = self._partition_quota(asset.space, asset.partition_id)
+        self._partition_quotas[(pq.space, pq.partition_id)] = dc_replace(
+            pq,
+            used_bytes=max(0, pq.used_bytes - nbytes),
+            used_asset_count=max(0, pq.used_asset_count - 1),
+        )
+        bq = self._bucket_quota(asset.space)
+        self._bucket_quotas[bq.space] = dc_replace(bq, used_bytes=max(0, bq.used_bytes - nbytes))
 
     def _get_asset(self, asset_id: str) -> Asset:
         try:

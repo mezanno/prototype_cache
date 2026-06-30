@@ -28,15 +28,19 @@ foundation everything else wraps:
   and the asset/alias lifecycle transitions over HTTP (`PATCH
   /assets/{id}/annotations`, `POST /assets/{id}/expire`, `POST /assets/{id}/delete`,
   `POST /aliases/detach`, `POST /aliases/detach-mutable`, `POST /aliases/rebind`,
-  FR-003/FR-005..008),
+  FR-003/FR-005..008), the per-asset `eviction_policy` flag (`PATCH
+  /assets/{id}/eviction-policy`) plus two-tier quota config/usage endpoints
+  (`PUT`/`GET /quotas/partition`, `PUT`/`GET /quotas/bucket`) with commit-time
+  `413` ceilings (FR-063/FR-066/FR-068, ADR-009),
   with a uniform RFC 7807 `application/problem+json` error model. Observability is
   wired in (ADR-013): Prometheus metrics, structured JSON logs, and an
   `X-Correlation-Id` per request.
-- [`tests/`](../tests/) - 84 unit/integration/contract tests, all green, covering
+- [`tests/`](../tests/) - 104 unit/integration/contract tests, all green, covering
   FR-001..008, FR-010..016, FR-020..022 (reserve -> PUT -> commit -> resolve,
   guarded read/write incl. scope/operation/expiry/single-use denials), FR-022
   checksum invariants, the audit read endpoint, the asset/alias lifecycle
-  endpoints, the HTTP contract incl.
+  endpoints, quota accounting + eviction policy (FR-063/FR-066/FR-068), the HTTP
+  contract incl.
   problem+json, and the metrics/log/correlation-id skeleton.
 - `services/`, `tools/`, `deploy/` - placeholders only.
 
@@ -51,8 +55,10 @@ work (B-009) extends an existing, tested core rather than starting from zero.
 
 - FR-003 (zero-alias GC mark) and FR-008 (rebind `before`/`after` audit ids) are
   now **closed** in the in-memory core with tests.
-- `eviction_policy`, `PartitionQuota`, `BucketQuota` (FR-063..069, ADR-009) are not in
-  the in-memory model yet; the spec requires them from the registry MVP.
+- `eviction_policy`, `PartitionQuota`, `BucketQuota` (FR-063/FR-066/FR-068, ADR-009)
+  are now **in the in-memory model** with commit-time ceilings, usage accounting,
+  and HTTP endpoints; the async LFU eviction sweeps (FR-064/FR-067) and warn-ratio
+  metrics remain deferred to the lifecycle worker.
 
 ## Engineering quality bar
 
