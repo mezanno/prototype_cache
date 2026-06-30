@@ -9,7 +9,8 @@ How the **current code** relates to the spec, and deliberate shortcuts for the p
 | `asset_store_core` | In-memory registry, paths, buckets/partitions, object keys, capabilities, service policy, object-store seam (`LocalObjectStore`), `StorageGuard` facade |
 | storage-guard | **Implemented** as an in-process facade (`guard.py`) + HTTP guarded data plane (`PUT`/`GET /objects/{alias}`) |
 | HTTP API (`asset_store_core.api`) | **Implemented** — FastAPI app: `/healthz`, `/readyz`, `/metrics`, reserve/commit/resolve, capability mint, guarded data plane; RFC 7807 errors; metrics + JSON logs + correlation ids |
-| Object store / Postgres | **Not implemented** — in-memory only; real S3 backend and Postgres deferred behind the existing seams |
+| Object store (real S3) | **First backend landed** — `s3_object_store.py` `S3ObjectStore` (boto3, optional `s3` extra) implements the `ObjectStoreBackend` seam against any S3-compatible service; **certified on Garage v1.0.1** for PUT/GET/stat/delete + server-side `sha256` on PUT + presigned-GET + the full guarded HTTP data plane (`tests/test_s3_garage_integration.py`, skipped unless `deploy/compose/.env.garage` is exported) |
+| Postgres | **Not implemented** — registry/audit still in-memory; deferred behind the existing registry seam |
 
 Run tests:
 
@@ -33,6 +34,20 @@ The phased order below was followed; the guard is no longer deferred.
 3. **HTTP server** exposing the registry ops, capability mint, and a capability-guarded data plane. **Done.**
 
 FR-010–FR-015 remain the production contract; auth lives in one place (`StorageGuard`) rather than spread across callers. Capabilities are still **unsigned** in this slice — minted ids act as opaque bearer tokens held in an in-process store (ADR-003 proxy mode); presigned URLs and signed tokens are deferred.
+
+## Object-store backends behind the seam
+
+The `ObjectStoreBackend` protocol has two implementations, swappable via
+`create_app(store=...)`:
+
+| Implementation | Use | Notes |
+|----------------|-----|-------|
+| `LocalObjectStore` | Default / unit tests | In-memory dict; infrastructure-free, fast |
+| `S3ObjectStore` | Real durable storage | boto3, path-style + SigV4; computes the canonical `sha256:<hex>` on PUT (FR-022, never the S3 ETag) and stores it in object metadata for `stat`; `NoSuchKey`/404 → `ObjectNotFoundError`; idempotent delete |
+
+`S3ObjectStore` is **certified on Garage** (ADR-001, S-004 in progress); the hosted
+OVH S3 tier and multipart/backend-lifecycle remain on the S-001 to-do list. See
+[`deploy/compose/README.md`](../deploy/compose/README.md) for the local run recipe.
 
 ## “Are we just building a filesystem on S3?”
 
