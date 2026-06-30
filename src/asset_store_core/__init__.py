@@ -15,10 +15,18 @@ from asset_store_core.errors import (
     CapabilityDeniedError,
     ChecksumMismatchError,
     InvalidStateTransitionError,
+    ObjectNotFoundError,
     ValidationError,
 )
 from asset_store_core.ids import new_asset_id
 from asset_store_core.models import AliasBinding, Asset, AssetState, AuditEvent
+from asset_store_core.object_store import (
+    CHECKSUM_ALGO,
+    LocalObjectStore,
+    ObjectStoreBackend,
+    StoredObjectStat,
+    compute_checksum,
+)
 from asset_store_core.paths import (
     normalize_relative_alias,
     normalize_space,
@@ -51,15 +59,21 @@ __all__ = [
     "ChecksumMismatchError",
     "InMemoryAssetRegistry",
     "InvalidStateTransitionError",
+    "LocalObjectStore",
+    "ObjectNotFoundError",
+    "ObjectStoreBackend",
     "Operation",
     "SingleUseLedger",
+    "StoredObjectStat",
     "ValidationError",
     "new_asset_id",
+    "CHECKSUM_ALGO",
     "STORAGE_BUCKETS",
     "ObjectStoreLocation",
     "assert_service_bucket_allowed",
     "buckets_for_service",
     "build_storage_key",
+    "compute_checksum",
     "normalize_bucket",
     "normalize_partition_id",
     "normalize_relative_alias",

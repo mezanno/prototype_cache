@@ -4,6 +4,7 @@ Each exception type maps cleanly to HTTP semantics when adapters wrap this layer
 
 - ``AliasNotFoundError`` → 404
 - ``AssetNotFoundError`` → 404
+- ``ObjectNotFoundError`` → 404
 - ``AliasConflictError`` → 409
 - ``AliasImmutableError`` → 409
 - ``ChecksumMismatchError`` → 409 (FR-022)
@@ -35,6 +36,10 @@ class AliasImmutableError(AssetStoreError):
 
 class AssetNotFoundError(AssetStoreError):
     """Raised when an asset id is unknown."""
+
+
+class ObjectNotFoundError(AssetStoreError):
+    """Raised when object-store bytes are missing for a given location."""
 
 
 class ChecksumMismatchError(AssetStoreError):

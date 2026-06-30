@@ -14,10 +14,12 @@ Ahead of the phase order below, a **pure domain core** already exists and is the
 foundation everything else wraps:
 
 - [`src/asset_store_core/`](../src/asset_store_core/) - in-memory registry, alias
-  model, path/bucket normalization, object-key layout, prefix-scoped capabilities,
-  and the FR-015 service-to-bucket allowlist. No HTTP, Postgres, or object store.
-- [`tests/`](../tests/) - 36 unit tests, all green, covering FR-001..008, FR-012,
-  FR-013, FR-015, and FR-022 invariants.
+  model, path/bucket normalization, object-key layout, an object-store backend seam
+  (`ObjectStoreBackend` + in-memory `LocalObjectStore`), prefix-scoped capabilities,
+  and the FR-015 service-to-bucket allowlist. No HTTP, Postgres, or real S3 backend.
+- [`tests/`](../tests/) - 43 unit/integration tests, all green, covering FR-001..008,
+  FR-012, FR-013, FR-015, FR-020..022 (reserve -> PUT -> commit -> resolve), and FR-022
+  checksum invariants.
 - `services/`, `tools/`, `deploy/` - placeholders only.
 
 Run the suite: `PYTHONPATH=src python -m unittest discover -s tests` (or
@@ -186,6 +188,7 @@ reordered to **lock quality first, then grow the core into a running service**.
 3. **Add the storage adapter seam.** Define the `storage` backend interface plus a
    local/in-memory implementation; defer Garage/OVH wiring. Cover
    reserve -> PUT -> commit -> resolve with integration tests against the fake backend.
+   **(done 2026-06-30)**
 4. **Add the guard facade.** One place that composes `service_policy` (FR-015) +
    capability checks (FR-010..013) + registry calls, so auth is never spread across
    callers. Re-run the S-4 scoping suite through it.
