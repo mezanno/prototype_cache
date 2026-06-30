@@ -26,14 +26,15 @@ now spans the full request path end to end:
 - `tests/` — 72 unit/integration/contract tests, all green.
 - `services/`, `tools/`, `deploy/` — placeholders per `docs/WORKPLAN.md`.
 
-Run the tests locally (uv-managed env):
+Run the tests and the API locally (uv-managed env):
 
 ```bash
 uv run pytest -q
+uv run uvicorn asset_store_core.api:create_app --factory --reload
 ```
 
-The app is exposed as a factory at `asset_store_core.api:create_app` for an ASGI
-server (e.g. `uvicorn ... --factory`); no server dependency is bundled in this slice.
+The app is exposed as a factory at `asset_store_core.api:create_app`; the in-memory
+backend means it starts with no external dependencies.
 
 ## Documentation
 
