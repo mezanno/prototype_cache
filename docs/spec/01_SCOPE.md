@@ -114,6 +114,7 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 | SCN-007 | Remote URL via fetcher | P0 | `cache` or `tmp` |
 | SCN-008 | IIIF server reads asset | P2 (future) | `cache`, `users` |
 | SCN-009 | OCR task: remote IIIF URLs → fetch → results | P2 (illustrative) | `cache`/`tmp` + `results` |
+| SCN-010 | User reads a cached image instead of the origin (mirror) | P2 (future) | `cache` |
 
 ### Actor catalog (MVP)
 
@@ -290,6 +291,27 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 - **Observability checks:** `fetch_cache_hit`, bytes to `cache` vs `tmp`, result write success rate.
 - **Open questions:** Q-021, Q-022, Q-030; capability verb granularity (`Q-032`).
 
+#### SCN-010 - User reads a cached image instead of the authoritative source
+
+- **Priority:** P2 (future; the end-user-facing `iiif-image-mirror` module is not in MVP — see [`B-021`](05_BACKLOG_AND_OPEN_QUESTIONS.md). This scenario shows how asset-store is *used* as the mirror's backing cache; the mirror itself is out of asset-store scope.)
+- **Actors:** End-user client, iiif-image-mirror (out of asset-store scope), storage-guard, asset-registry, object-store; fetcher on a miss
+- **Maps to:** FR-002, FR-010, FR-012 (read path; reuses the SCN-002 resolve flow)
+- **Preconditions:** The requested image was previously cached (e.g. fetched from Gallica's IIIF Image API via `SCN-007`) and is `available` under `cache/{mirror_id}/…`. The mirror holds a read capability scoped to that `cache` prefix.
+- **Trigger:** A user requests a heritage image that the platform has already mirrored, instead of the authoritative origin (e.g. Gallica).
+- **Main flow:**
+  1. The mirror validates the requested origin URL against a configured **allowlist of domains / URL patterns** (e.g. Gallica IIIF endpoints); requests outside the allowlist are rejected before any cache lookup or fetch (`Q-022`).
+  2. The mirror derives **one or more** cache alias candidates for the requested origin image (same URL normalization as the fetcher, `SCN-007`). Because several distinct URLs can address the **same underlying asset** (e.g. two Gallica IIIF API versions, or scheme/host/parameter variants of one image), the rule set maps each such variant to the **same** `cache/{mirror_id}/…` asset.
+  3. **Cache hit:** resolve any matching alias via storage-guard (read-capability flow, `SCN-002`); registry resolves; presigned GET for bucket `cache`.
+  4. The mirror streams the cached bytes to the user — the authoritative origin is never contacted.
+  5. **Cache miss:** the mirror delegates to the fetcher (`SCN-007`) to populate `cache`. The fetcher commits the asset once and **attaches every equivalent alias** (all matching URL variants) to that single `asset_id`, so a later request via any variant is a cache hit; asset-store itself still performs no outbound HTTP.
+- **Expected result:** The user receives the same image bytes the origin would serve, with no load on the authoritative source on a cache hit; repeat requests — **including via a different but equivalent URL variant** — are served entirely from `cache`.
+- **Error/failure paths:** 403 if the requested URL is not on the allowlist; 404/410 if not cached and the fetch fails; 403 if the mirror capability does not cover the alias.
+
+- **Observability checks:** user-read cache-hit ratio; bytes served from `cache`; zero origin requests on a hit.
+- **Cache-rule note:** Both the **allowlist** and the **URL→alias mapping** should be expressed as a single, simple, declarative **rule set** (e.g. ordered host/path-pattern rules that yield both an allow/deny decision and the canonical `{mirror_id}` + alias set). A single request may therefore produce **multiple aliases** that all point to one `asset_id`; the cache logic (and the fetcher commit path) must support attaching several aliases to one asset.
+- **Scope note:** Applies to **image bytes only**. Cached **IIIF manifests are explicitly excluded** — a manifest embeds absolute origin URLs that would be wrong when served from the mirror, and manifest relaying/rewriting is out of scope (see Out Of Scope; `iiif-image-mirror` must not relay or rewrite Presentation manifests).
+- **Open questions:** [`Q-025`](05_BACKLOG_AND_OPEN_QUESTIONS.md) (IIIF/mirror phasing), Q-022 (domain cacheability policy + URL→alias rule format).
+
 ### Cross-scenario decisions
 
 - **Storage layout** — ADR-007; four buckets + `partition_id`.
@@ -309,3 +331,4 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 - **SCN-007** → FR-002, FR-010..015, FR-020, FR-022, FR-050 + fetcher spec
 - **SCN-008** → FR-002, FR-010, FR-012 (read path; IIIF server future)
 - **SCN-009** → composite (SCN-007 + SCN-005 + SCN-002); FR-001..004, FR-010..015, FR-069 (task-api / processing steps out of scope)
+- **SCN-010** → FR-002, FR-010, FR-012 (read path; reuses SCN-002; image bytes only, manifests excluded; `iiif-image-mirror` future)
