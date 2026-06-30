@@ -17,11 +17,14 @@ foundation everything else wraps:
   model, path/bucket normalization, object-key layout, an object-store backend seam
   (`ObjectStoreBackend` + in-memory `LocalObjectStore`), prefix-scoped capabilities,
   the FR-015 service-to-bucket allowlist, and a `StorageGuard` facade that composes
-  capability + service-policy + registry/object-store calls. No HTTP, Postgres, or
-  real S3 backend.
-- [`tests/`](../tests/) - 51 unit/integration tests, all green, covering FR-001..008,
-  FR-010..013, FR-015, FR-020..022 (reserve -> PUT -> commit -> resolve, guarded read),
-  and FR-022 checksum invariants.
+  capability + service-policy + registry/object-store calls. No Postgres or real S3
+  backend yet.
+- [`src/asset_store_core/api/`](../src/asset_store_core/api/) - a FastAPI app
+  (single process per ADR-002) exposing `/healthz`, `/readyz`, reserve/commit/resolve,
+  and capability mint, with a uniform RFC 7807 `application/problem+json` error model.
+- [`tests/`](../tests/) - 59 unit/integration/contract tests, all green, covering
+  FR-001..008, FR-010..013, FR-015, FR-020..022 (reserve -> PUT -> commit -> resolve,
+  guarded read), FR-022 checksum invariants, and the HTTP contract incl. problem+json.
 - `services/`, `tools/`, `deploy/` - placeholders only.
 
 Run the suite: `PYTHONPATH=src python -m unittest discover -s tests` (or
@@ -196,7 +199,7 @@ reordered to **lock quality first, then grow the core into a running service**.
    callers. Re-run the S-4 scoping suite through it. **(done 2026-06-30)**
 5. **Stand up the FastAPI app (B-002/B-010 slice).** Expose reserve/commit/resolve
    and capability mint over HTTP with `/healthz` and `/readyz`; contract-test the
-   RFC 7807 error model. One process per ADR-002.
+   RFC 7807 error model. One process per ADR-002. **(done 2026-06-30)**
 6. **Observability skeleton (B-004).** Structured logs + `/metrics` from the first
    endpoint, so every later PR is observable end to end.
 7. **Resume deferred spikes as needed:** S-001 object-store baseline and S-004

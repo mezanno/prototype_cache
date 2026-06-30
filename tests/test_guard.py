@@ -130,7 +130,9 @@ class StorageGuardTest(unittest.TestCase):
             capability_id="cap-su",
         )
 
-        self.assertEqual(b"payload", guard.read_bytes(capability=cap, alias="cache/gallica/img.png"))
+        self.assertEqual(
+            b"payload", guard.read_bytes(capability=cap, alias="cache/gallica/img.png")
+        )
         with self.assertRaises(CapabilityAlreadyConsumedError):
             guard.read_bytes(capability=cap, alias="cache/gallica/img.png")
 
