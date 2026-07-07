@@ -1,0 +1,89 @@
+# Unified asset-store dev stack (B-002, Phase 1 foundations).
+#
+# One command brings up the durable backends (Garage object store + Postgres)
+# and the asset-store FastAPI service wired to them:
+#
+#   cd deploy/compose
+#   docker compose up -d --build
+#   ./garage-init.sh        # provision Garage buckets + the fixed DEV key (idempotent)
+#
+# Then the service is on http://127.0.0.1:8000 (try /healthz, /readyz, /metrics).
+#
+# The Garage S3 access key/secret below are the same fixed DEV-ONLY values that
+# garage-init.sh imports; they are never used outside local development.
+name: asset-store-dev
+
+services:
+  garage:
+    image: dxflrs/garage:v1.0.1
+    container_name: asset-store-garage
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3900:3900"
+      - "127.0.0.1:3903:3903"
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    healthcheck:
+      # The Garage image is distroless (no shell), so use the exec form.
+      test: ["CMD", "/garage", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  postgres:
+    image: postgres:16
+    container_name: asset-store-postgres
+    restart: unless-stopped
+    environment:
+      # DEV-ONLY credentials; never used outside local development.
+      POSTGRES_USER: asset
+      POSTGRES_PASSWORD: asset
+      POSTGRES_DB: asset_store
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asset -d asset_store"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  asset-store:
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+    image: asset-store:dev
+    container_name: asset-store-api
+    restart: unless-stopped
+    depends_on:
+      garage:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      # Durable S3 backend (in-cluster endpoint; buckets provisioned by garage-init.sh).
+      ASSET_STORE_S3_ENDPOINT: http://garage:3900
+      ASSET_STORE_S3_REGION: garage
+      ASSET_STORE_S3_ACCESS_KEY: GKa55e70000000000000000001
+      ASSET_STORE_S3_SECRET_KEY: c5366f706591234709384b7eb634827a11c1a7b5945a86941d62135e80c8da7c
+      # Durable registry DSN is plumbed for B-009; the registry is in-memory today.
+      ASSET_STORE_PG_DSN: postgresql://asset:asset@postgres:5432/asset_store
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  garage-meta:
+  garage-data:
+  postgres-data:

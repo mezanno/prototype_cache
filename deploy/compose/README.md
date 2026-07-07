@@ -1,6 +1,6 @@
 # compose
 
-Future local development stack:
+Local development stack:
 
 | Component | Role |
 |-----------|------|
@@ -9,8 +9,37 @@ Future local development stack:
 | asset-store | Single FastAPI service (internal `registry` / `capabilities` / `storage` modules, ADR-002) |
 | fetcher (optional) | Remote URL ingestion ([`docs/services/fetcher-service.md`](../../docs/services/fetcher-service.md)) |
 
-The full multi-service stack is documentation-only until the Phase 1 scaffold
-lands. The **Garage object-store tier is real and runnable today** — see below.
+## Unified dev stack (B-002)
+
+[`docker-compose.yml`](docker-compose.yml) brings up Garage + Postgres + the
+`asset-store` FastAPI service (built from [`deploy/Dockerfile`](../Dockerfile))
+wired to those backends. The service selects its object-store backend from the
+environment via the `create_app_from_env` ASGI factory.
+
+```bash
+cd deploy/compose
+
+# 1. Build the service image and start the whole stack.
+docker compose up -d --build
+
+# 2. Provision Garage buckets + the fixed DEV key (idempotent; needed once).
+./garage-init.sh
+
+# 3. Hit the service (bound to 127.0.0.1:8000).
+curl -s http://127.0.0.1:8000/healthz
+curl -s http://127.0.0.1:8000/readyz
+curl -s http://127.0.0.1:8000/metrics | head
+
+# 4. Stop (named volumes persist).
+docker compose down
+```
+
+The registry is in-memory in this slice; `ASSET_STORE_PG_DSN` is plumbed into the
+service for the durable Postgres-backed registry tracked as B-009. The Garage S3
+key/secret in [`docker-compose.yml`](docker-compose.yml) are the same fixed
+**DEV-ONLY** values `garage-init.sh` imports.
+
+The single-tier stacks below stay useful for the gated backend test suites.
 
 ## Garage dev stack (S-001 / S-004)
 

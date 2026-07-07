@@ -11,6 +11,7 @@ core; Postgres and a real S3 backend are wired later behind the same interfaces.
 
 from __future__ import annotations
 
+import os
 from datetime import timedelta
 from uuid import uuid4
 
@@ -308,3 +309,39 @@ def create_app(
         return Response(content=data, media_type="application/octet-stream")
 
     return app
+
+
+def _require_env(name: str) -> str:
+    """Return env var ``name`` or raise a clear startup error (B-002)."""
+
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"missing required environment variable: {name}")
+    return value
+
+
+def create_app_from_env() -> FastAPI:
+    """Build the app selecting backends from environment variables (B-002).
+
+    Used as the uvicorn ASGI factory in the compose/Swarm stacks. When
+    ``ASSET_STORE_S3_ENDPOINT`` is set, the durable
+    :class:`~asset_store_core.s3_object_store.S3ObjectStore` is wired (reading
+    ``ASSET_STORE_S3_REGION``/``_ACCESS_KEY``/``_SECRET_KEY``); otherwise the
+    in-memory :class:`~asset_store_core.object_store.LocalObjectStore` is used.
+
+    The registry stays in-memory in this slice; the durable Postgres-backed
+    registry is tracked separately as B-009.
+    """
+
+    store: ObjectStoreBackend | None = None
+    endpoint = os.environ.get("ASSET_STORE_S3_ENDPOINT")
+    if endpoint:
+        from asset_store_core.s3_object_store import S3ObjectStore
+
+        store = S3ObjectStore(
+            endpoint_url=endpoint,
+            region=os.environ.get("ASSET_STORE_S3_REGION", "garage"),
+            access_key=_require_env("ASSET_STORE_S3_ACCESS_KEY"),
+            secret_key=_require_env("ASSET_STORE_S3_SECRET_KEY"),
+        )
+    return create_app(store=store)
