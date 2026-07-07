@@ -12,6 +12,7 @@ Each exception type maps cleanly to HTTP semantics when adapters wrap this layer
 - ``InvalidStateTransitionError`` → 409 or 410 depending on adapter policy
 - ``ServiceAuthError`` → 401
 - ``CapabilityDeniedError`` / ``CapabilityAlreadyConsumedError`` → 403
+- ``PresignNotSupportedError`` → 501
 """
 
 
@@ -45,6 +46,15 @@ class AssetNotFoundError(AssetStoreError):
 
 class ObjectNotFoundError(AssetStoreError):
     """Raised when object-store bytes are missing for a given location."""
+
+
+class PresignNotSupportedError(AssetStoreError):
+    """Raised when the active object-store backend cannot mint presigned URLs.
+
+    The in-memory :class:`~asset_store_core.object_store.LocalObjectStore` has no
+    externally reachable URL, so presigned reads are only available on an
+    S3-compatible backend (ADR-003 presigned mode).
+    """
 
 
 class ChecksumMismatchError(AssetStoreError):

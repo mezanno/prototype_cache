@@ -175,3 +175,17 @@ class S3ObjectStore:
     def delete_object(self, location: ObjectStoreLocation) -> None:
         # S3 delete is idempotent; missing keys are not an error (mirrors LocalObjectStore).
         self._client.delete_object(Bucket=location.bucket, Key=location.key)
+
+    def presign_get_url(self, location: ObjectStoreLocation, *, expires_in: int) -> str:
+        """Return a SigV4 presigned GET URL valid for ``expires_in`` seconds (ADR-003).
+
+        The URL grants direct, time-limited read access to a single object without
+        proxying bytes through this service; the guard authorizes issuance, the
+        object store signs it.
+        """
+        url: str = self._client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": location.bucket, "Key": location.key},
+            ExpiresIn=expires_in,
+        )
+        return url

@@ -9,7 +9,9 @@ from fastapi.testclient import TestClient
 
 from asset_store_core.api import create_app
 from asset_store_core.capabilities import Capability, Operation
+from asset_store_core.object_store import LocalObjectStore
 from asset_store_core.service_identity import dev_secret
+from asset_store_core.storage import ObjectStoreLocation
 
 PROBLEM = "application/problem+json"
 
@@ -128,6 +130,126 @@ class DataPlaneTest(unittest.TestCase):
         )
         self.assertEqual(403, response.status_code)
         self.assertEqual("CapabilityDeniedError", response.json()["title"])
+
+
+class _PresigningStore(LocalObjectStore):
+    """LocalObjectStore that also mints fake presigned URLs, for endpoint tests."""
+
+    def presign_get_url(self, location: ObjectStoreLocation, *, expires_in: int) -> str:
+        return f"https://signed.example/{location.bucket}/{location.key}?ttl={expires_in}"
+
+
+class PresignEndpointTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.app = create_app(store=_PresigningStore())
+        self.client = TestClient(self.app)
+
+    def _auth(self, capability_id: str) -> dict[str, str]:
+        return {"Authorization": f"Capability {capability_id}"}
+
+    def _mint(self, *, operation: str, scope: str, service: str, single_use: bool = False) -> str:
+        response = self.client.post(
+            "/capabilities",
+            json={
+                "operation": operation,
+                "scope_prefix": scope,
+                "ttl_seconds": 300,
+                "single_use": single_use,
+            },
+            headers={"Authorization": f"Service {service}:{dev_secret(service)}"},
+        )
+        self.assertEqual(201, response.status_code, response.text)
+        return str(response.json()["capability_id"])
+
+    def _write(self, alias: str, data: bytes) -> None:
+        scope = alias.rsplit("/", 1)[0]
+        cap = self._mint(operation="write", scope=scope, service="upload-api")
+        response = self.client.put(f"/objects/{alias}", content=data, headers=self._auth(cap))
+        self.assertEqual(201, response.status_code, response.text)
+
+    def test_presign_mode_returns_signed_url(self) -> None:
+        alias = "users/42/uploads/a.txt"
+        self._write(alias, b"hello world")
+        cap = self._mint(operation="read", scope="users/42/uploads", service="upload-api")
+
+        response = self.client.get(
+            f"/objects/{alias}",
+            params={"mode": "presign", "expires_in": 120},
+            headers=self._auth(cap),
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        body = response.json()
+        self.assertEqual("GET", body["method"])
+        self.assertIn("signed.example", body["url"])
+        self.assertEqual(120, body["expires_in"])
+        self.assertEqual(alias, body["alias"])
+        self.assertIsNotNone(body["checksum"])
+
+    def test_presign_mode_rejects_single_use(self) -> None:
+        alias = "users/42/uploads/b.txt"
+        self._write(alias, b"x")
+        cap = self._mint(
+            operation="read", scope="users/42/uploads", service="upload-api", single_use=True
+        )
+        response = self.client.get(
+            f"/objects/{alias}", params={"mode": "presign"}, headers=self._auth(cap)
+        )
+        self.assertEqual(403, response.status_code)
+        self.assertEqual("CapabilityDeniedError", response.json()["title"])
+
+    def test_invalid_mode_is_rejected(self) -> None:
+        cap = self._mint(operation="read", scope="users/42/uploads", service="upload-api")
+        response = self.client.get(
+            "/objects/users/42/uploads/a.txt",
+            params={"mode": "bogus"},
+            headers=self._auth(cap),
+        )
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("ValidationError", response.json()["title"])
+
+    def test_presign_expires_in_out_of_range_is_422(self) -> None:
+        cap = self._mint(operation="read", scope="users/42/uploads", service="upload-api")
+        response = self.client.get(
+            "/objects/users/42/uploads/a.txt",
+            params={"mode": "presign", "expires_in": 999_999},
+            headers=self._auth(cap),
+        )
+        self.assertEqual(422, response.status_code)
+
+
+class PresignUnsupportedTest(unittest.TestCase):
+    """Presign against the default in-memory store must fail cleanly (501)."""
+
+    def setUp(self) -> None:
+        self.app = create_app()
+        self.client = TestClient(self.app)
+
+    def test_presign_on_local_store_returns_501(self) -> None:
+        alias = "users/42/uploads/a.txt"
+        write_cap_body = {
+            "operation": "write",
+            "scope_prefix": "users/42/uploads",
+            "ttl_seconds": 300,
+        }
+        auth = {"Authorization": f"Service upload-api:{dev_secret('upload-api')}"}
+        cap_id = self.client.post("/capabilities", json=write_cap_body, headers=auth).json()[
+            "capability_id"
+        ]
+        self.client.put(
+            f"/objects/{alias}", content=b"x", headers={"Authorization": f"Capability {cap_id}"}
+        )
+        read_body = {**write_cap_body, "operation": "read"}
+        read_id = self.client.post("/capabilities", json=read_body, headers=auth).json()[
+            "capability_id"
+        ]
+
+        response = self.client.get(
+            f"/objects/{alias}",
+            params={"mode": "presign"},
+            headers={"Authorization": f"Capability {read_id}"},
+        )
+        self.assertEqual(501, response.status_code, response.text)
+        self.assertEqual("PresignNotSupportedError", response.json()["title"])
 
 
 if __name__ == "__main__":

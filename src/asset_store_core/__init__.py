@@ -16,9 +16,10 @@ from asset_store_core.errors import (
     ChecksumMismatchError,
     InvalidStateTransitionError,
     ObjectNotFoundError,
+    PresignNotSupportedError,
     ValidationError,
 )
-from asset_store_core.guard import GuardedRead, StorageGuard
+from asset_store_core.guard import GuardedRead, PresignedRead, StorageGuard
 from asset_store_core.ids import new_asset_id
 from asset_store_core.models import AliasBinding, Asset, AssetState, AuditEvent
 from asset_store_core.object_store import (
@@ -70,6 +71,8 @@ __all__ = [
     "new_asset_id",
     "CHECKSUM_ALGO",
     "GuardedRead",
+    "PresignNotSupportedError",
+    "PresignedRead",
     "StorageGuard",
     "STORAGE_BUCKETS",
     "ObjectStoreLocation",

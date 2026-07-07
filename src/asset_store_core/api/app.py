@@ -37,11 +37,12 @@ from asset_store_core.api.schemas import (
     LifecycleRequest,
     PartitionQuotaOut,
     PartitionQuotaRequest,
+    PresignedUrlOut,
     ReserveRequest,
 )
 from asset_store_core.capabilities import Capability
-from asset_store_core.errors import CapabilityDeniedError, ServiceAuthError
-from asset_store_core.guard import StorageGuard
+from asset_store_core.errors import CapabilityDeniedError, ServiceAuthError, ValidationError
+from asset_store_core.guard import DEFAULT_PRESIGN_TTL_SECONDS, StorageGuard
 from asset_store_core.models import utcnow
 from asset_store_core.object_store import LocalObjectStore, ObjectStoreBackend
 from asset_store_core.paths import normalize_space
@@ -334,11 +335,29 @@ def create_app(
         observe_bucket_fill(asset.space)
         return AssetOut.from_asset(asset)
 
-    @app.get("/objects/{alias:path}")
+    @app.get("/objects/{alias:path}", response_model=None)
     def read_object(
         alias: str,
         capability: Capability = Depends(require_capability),
-    ) -> Response:
+        mode: str = Query("proxy"),
+        expires_in: int = Query(DEFAULT_PRESIGN_TTL_SECONDS, ge=1, le=3600),
+    ) -> Response | PresignedUrlOut:
+        if mode == "presign":
+            presigned = guard.presign_read(
+                capability=capability, alias=alias, expires_in=expires_in
+            )
+            asset = presigned.asset
+            return PresignedUrlOut(
+                alias=alias,
+                asset_id=asset.asset_id,
+                url=presigned.url,
+                expires_in=presigned.expires_in,
+                expires_at=presigned.expires_at,
+                size_bytes=asset.size_bytes,
+                checksum=asset.checksum,
+            )
+        if mode != "proxy":
+            raise ValidationError("mode must be 'proxy' or 'presign'")
         data = guard.read_bytes(capability=capability, alias=alias)
         return Response(content=data, media_type="application/octet-stream")
 

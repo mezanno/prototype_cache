@@ -24,6 +24,7 @@ from asset_store_core.errors import (
     ChecksumMismatchError,
     InvalidStateTransitionError,
     ObjectNotFoundError,
+    PresignNotSupportedError,
     QuotaExceededError,
     ServiceAuthError,
     ValidationError,
@@ -44,6 +45,7 @@ _STATUS_BY_ERROR: dict[type[AssetStoreError], int] = {
     ChecksumMismatchError: 409,
     InvalidStateTransitionError: 409,
     QuotaExceededError: 413,
+    PresignNotSupportedError: 501,
 }
 
 

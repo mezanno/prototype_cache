@@ -19,15 +19,21 @@ form the registry's ``reserve_asset`` expects and the partition-inclusive form
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from asset_store_core.capabilities import Capability, Operation, SingleUseLedger
-from asset_store_core.errors import ValidationError
-from asset_store_core.models import Asset
+from asset_store_core.errors import CapabilityDeniedError, ValidationError
+from asset_store_core.models import Asset, utcnow
 from asset_store_core.object_store import ObjectStoreBackend
 from asset_store_core.paths import normalize_relative_alias, normalize_space, qualified_alias
 from asset_store_core.registry_base import AssetRegistry
 from asset_store_core.service_policy import assert_service_bucket_allowed
 from asset_store_core.storage import ObjectStoreLocation, normalize_partition_id
+
+# Presigned-read TTL bounds (ADR-003). The effective TTL is additionally capped by
+# the minting capability's own remaining lifetime so a URL never outlives its grant.
+DEFAULT_PRESIGN_TTL_SECONDS = 300
+MAX_PRESIGN_TTL_SECONDS = 3600
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +70,16 @@ class GuardedRead:
 
     asset: Asset
     location: ObjectStoreLocation
+
+
+@dataclass(frozen=True, slots=True)
+class PresignedRead:
+    """Result of an authorized presigned read (ADR-003 presigned mode)."""
+
+    asset: Asset
+    url: str
+    expires_in: int
+    expires_at: datetime
 
 
 class StorageGuard:
@@ -111,6 +127,40 @@ class StorageGuard:
         data = self._store.get_object(guarded.location)
         self._ledger.record_successful_use(capability)
         return data
+
+    def presign_read(
+        self,
+        *,
+        capability: Capability,
+        alias: str,
+        expires_in: int = DEFAULT_PRESIGN_TTL_SECONDS,
+    ) -> PresignedRead:
+        """Authorize a read and mint a presigned GET URL (``ADR-003`` presigned mode).
+
+        The effective TTL is ``min(expires_in, MAX_PRESIGN_TTL_SECONDS, capability
+        remaining lifetime)`` so the URL never outlives the grant that minted it.
+        Single-use capabilities are rejected: a presigned URL is fetched outside the
+        guard, so single-use (``FR-013``) cannot be enforced on it.
+        """
+
+        if capability.single_use:
+            raise CapabilityDeniedError(
+                "single-use capability cannot mint a presigned URL (FR-013)"
+            )
+        if expires_in <= 0:
+            raise ValidationError("expires_in must be a positive number of seconds")
+        guarded = self.resolve_for_read(capability=capability, alias=alias)
+        remaining = int((capability.expires_at - utcnow()).total_seconds())
+        if remaining <= 0:
+            raise CapabilityDeniedError("capability has expired")
+        ttl = min(expires_in, MAX_PRESIGN_TTL_SECONDS, remaining)
+        url = self._store.presign_get_url(guarded.location, expires_in=ttl)
+        return PresignedRead(
+            asset=guarded.asset,
+            url=url,
+            expires_in=ttl,
+            expires_at=utcnow() + timedelta(seconds=ttl),
+        )
 
     def write_object(
         self,

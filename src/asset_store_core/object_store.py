@@ -16,7 +16,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Protocol
 
-from asset_store_core.errors import ObjectNotFoundError
+from asset_store_core.errors import ObjectNotFoundError, PresignNotSupportedError
 from asset_store_core.storage import ObjectStoreLocation
 
 CHECKSUM_ALGO = "sha256"
@@ -52,6 +52,13 @@ class ObjectStoreBackend(Protocol):
 
     def delete_object(self, location: ObjectStoreLocation) -> None: ...
 
+    def presign_get_url(self, location: ObjectStoreLocation, *, expires_in: int) -> str:
+        """Return a time-limited URL a client can GET directly (ADR-003 presigned mode).
+
+        Backends without an externally reachable URL raise
+        :class:`~asset_store_core.errors.PresignNotSupportedError`.
+        """
+
 
 class LocalObjectStore:
     """In-memory :class:`ObjectStoreBackend` for tests and single-process spikes.
@@ -84,3 +91,9 @@ class LocalObjectStore:
 
     def delete_object(self, location: ObjectStoreLocation) -> None:
         self._objects.pop((location.bucket, location.key), None)
+
+    def presign_get_url(self, location: ObjectStoreLocation, *, expires_in: int) -> str:
+        """Unsupported: the in-memory store has no externally reachable URL."""
+        raise PresignNotSupportedError(
+            "LocalObjectStore cannot mint presigned URLs; use an S3 backend"
+        )

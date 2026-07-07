@@ -33,7 +33,29 @@ The phased order below was followed; the guard is no longer deferred.
 2. **Thin guard facade** (`guard.py`) composing `service_policy` + capability checks + registry/object-store. **Done.**
 3. **HTTP server** exposing the registry ops, capability mint, and a capability-guarded data plane. **Done.**
 
-FR-010–FR-015 remain the production contract; auth lives in one place (`StorageGuard`) rather than spread across callers. Capabilities are still **unsigned** in this slice — minted ids act as opaque bearer tokens held in an in-process store (ADR-003 proxy mode); presigned URLs and signed tokens are deferred.
+FR-010–FR-015 remain the production contract; auth lives in one place (`StorageGuard`) rather than spread across callers. Capabilities are still **unsigned** in this slice — minted ids act as opaque bearer tokens held in an in-process store (ADR-003 proxy mode). A **presigned mode** is also available for reads: `GET /objects/{alias}?mode=presign` returns a short-lived S3 presigned GET URL instead of proxying bytes (see below). Signed capability tokens remain deferred.
+
+### Presigned reads (B-010, ADR-003 presigned mode)
+
+Workers that want to stream bytes directly from the object store (no proxy hop) can
+request a presigned URL:
+
+- **Endpoint:** `GET /objects/{alias}?mode=presign[&expires_in=<1..3600>]`, authorized
+  by the same `Authorization: Capability <id>` read grant as proxy mode
+  (`mode=proxy`, the default, still streams bytes). Returns JSON
+  (`PresignedUrlOut`: `url`, `method`, `expires_in`, `expires_at`, `asset_id`,
+  `size_bytes`, `checksum`).
+- **Authorization:** `StorageGuard.presign_read` runs the full read authorization
+  (`resolve_for_read`: capability scope/operation/expiry + FR-015 bucket allowlist +
+  alias resolve), then asks the object store to sign the URL. The effective TTL is
+  `min(expires_in, 3600, capability remaining lifetime)` so a URL never outlives the
+  grant that minted it.
+- **Single-use is refused:** a presigned URL is fetched outside the guard, so
+  single-use (FR-013) cannot be enforced on it — `presign_read` rejects single-use
+  capabilities with `CapabilityDeniedError`.
+- **Backend support:** the seam gains `ObjectStoreBackend.presign_get_url`. `S3ObjectStore`
+  implements it via boto3 `generate_presigned_url` (SigV4, certified on Garage);
+  `LocalObjectStore` has no reachable URL and raises `PresignNotSupportedError → 501`.
 
 ### Service-identity authentication + issuance audit (B-010, FR-014/FR-050)
 

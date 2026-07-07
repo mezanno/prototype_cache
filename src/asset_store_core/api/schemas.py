@@ -109,6 +109,19 @@ class CapabilityOut(BaseModel):
     single_use: bool
 
 
+class PresignedUrlOut(BaseModel):
+    """Presigned GET descriptor returned by ``GET /objects/{alias}?mode=presign``."""
+
+    alias: str
+    asset_id: str
+    method: str = "GET"
+    url: str
+    expires_in: int
+    expires_at: datetime
+    size_bytes: int | None
+    checksum: str | None
+
+
 class AuditEventOut(BaseModel):
     """One recorded audit event (FR-008/FR-016)."""
 

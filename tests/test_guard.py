@@ -12,9 +12,12 @@ from asset_store_core import (
     InMemoryAssetRegistry,
     LocalObjectStore,
     Operation,
+    PresignNotSupportedError,
     SingleUseLedger,
     StorageGuard,
 )
+from asset_store_core.guard import MAX_PRESIGN_TTL_SECONDS
+from asset_store_core.storage import ObjectStoreLocation
 
 
 def _cap(
@@ -147,6 +150,82 @@ class StorageGuardTest(unittest.TestCase):
         self.assertEqual("bulk-loader", asset.owner_service_id)
         self.assertEqual("cache", asset.space)
         self.assertIn("cache/gallica/doc.bin", asset.aliases)
+
+
+class _PresigningStore(LocalObjectStore):
+    """LocalObjectStore that can also mint fake presigned URLs, for guard tests."""
+
+    def presign_get_url(self, location: ObjectStoreLocation, *, expires_in: int) -> str:
+        return f"https://signed.example/{location.bucket}/{location.key}?ttl={expires_in}"
+
+
+class PresignReadTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.registry = InMemoryAssetRegistry()
+        self.store = _PresigningStore()
+        self.guard = StorageGuard(self.registry, self.store)
+        self.guard.write_object(
+            capability=_cap(
+                service="bulk-loader", operation=Operation.WRITE, scope_prefix="cache/gallica"
+            ),
+            alias="cache/gallica/img.png",
+            data=b"payload",
+        )
+
+    def _read_cap(self, **kwargs: object) -> Capability:
+        return _cap(
+            service="worker",
+            operation=Operation.READ,
+            scope_prefix="cache/gallica",
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def test_presign_read_returns_signed_url_and_asset(self) -> None:
+        result = self.guard.presign_read(
+            capability=self._read_cap(), alias="cache/gallica/img.png", expires_in=120
+        )
+        self.assertIn("signed.example", result.url)
+        self.assertEqual("ttl=120", result.url.rsplit("?", 1)[1])
+        self.assertEqual(120, result.expires_in)
+        self.assertEqual(7, result.asset.size_bytes)
+
+    def test_presign_ttl_capped_by_maximum(self) -> None:
+        result = self.guard.presign_read(
+            capability=self._read_cap(ttl=timedelta(hours=24)),
+            alias="cache/gallica/img.png",
+            expires_in=10_000,
+        )
+        self.assertEqual(MAX_PRESIGN_TTL_SECONDS, result.expires_in)
+
+    def test_presign_ttl_capped_by_capability_remaining(self) -> None:
+        result = self.guard.presign_read(
+            capability=self._read_cap(ttl=timedelta(seconds=45)),
+            alias="cache/gallica/img.png",
+            expires_in=600,
+        )
+        self.assertLessEqual(result.expires_in, 45)
+        self.assertGreater(result.expires_in, 0)
+
+    def test_presign_rejects_single_use_capability(self) -> None:
+        with self.assertRaises(CapabilityDeniedError):
+            self.guard.presign_read(
+                capability=self._read_cap(single_use=True),
+                alias="cache/gallica/img.png",
+            )
+
+    def test_presign_denied_for_wrong_scope(self) -> None:
+        with self.assertRaises(CapabilityDeniedError):
+            self.guard.presign_read(
+                capability=_cap(
+                    service="worker", operation=Operation.READ, scope_prefix="cache/other"
+                ),
+                alias="cache/gallica/img.png",
+            )
+
+    def test_presign_unsupported_on_local_store(self) -> None:
+        guard = StorageGuard(self.registry, LocalObjectStore())
+        with self.assertRaises(PresignNotSupportedError):
+            guard.presign_read(capability=self._read_cap(), alias="cache/gallica/img.png")
 
 
 if __name__ == "__main__":

@@ -215,6 +215,25 @@ class GarageDataPlaneEndToEndTest(unittest.TestCase):
         self.assertEqual(200, read.status_code)
         self.assertEqual(payload, read.content)
 
+    def test_presigned_read_through_endpoint(self) -> None:
+        alias = f"users/42/uploads/{uuid.uuid4().hex}.txt"
+        scope = alias.rsplit("/", 1)[0]
+        payload = b"presign via the guard endpoint"
+
+        write_cap = self._mint(operation="write", scope=scope, service="upload-api")
+        self.client.put(f"/objects/{alias}", content=payload, headers=self._auth(write_cap))
+
+        read_cap = self._mint(operation="read", scope=scope, service="upload-api")
+        response = self.client.get(
+            f"/objects/{alias}",
+            params={"mode": "presign", "expires_in": 60},
+            headers=self._auth(read_cap),
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        url = response.json()["url"]
+        with urllib.request.urlopen(url) as fetched:  # noqa: S310 - local dev endpoint
+            self.assertEqual(payload, fetched.read())
+
 
 if __name__ == "__main__":
     unittest.main()
