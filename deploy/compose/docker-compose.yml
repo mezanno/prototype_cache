@@ -71,6 +71,10 @@ services:
       ASSET_STORE_S3_SECRET_KEY: c5366f706591234709384b7eb634827a11c1a7b5945a86941d62135e80c8da7c
       # Durable registry DSN is plumbed for B-009; the registry is in-memory today.
       ASSET_STORE_PG_DSN: postgresql://asset:asset@postgres:5432/asset_store
+      # Service-identity credentials for capability minting (FR-014, ADR-016).
+      # Left unset -> dev-default store (every known service id uses `dev-secret:<id>`).
+      # Override in a real deployment, e.g.:
+      #   ASSET_STORE_SERVICE_CREDENTIALS: "upload-api:s3cret,worker:another"
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:

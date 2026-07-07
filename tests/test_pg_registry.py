@@ -97,6 +97,33 @@ class PostgresRegistryTest(unittest.TestCase):
         actions = [event.action for event in self.registry.audit_events]
         self.assertEqual(["alias.create", "asset.commit"], actions)
 
+    def test_record_capability_issue_persists_outcome(self) -> None:
+        self.registry.record_capability_issue(
+            caller_service_id="upload-api",
+            operation="write",
+            scope_prefix="users/42/uploads",
+            ttl_seconds=300,
+            outcome="granted",
+            capability_id="cap-abc",
+        )
+        self.registry.record_capability_issue(
+            caller_service_id="worker",
+            operation="write",
+            scope_prefix="users/42/uploads",
+            ttl_seconds=300,
+            outcome="denied",
+        )
+        events = [e for e in self.registry.audit_events if e.action == "capability.issue"]
+        by_outcome = {e.outcome: e for e in events}
+        self.assertEqual({"granted", "denied"}, set(by_outcome))
+        granted = by_outcome["granted"]
+        self.assertEqual("upload-api", granted.caller_service_id)
+        self.assertEqual("users/42/uploads", granted.target)
+        self.assertEqual("write", granted.after["operation"])
+        self.assertEqual("300", granted.after["ttl_seconds"])
+        self.assertEqual("cap-abc", granted.after["capability_id"])
+        self.assertNotIn("capability_id", by_outcome["denied"].after)
+
     def test_resolve_pending_asset_is_rejected(self) -> None:
         self.registry.reserve_asset(
             space="cache",

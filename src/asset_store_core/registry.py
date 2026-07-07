@@ -107,6 +107,29 @@ class InMemoryAssetRegistry:
 
         return tuple(self._audit_events)
 
+    def record_capability_issue(
+        self,
+        *,
+        caller_service_id: str,
+        operation: str,
+        scope_prefix: str,
+        ttl_seconds: int,
+        outcome: str,
+        capability_id: str | None = None,
+    ) -> None:
+        """Append a capability-issuance audit event (FR-050, granted/denied)."""
+
+        after: dict[str, str] = {"operation": operation, "ttl_seconds": str(ttl_seconds)}
+        if capability_id is not None:
+            after["capability_id"] = capability_id
+        self._audit(
+            action="capability.issue",
+            target=scope_prefix,
+            caller_service_id=caller_service_id,
+            outcome=outcome,
+            after=after,
+        )
+
     def reserve_asset(
         self,
         *,

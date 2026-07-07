@@ -25,6 +25,7 @@ from asset_store_core.errors import (
     InvalidStateTransitionError,
     ObjectNotFoundError,
     QuotaExceededError,
+    ServiceAuthError,
     ValidationError,
 )
 
@@ -32,6 +33,7 @@ PROBLEM_CONTENT_TYPE = "application/problem+json"
 
 _STATUS_BY_ERROR: dict[type[AssetStoreError], int] = {
     ValidationError: 400,
+    ServiceAuthError: 401,
     CapabilityDeniedError: 403,
     CapabilityAlreadyConsumedError: 403,
     AliasNotFoundError: 404,

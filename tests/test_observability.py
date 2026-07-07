@@ -13,6 +13,7 @@ from asset_store_core.api.observability import (
     CORRELATION_ID_HEADER,
     JsonLogFormatter,
 )
+from asset_store_core.service_identity import dev_secret
 
 CORRELATION_HEADER = CORRELATION_ID_HEADER.decode()
 
@@ -40,18 +41,18 @@ class MetricsEndpointTest(unittest.TestCase):
             json={
                 "operation": "write",
                 "scope_prefix": "users/42/uploads",
-                "caller_service_id": "upload-api",
                 "ttl_seconds": 300,
             },
+            headers={"Authorization": f"Service upload-api:{dev_secret('upload-api')}"},
         )
         self.client.post(
             "/capabilities",
             json={
                 "operation": "write",
                 "scope_prefix": "users/42/uploads",
-                "caller_service_id": "worker",
                 "ttl_seconds": 300,
             },
+            headers={"Authorization": f"Service worker:{dev_secret('worker')}"},
         )
         body = self.client.get("/metrics").text
         self.assertIn("asset_store_capability_issued_total", body)

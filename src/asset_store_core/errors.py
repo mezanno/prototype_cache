@@ -10,12 +10,17 @@ Each exception type maps cleanly to HTTP semantics when adapters wrap this layer
 - ``ChecksumMismatchError`` → 409 (FR-022)
 - ``ValidationError`` → 400
 - ``InvalidStateTransitionError`` → 409 or 410 depending on adapter policy
+- ``ServiceAuthError`` → 401
 - ``CapabilityDeniedError`` / ``CapabilityAlreadyConsumedError`` → 403
 """
 
 
 class AssetStoreError(Exception):
     """Base class for expected domain errors."""
+
+
+class ServiceAuthError(AssetStoreError):
+    """Raised when a calling service fails static-credential authentication (FR-014)."""
 
 
 class ValidationError(AssetStoreError):

@@ -28,6 +28,7 @@ from asset_store_core.api import create_app
 from asset_store_core.errors import ObjectNotFoundError
 from asset_store_core.object_store import compute_checksum
 from asset_store_core.s3_object_store import S3ObjectStore
+from asset_store_core.service_identity import dev_secret
 from asset_store_core.storage import ObjectStoreLocation
 
 _ENDPOINT = os.environ.get("ASSET_STORE_S3_ENDPOINT")
@@ -185,9 +186,9 @@ class GarageDataPlaneEndToEndTest(unittest.TestCase):
             json={
                 "operation": operation,
                 "scope_prefix": scope,
-                "caller_service_id": service,
                 "ttl_seconds": 300,
             },
+            headers={"Authorization": f"Service {service}:{dev_secret(service)}"},
         )
         self.assertEqual(201, response.status_code, response.text)
         return str(response.json()["capability_id"])

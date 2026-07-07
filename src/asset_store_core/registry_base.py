@@ -34,6 +34,18 @@ class AssetRegistry(Protocol):
     def audit_events(self) -> tuple[AuditEvent, ...]:
         """Recorded audit events in insertion order (FR-008/FR-016)."""
 
+    def record_capability_issue(
+        self,
+        *,
+        caller_service_id: str,
+        operation: str,
+        scope_prefix: str,
+        ttl_seconds: int,
+        outcome: str,
+        capability_id: str | None = ...,
+    ) -> None:
+        """Append a capability-issuance audit event (FR-050, granted/denied)."""
+
     def reserve_asset(
         self,
         *,

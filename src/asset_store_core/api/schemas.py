@@ -85,11 +85,15 @@ class AssetOut(BaseModel):
 
 
 class CapabilityMintRequest(BaseModel):
-    """Body for ``POST /capabilities`` (FR-010, TTL bounded 60 s..24 h)."""
+    """Body for ``POST /capabilities`` (FR-010, TTL bounded 60 s..24 h).
+
+    The caller identity is **not** taken from the body; it comes from the
+    authenticated service credential (FR-014), so a caller cannot mint under
+    another service's identity.
+    """
 
     operation: Operation
     scope_prefix: str
-    caller_service_id: str
     ttl_seconds: int = Field(ge=60, le=86_400)
     single_use: bool = False
 

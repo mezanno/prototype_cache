@@ -33,6 +33,12 @@ _SERVICE_WRITE_BUCKETS: dict[str, frozenset[str]] = {
     "iiif-server": frozenset(),
 }
 
+# Every recognised service identity (read- or write-capable). The credential store
+# (FR-014) issues one static secret per identity from this set.
+KNOWN_SERVICE_IDS: frozenset[str] = frozenset(_SERVICE_READ_BUCKETS) | frozenset(
+    _SERVICE_WRITE_BUCKETS
+)
+
 
 def buckets_for_service(service_id: str, *, operation: Operation) -> frozenset[str]:
     """Return buckets the service may use for ``operation``."""

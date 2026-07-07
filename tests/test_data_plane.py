@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from asset_store_core.api import create_app
 from asset_store_core.capabilities import Capability, Operation
+from asset_store_core.service_identity import dev_secret
 
 PROBLEM = "application/problem+json"
 
@@ -32,10 +33,10 @@ class DataPlaneTest(unittest.TestCase):
             json={
                 "operation": operation,
                 "scope_prefix": scope,
-                "caller_service_id": service,
                 "ttl_seconds": ttl,
                 "single_use": single_use,
             },
+            headers={"Authorization": f"Service {service}:{dev_secret(service)}"},
         )
         self.assertEqual(201, response.status_code)
         return str(response.json()["capability_id"])

@@ -40,27 +40,31 @@ from asset_store_core.api.schemas import (
     ReserveRequest,
 )
 from asset_store_core.capabilities import Capability
-from asset_store_core.errors import CapabilityDeniedError
+from asset_store_core.errors import CapabilityDeniedError, ServiceAuthError
 from asset_store_core.guard import StorageGuard
 from asset_store_core.models import utcnow
 from asset_store_core.object_store import LocalObjectStore, ObjectStoreBackend
 from asset_store_core.paths import normalize_space
 from asset_store_core.registry import InMemoryAssetRegistry
 from asset_store_core.registry_base import AssetRegistry
+from asset_store_core.service_identity import ServiceCredentialStore
 from asset_store_core.service_policy import assert_service_bucket_allowed
 
 CAPABILITY_SCHEME = "capability"
+SERVICE_SCHEME = "service"
 
 
 def create_app(
     *,
     registry: AssetRegistry | None = None,
     store: ObjectStoreBackend | None = None,
+    credentials: ServiceCredentialStore | None = None,
 ) -> FastAPI:
     """Build the FastAPI app, optionally injecting registry/store for tests."""
 
     registry = registry if registry is not None else InMemoryAssetRegistry()
     store = store if store is not None else LocalObjectStore()
+    credentials = credentials if credentials is not None else ServiceCredentialStore.dev_default()
     guard = StorageGuard(registry, store)
     capabilities: dict[str, Capability] = {}
     metrics = build_metrics()
@@ -109,6 +113,17 @@ def create_app(
         if capability is None:
             raise CapabilityDeniedError("unknown capability credential")
         return capability
+
+    def require_service_identity(request: Request) -> str:
+        """Authenticate the caller via ``Authorization: Service <id>:<secret>`` (FR-014)."""
+
+        scheme, _, token = request.headers.get("authorization", "").partition(" ")
+        if scheme.lower() != SERVICE_SCHEME or not token.strip():
+            raise ServiceAuthError("missing service credential")
+        service_id, sep, secret = token.strip().partition(":")
+        if not sep:
+            raise ServiceAuthError("malformed service credential; expected 'service_id:secret'")
+        return credentials.authenticate(service_id, secret)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -252,24 +267,42 @@ def create_app(
         return [AuditEventOut.from_event(event) for event in matched[-limit:]]
 
     @app.post("/capabilities", status_code=201, response_model=CapabilityOut)
-    def mint_capability(body: CapabilityMintRequest) -> CapabilityOut:
+    def mint_capability(
+        body: CapabilityMintRequest,
+        caller_service_id: str = Depends(require_service_identity),
+    ) -> CapabilityOut:
         bucket = normalize_space(body.scope_prefix.strip("/").split("/", 1)[0])
         try:
-            assert_service_bucket_allowed(body.caller_service_id, bucket, operation=body.operation)
+            assert_service_bucket_allowed(caller_service_id, bucket, operation=body.operation)
         except CapabilityDeniedError:
             metrics.capability_issued_total.labels(
                 SERVICE_NAME, body.operation.value, "denied"
             ).inc()
+            registry.record_capability_issue(
+                caller_service_id=caller_service_id,
+                operation=body.operation.value,
+                scope_prefix=body.scope_prefix,
+                ttl_seconds=body.ttl_seconds,
+                outcome="denied",
+            )
             raise
         cap = Capability(
             capability_id=f"cap-{uuid4().hex}",
             operation=body.operation,
             scope_prefix=body.scope_prefix,
             expires_at=utcnow() + timedelta(seconds=body.ttl_seconds),
-            caller_service_id=body.caller_service_id,
+            caller_service_id=caller_service_id,
             single_use=body.single_use,
         )
         metrics.capability_issued_total.labels(SERVICE_NAME, body.operation.value, "granted").inc()
+        registry.record_capability_issue(
+            caller_service_id=caller_service_id,
+            operation=body.operation.value,
+            scope_prefix=body.scope_prefix,
+            ttl_seconds=body.ttl_seconds,
+            outcome="granted",
+            capability_id=cap.capability_id,
+        )
         capabilities[cap.capability_id] = cap
         return CapabilityOut(
             capability_id=cap.capability_id,
@@ -355,4 +388,5 @@ def create_app_from_env() -> FastAPI:
 
         registry = PostgresAssetRegistry.connect(dsn)
 
-    return create_app(registry=registry, store=store)
+    credentials = ServiceCredentialStore.from_env()
+    return create_app(registry=registry, store=store, credentials=credentials)

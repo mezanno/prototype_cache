@@ -8,8 +8,13 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from asset_store_core.api import create_app
+from asset_store_core.service_identity import dev_secret
 
 PROBLEM = "application/problem+json"
+
+
+def _service_auth(service_id: str) -> dict[str, str]:
+    return {"Authorization": f"Service {service_id}:{dev_secret(service_id)}"}
 
 
 class ApiContractTest(unittest.TestCase):
@@ -95,15 +100,42 @@ class ApiContractTest(unittest.TestCase):
             json={
                 "operation": "write",
                 "scope_prefix": "users/42/uploads",
-                "caller_service_id": "upload-api",
                 "ttl_seconds": 300,
             },
+            headers=_service_auth("upload-api"),
         )
         self.assertEqual(201, response.status_code)
         body = response.json()
         self.assertTrue(body["capability_id"].startswith("cap-"))
         self.assertEqual("write", body["operation"])
+        self.assertEqual("upload-api", body["caller_service_id"])
         self.assertIn("expires_at", body)
+
+    def test_mint_capability_requires_service_credential(self) -> None:
+        response = self.client.post(
+            "/capabilities",
+            json={
+                "operation": "write",
+                "scope_prefix": "users/42/uploads",
+                "ttl_seconds": 300,
+            },
+        )
+        self.assertEqual(401, response.status_code)
+        self.assertTrue(response.headers["content-type"].startswith(PROBLEM))
+        self.assertEqual("ServiceAuthError", response.json()["title"])
+
+    def test_mint_capability_rejects_wrong_secret(self) -> None:
+        response = self.client.post(
+            "/capabilities",
+            json={
+                "operation": "write",
+                "scope_prefix": "users/42/uploads",
+                "ttl_seconds": 300,
+            },
+            headers={"Authorization": "Service upload-api:wrong-secret"},
+        )
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("ServiceAuthError", response.json()["title"])
 
     def test_mint_capability_denied_by_service_policy(self) -> None:
         response = self.client.post(
@@ -111,9 +143,9 @@ class ApiContractTest(unittest.TestCase):
             json={
                 "operation": "write",
                 "scope_prefix": "users/42/uploads",
-                "caller_service_id": "worker",
                 "ttl_seconds": 300,
             },
+            headers=_service_auth("worker"),
         )
         self.assertEqual(403, response.status_code)
         self.assertEqual("CapabilityDeniedError", response.json()["title"])
@@ -124,13 +156,33 @@ class ApiContractTest(unittest.TestCase):
             json={
                 "operation": "read",
                 "scope_prefix": "cache/gallica",
-                "caller_service_id": "worker",
                 "ttl_seconds": 10,
             },
+            headers=_service_auth("worker"),
         )
         self.assertEqual(422, response.status_code)
         self.assertTrue(response.headers["content-type"].startswith(PROBLEM))
         self.assertEqual("RequestValidationError", response.json()["title"])
+
+    def test_capability_issue_is_audited(self) -> None:
+        self.client.post(
+            "/capabilities",
+            json={"operation": "write", "scope_prefix": "users/42/uploads", "ttl_seconds": 300},
+            headers=_service_auth("upload-api"),
+        )
+        self.client.post(
+            "/capabilities",
+            json={"operation": "write", "scope_prefix": "users/42/uploads", "ttl_seconds": 300},
+            headers=_service_auth("worker"),
+        )
+        events = self.client.get("/audit", params={"action": "capability.issue"}).json()
+        outcomes = {(e["caller_service_id"], e["outcome"]) for e in events}
+        self.assertIn(("upload-api", "granted"), outcomes)
+        self.assertIn(("worker", "denied"), outcomes)
+        granted = next(e for e in events if e["outcome"] == "granted")
+        self.assertEqual("users/42/uploads", granted["target"])
+        self.assertEqual("write", granted["after"]["operation"])
+        self.assertIn("capability_id", granted["after"])
 
 
 if __name__ == "__main__":

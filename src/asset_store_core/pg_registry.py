@@ -706,6 +706,30 @@ class PostgresAssetRegistry:
             for row in rows
         )
 
+    def record_capability_issue(
+        self,
+        *,
+        caller_service_id: str,
+        operation: str,
+        scope_prefix: str,
+        ttl_seconds: int,
+        outcome: str,
+        capability_id: str | None = None,
+    ) -> None:
+        """Append a capability-issuance audit event (FR-050, granted/denied)."""
+
+        after: dict[str, str] = {"operation": operation, "ttl_seconds": str(ttl_seconds)}
+        if capability_id is not None:
+            after["capability_id"] = capability_id
+        with self._conn.transaction():
+            self._write_audit(
+                action="capability.issue",
+                target=scope_prefix,
+                caller_service_id=caller_service_id,
+                outcome=outcome,
+                after=after,
+            )
+
     # ----------------------------------------------------------------- helpers
 
     def _transition_out_of_available(
@@ -949,6 +973,7 @@ class PostgresAssetRegistry:
         caller_service_id: str,
         before: Mapping[str, str] | None = None,
         after: Mapping[str, str] | None = None,
+        outcome: str = "success",
     ) -> None:
         self._conn.execute(
             """
@@ -959,7 +984,7 @@ class PostgresAssetRegistry:
                 action,
                 target,
                 caller_service_id,
-                "success",
+                outcome,
                 Jsonb(dict(before or {})),
                 Jsonb(dict(after or {})),
                 utcnow(),
