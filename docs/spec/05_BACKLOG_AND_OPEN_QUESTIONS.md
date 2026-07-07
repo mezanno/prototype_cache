@@ -7,8 +7,8 @@
 | Q-004 | Quota: registry per `(bucket, partition_id)` vs object store | Resolved — see FR-066..068, ADR-009 |
 | Q-006 | Grace period `expired → deleted`; per-space override | Resolved — 7 d (`cache`/`users`/`results`), 24 h (`tmp`) |
 | Q-020 | Default `tmp` TTL and GC | Resolved — 24 h default, per-partition max 7 d |
-| Q-021 | Cache alias derivation (fetcher) | Open |
-| Q-022 | Domain cache allowlist | Open |
+| Q-021 | Cache alias derivation (fetcher) | Resolved — declarative URL→alias rewrite rules, ADR-014 |
+| Q-022 | Domain cache allowlist | Resolved — rewrite rule set is the implicit cache allowlist, ADR-014 |
 | Q-023 | Fetcher MVP phasing | Open |
 | Q-024 | Promote `tmp` → `users` (if ever) | Open |
 | Q-025 | IIIF server integration phasing: formal service identity timing and `iiif_server_cache` read-path interaction | Open |
@@ -48,8 +48,8 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | Q-018 | Exact semantics of `mutable: true` aliases (FR-008): what can change (asset binding only? annotations are always editable regardless), grace period for name reuse on detach of an immutable alias, and which service identities are allowed to set the flag at create time | FR-001, FR-003, FR-008, ADR-005 | TBD | Phase 2 | Open |
 | Q-019 | When do we scope the future `manifest-service` that composes IIIF manifests from editable descriptive metadata + immutable structural references? Does descriptive-metadata storage live in the manifest-service's own DB or in another shared module? | downstream module roadmap; cross-references 01_SCOPE.md | TBD | Phase 4 | Open |
 | Q-020 | Default TTL and GC for `tmp` bucket assets (e.g. 24 h vs 7 d)? Per-partition override? **Resolved:** default TTL = 24 h; per-partition override allowed, max 7 d; grace period = 24 h (shorter than other spaces to contain `tmp` growth). | SCN-006, SCN-007, ADR-009 | TBD | Phase 2 | Resolved |
-| Q-021 | Cache alias derivation for fetcher: single canonical alias per normalized URL vs multiple aliases per mirror ([`_archive/00A_USE_CASES_AND_SCENARIOS.md`](_archive/00A_USE_CASES_AND_SCENARIOS.md) SCN-003)? | SCN-007, [`../services/fetcher-service.md`](../services/fetcher-service.md) | TBD | Phase 2 | Open |
-| Q-022 | Domain cache allowlist: config file, DB, admin UI; who maintains entries? | SCN-007, fetcher | TBD | Phase 2 | Open |
+| Q-021 | Cache alias derivation for fetcher: single canonical alias per normalized URL vs multiple aliases per mirror ([`_archive/00A_USE_CASES_AND_SCENARIOS.md`](_archive/00A_USE_CASES_AND_SCENARIOS.md) SCN-003)? **Resolved:** a declarative **URL→alias rewrite-rule set** (`ADR-014`) yields zero-or-more canonical aliases under `cache/{mirror_id}/…`; byte-identical URL variants (IIIF API revisions, host/scheme variants) map to the same alias set → one `asset_id`, while distinct image parameters map to distinct aliases. IIIF alias tail: `iiif/{resource_id}/{region}/{size}/{rotation}/{quality}.{format}`. | SCN-007, SCN-010, ADR-014, [`../services/fetcher-service.md`](../services/fetcher-service.md) | TBD | Phase 2 | Resolved |
+| Q-022 | Domain cache allowlist: config file, DB, admin UI; who maintains entries? **Resolved:** the same rewrite-rule set (`ADR-014`) **is** the cache allowlist (default-deny: a URL matching no allow rule is not cacheable). Rules are declarative config owned by the platform operator, evaluated identically by `fetcher-service` and `iiif-image-mirror`; storage medium (file vs DB vs admin UI) is an implementation detail deferred to Phase 2. | SCN-007, SCN-010, ADR-014, fetcher | TBD | Phase 2 | Resolved |
 | Q-023 | Fetcher MVP: stub in asset-store repo vs separate service in Phase 2 vs 2b? | [`../services/fetcher-service.md`](../services/fetcher-service.md), WORKPLAN | TBD | Phase 2 | Open |
 | Q-024 | Should upload-api ever promote `tmp` staging objects to `users` (copy + new alias) or always write directly to `users`? | SCN-003, SCN-006 | TBD | Phase 2 | Open |
 | Q-025 | IIIF server integration phasing: when does `iiif-server` get a formal service identity provisioned, and how does `iiif_server_cache` interact with the asset-store read path (separate bucket, no asset-store involvement)? | SCN-008, [`01_SCOPE.md`](01_SCOPE.md) | TBD | Phase 4 | Open |
@@ -75,6 +75,7 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | R-008 | Storage-guard becomes a hot bottleneck under read load | M | M | Stateless service horizontally scaled; presigned URL default avoids the proxy path; capability cache for repeat callers | TBD |
 | R-009 | Hidden coupling on object-store internal layout (e.g. by admins) prevents object-store swap later | L | M | All callers go through the registry; no UI exposes raw object keys; ADR-001 swap procedure documented | TBD |
 | R-010 | Spec under-models concurrent writes to the same alias prefix from multiple uploaders | M | M | Alias namespace uniqueness enforced at registry; reservation step (`pending`) holds the alias; idempotency keys required on writes | TBD |
+| R-011 | An over-broad URL→alias equivalence rule (`ADR-014`) binds non-identical origin resources to one `asset_id`, serving wrong bytes from `cache` | L | H | Keep equivalence rules conservative (only known byte-identical API/host variants); optional content-hash verification on fetch before attaching an alias to an existing asset; rule set reviewed and versioned; per-mirror rule tests | TBD |
 
 ## Implementation Backlog (Prototype)
 

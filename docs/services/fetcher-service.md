@@ -53,10 +53,10 @@ sequenceDiagram
 ### In scope (fetcher module)
 
 - `ensure_url` API (name provisional) for idempotent URL materialization.
-- URL normalization and cache-alias derivation (see [`Q-021`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
-- Domain allowlist policy: which origins may be written to `cache` ([`Q-022`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
+- URL normalization and cache-alias derivation via a **declarative URL→alias rewrite-rule set** ([`ADR-014`](../spec/03_ARCHITECTURE.md), [`Q-021`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
+- Domain allowlist policy: the rewrite-rule set **is** the cache allowlist — a URL matching no allow rule is not cacheable ([`ADR-014`](../spec/03_ARCHITECTURE.md), [`Q-022`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
 - HTTP client: timeouts, max body size, redirect limit, SSRF controls.
-- Integration with asset-store only: reserve → PUT → commit via storage-guard.
+- Integration with asset-store only: reserve → PUT → commit via storage-guard, attaching **all** aliases a rule yields to one `asset_id`.
 - Observability: cache hit rate, fetch errors, bytes ingested.
 
 ### Out of scope
@@ -110,6 +110,59 @@ Examples of **tmp** use ([`../spec/01_SCOPE.md`](../spec/01_SCOPE.md)):
 - Task input URL on a non-cacheable domain.
 - One-shot remote resource not promoted to cache.
 - Inline/base64-equivalent payloads staged by task-api (may skip HTTP; still uses `tmp` bucket).
+
+---
+
+## URL→alias rewrite rules ([`ADR-014`](../spec/03_ARCHITECTURE.md))
+
+Cache mapping and cache allowlisting are a **single declarative artifact**: an ordered list of rewrite rules, keyed by origin. The same rule set is evaluated identically by the fetcher and by any cache client (e.g. `iiif-image-mirror`), so the allowlist decision and the canonical alias never drift apart.
+
+Each rule matches an origin URL (host + path/query pattern) and produces:
+
+1. an **allow/deny** decision, and
+2. zero-or-more **canonical cache aliases** under `cache/{mirror_id}/…`.
+
+### Allowlist semantics (default-deny)
+
+- A URL matching **no allow rule** is **not cacheable**.
+- The general fetcher may still fetch a non-cacheable URL into `tmp` (task-input staging).
+- A dedicated cache client such as `iiif-image-mirror` treats a non-match as **rejected** (`403`) — it must not fetch outside the allowlist.
+
+### Byte-identity is the dedup rule
+
+Multiple aliases attach to **one** `asset_id` **only** when the URLs address **byte-identical** content:
+
+- **Same asset** (dedup): different IIIF API revisions, host, or scheme variants of the *same* resource **with the same normalized parameters**.
+- **Different asset** (no dedup): any change to image parameters — region, size, rotation, quality, or format — yields **different bytes** and therefore a **distinct** alias.
+
+### IIIF Image API alias scheme
+
+For IIIF Image API origins the canonical alias tail is:
+
+```
+cache/{mirror_id}/iiif/{resource_id}/{region}/{size}/{rotation}/{quality}.{format}
+```
+
+- `{resource_id}` — the ARK when the origin exposes one (e.g. Gallica `ark:/12148/…`), otherwise the origin's stable id. **ARK is not assumed** ([`Q-011`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
+- `{region}/{size}/{rotation}/{quality}.{format}` — the **normalized** IIIF Image API parameters (canonical spelling, e.g. `full`→`full`, default rotation `0`, lowercased format).
+
+Example — these two Gallica IIIF API-version URLs of the same region+size resolve to the **same** alias set and thus one `asset_id`:
+
+```
+https://gallica.bnf.fr/iiif/ark:/12148/btv1b8447236h/f1/full/max/0/default.jpg
+https://gallica.bnf.fr/iiif/2/ark:/12148/btv1b8447236h/f1/full/max/0/default.jpg
+  → cache/gallica/iiif/ark:/12148/btv1b8447236h/f1/full/max/0/default.jpg
+```
+
+whereas `full/1000,/0/default.jpg` is a **different** alias (different bytes).
+
+### Correctness risk ([`R-011`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md))
+
+An over-broad equivalence rule can bind non-identical resources to one `asset_id` and serve wrong bytes. Mitigations: keep equivalence rules conservative (only known byte-identical variants), optionally verify a content hash on fetch before attaching an alias to an existing asset, and version/test the rule set per mirror.
+
+### Manifests excluded
+
+Rewrite rules apply to **image bytes only**. IIIF **Presentation manifests are not cached** — a manifest embeds absolute origin URLs that would be wrong when served from a mirror (see [`../spec/01_SCOPE.md`](../spec/01_SCOPE.md) SCN-010 scope note).
 
 ---
 
@@ -175,8 +228,8 @@ See **SCN-007** in [`../spec/01_SCOPE.md`](../spec/01_SCOPE.md).
 
 | ID | Topic |
 |----|--------|
-| Q-021 | Cache alias derivation: single canonical alias vs multiple per mirror |
-| Q-022 | Domain allowlist storage and ownership |
+| Q-021 | Cache alias derivation — **Resolved**: declarative URL→alias rewrite rules ([`ADR-014`](../spec/03_ARCHITECTURE.md)) |
+| Q-022 | Domain allowlist — **Resolved**: the rewrite-rule set is the implicit cache allowlist ([`ADR-014`](../spec/03_ARCHITECTURE.md)); storage medium (file/DB/admin UI) deferred to Phase 2 |
 | Q-023 | Fetcher MVP phase relative to asset-store Phase 2 |
 | Q-020 | Default `tmp` TTL and GC ([`05_BACKLOG_AND_OPEN_QUESTIONS.md`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)) |
 

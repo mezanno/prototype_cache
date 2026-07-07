@@ -255,7 +255,7 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 - **Expected result:** Idempotent `ensure_url` for same URL returns same alias on second call (cache hit).
 - **Error/failure paths:** upstream 502/504; SSRF blocked; guard 403 if fetcher misconfigured.
 - **Observability checks:** `fetch_cache_hit`, `fetch_remote_errors`, bytes to `cache` vs `tmp`.
-- **Open questions:** Q-021, Q-022, Q-023.
+- **Open questions:** Q-023 (fetcher phasing). Cache alias derivation and allowlist resolved by [`ADR-014`](03_ARCHITECTURE.md) (URL→alias rewrite rules).
 
 #### SCN-008 - IIIF server reads a stored asset
 
@@ -289,7 +289,7 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 - **Expected result:** Re-running with the same cacheable URLs reuses cached assets (idempotent `ensure_url`); the user can read results but not mutate them.
 - **Error/failure paths:** fetch failure (`502`/`504`) aborts before worker dispatch; non-cacheable remote falls back to `tmp`; capability `403` if any identity is mis-scoped.
 - **Observability checks:** `fetch_cache_hit`, bytes to `cache` vs `tmp`, result write success rate.
-- **Open questions:** Q-021, Q-022, Q-030; capability verb granularity (`Q-032`).
+- **Open questions:** Q-030; capability verb granularity (`Q-032`). Cache alias/allowlist resolved by [`ADR-014`](03_ARCHITECTURE.md).
 
 #### SCN-010 - User reads a cached image instead of the authoritative source
 
@@ -308,9 +308,9 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 - **Error/failure paths:** 403 if the requested URL is not on the allowlist; 404/410 if not cached and the fetch fails; 403 if the mirror capability does not cover the alias.
 
 - **Observability checks:** user-read cache-hit ratio; bytes served from `cache`; zero origin requests on a hit.
-- **Cache-rule note:** Both the **allowlist** and the **URL→alias mapping** should be expressed as a single, simple, declarative **rule set** (e.g. ordered host/path-pattern rules that yield both an allow/deny decision and the canonical `{mirror_id}` + alias set). A single request may therefore produce **multiple aliases** that all point to one `asset_id`; the cache logic (and the fetcher commit path) must support attaching several aliases to one asset.
+- **Cache-rule note:** Both the **allowlist** and the **URL→alias mapping** are a single, declarative **rewrite-rule set** ([`ADR-014`](03_ARCHITECTURE.md)): ordered host/path-pattern rules that yield both an allow/deny decision and the canonical `{mirror_id}` + alias set. Byte-identical URL variants (e.g. different Gallica IIIF API revisions) map to the **same** alias set → one `asset_id`; distinct image parameters map to **distinct** aliases. A single request may therefore produce **multiple aliases** that all point to one `asset_id`; the cache logic (and the fetcher commit path) must support attaching several aliases to one asset.
 - **Scope note:** Applies to **image bytes only**. Cached **IIIF manifests are explicitly excluded** — a manifest embeds absolute origin URLs that would be wrong when served from the mirror, and manifest relaying/rewriting is out of scope (see Out Of Scope; `iiif-image-mirror` must not relay or rewrite Presentation manifests).
-- **Open questions:** [`Q-025`](05_BACKLOG_AND_OPEN_QUESTIONS.md) (IIIF/mirror phasing), Q-022 (domain cacheability policy + URL→alias rule format).
+- **Open questions:** [`Q-025`](05_BACKLOG_AND_OPEN_QUESTIONS.md) (IIIF/mirror phasing). Domain cacheability policy + URL→alias rule format resolved by [`ADR-014`](03_ARCHITECTURE.md).
 
 ### Cross-scenario decisions
 
