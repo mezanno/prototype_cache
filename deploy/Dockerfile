@@ -16,10 +16,16 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Install dependencies first for better layer caching. The [s3,pg] extras pull in
-# boto3 and psycopg so the durable S3 and Postgres backends are available.
+# boto3, psycopg, and alembic so the durable S3/Postgres backends and the schema
+# migrations are available.
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install ".[s3,pg]"
+
+# Ship the Alembic migration history so the container can own the schema in
+# production via `alembic upgrade head` (ADR-015).
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 
 # Drop privileges.
 RUN useradd --no-create-home --uid 10001 appuser

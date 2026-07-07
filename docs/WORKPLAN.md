@@ -30,8 +30,10 @@ foundation everything else wraps:
   quotas, eviction policy, and the transactional audit trail — certified against
   Postgres 16 (gated tests). The app factory wires it in whenever
   `ASSET_STORE_PG_DSN` is set, and durability across an app restart is proven on
-  the unified compose stack (B-009). SQLAlchemy/Alembic migrations remain a
-  tracked follow-up.
+  the unified compose stack (B-009). The schema is owned by an Alembic migration
+  history under [`migrations/`](../migrations/) (`alembic upgrade head`); the
+  runtime `CREATE TABLE IF NOT EXISTS` bootstrap is retained as a dev/test
+  convenience.
 - [`src/asset_store_core/api/`](../src/asset_store_core/api/) - a FastAPI app
   (single process per ADR-002) exposing `/healthz`, `/readyz`, `/metrics`,
   reserve/commit/resolve, capability mint, and a capability-guarded data plane
@@ -150,7 +152,7 @@ prototype:
 
 **Work items:**
 
-- B-009 - `asset-registry` MVP: extend the existing [`src/asset_store_core/`](../src/asset_store_core/) domain core with a Postgres-backed adapter + Alembic migrations + endpoints implementing FR-001..007; add the `eviction_policy`, `PartitionQuota`, and `BucketQuota` entities (FR-063..069) and close the known core gaps listed under "Current state". **Mostly done:** the durable `PostgresAssetRegistry` implements the full seam (reserve/commit/resolve, lifecycle, alias detach/rebind, two-tier quotas, eviction policy, audit) at parity with the in-memory registry, wired into the app factory via `ASSET_STORE_PG_DSN` and proven durable across an app restart on the compose stack. Remaining: SQLAlchemy models + Alembic migrations (schema is currently bootstrapped via idempotent DDL).
+- B-009 - `asset-registry` MVP: extend the existing [`src/asset_store_core/`](../src/asset_store_core/) domain core with a Postgres-backed adapter + Alembic migrations + endpoints implementing FR-001..007; add the `eviction_policy`, `PartitionQuota`, and `BucketQuota` entities (FR-063..069) and close the known core gaps listed under "Current state". **Mostly done:** the durable `PostgresAssetRegistry` implements the full seam (reserve/commit/resolve, lifecycle, alias detach/rebind, two-tier quotas, eviction policy, audit) at parity with the in-memory registry, wired into the app factory via `ASSET_STORE_PG_DSN` and proven durable across an app restart on the compose stack. Schema is owned by an Alembic migration history under [`migrations/`](../migrations/) (`alembic upgrade head`), with runtime `CREATE TABLE IF NOT EXISTS` retained only as a dev/test convenience. Remaining (optional): SQLAlchemy ORM models — deliberately deferred, as the registry's explicit `FOR UPDATE`/upsert SQL is intentionally hand-written for concurrency correctness.
 - B-010 - `storage-guard` MVP: service-identity auth + FR-010..014 + audit log + presigned URL minting.
 - B-011 - `bulk-loader` CLI implementing SCN-001 against 10k assets.
 - B-012 - `worker-sim` CLI implementing SCN-002 (read path) and SCN-005 (write path).

@@ -12,12 +12,15 @@ Returns the same domain :class:`~asset_store_core.models.Asset` objects so the
 :class:`~asset_store_core.guard.StorageGuard` facade and HTTP adapters are
 backend-agnostic.
 
-The schema is bootstrapped with ``CREATE TABLE IF NOT EXISTS`` on connect; a
-SQLAlchemy model + Alembic migration history is a tracked follow-up (it does not
-change the durable contract validated here). ``psycopg`` (v3) is an optional
-dependency; install the ``pg`` extra (``pip install asset-store-prototype[pg]``).
-Like the in-memory registry, an instance is **not** thread-safe: it holds a
-single connection and serialises operations per transaction.
+The schema is owned by the Alembic migration history under ``migrations/`` (run
+``alembic upgrade head`` against ``ASSET_STORE_PG_DSN``). For convenience the
+registry can also bootstrap the same tables with ``CREATE TABLE IF NOT EXISTS``
+on connect (``bootstrap_schema=True``, the default) — handy for tests and local
+dev; production should provision via migrations and pass ``bootstrap_schema=False``.
+``psycopg`` (v3) and ``alembic`` are optional dependencies; install the ``pg``
+extra (``pip install asset-store-prototype[pg]``). Like the in-memory registry,
+an instance is **not** thread-safe: it holds a single connection and serialises
+operations per transaction.
 """
 
 from __future__ import annotations

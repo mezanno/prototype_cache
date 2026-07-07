@@ -1,4 +1,4 @@
-"""Postgres registry certification tests (S-002, thin reserve/commit/resolve slice).
+"""Postgres registry certification tests (B-009, full AssetRegistry parity).
 
 Skipped unless ``ASSET_STORE_PG_DSN`` points at a reachable Postgres. Bring one up:
 
