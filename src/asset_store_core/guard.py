@@ -25,7 +25,7 @@ from asset_store_core.errors import ValidationError
 from asset_store_core.models import Asset
 from asset_store_core.object_store import ObjectStoreBackend
 from asset_store_core.paths import normalize_relative_alias, normalize_space, qualified_alias
-from asset_store_core.registry import InMemoryAssetRegistry
+from asset_store_core.registry_base import AssetRegistry
 from asset_store_core.service_policy import assert_service_bucket_allowed
 from asset_store_core.storage import ObjectStoreLocation, normalize_partition_id
 
@@ -73,7 +73,7 @@ class StorageGuard:
 
     def __init__(
         self,
-        registry: InMemoryAssetRegistry,
+        registry: AssetRegistry,
         store: ObjectStoreBackend,
         *,
         ledger: SingleUseLedger | None = None,

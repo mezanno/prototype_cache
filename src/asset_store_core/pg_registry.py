@@ -1,50 +1,59 @@
-"""Postgres-backed asset registry — thin spike (S-002, ADR-001 control plane).
+"""Postgres-backed asset registry (B-009, ADR-001 control plane).
 
-A faithful, durable implementation of the **reserve → commit → resolve** slice of
-:class:`~asset_store_core.registry.InMemoryAssetRegistry`, used to validate the
-schema and the registry seam against real Postgres before the full B-009 port
-(which will add SQLAlchemy + Alembic and the remaining lifecycle/quota/alias
-surface). Returns the same domain :class:`~asset_store_core.models.Asset` objects
-so HTTP adapters are unaffected.
+A durable implementation of the full :class:`~asset_store_core.registry_base.AssetRegistry`
+surface, at behavioural parity with the in-memory reference registry
+(:class:`~asset_store_core.registry.InMemoryAssetRegistry`): reserve, commit,
+resolve, annotations, expire/delete, immutable/mutable alias detach + rebind,
+per-asset eviction policy, and the two-tier partition/bucket quotas with
+commit-time ceilings and usage accounting. Every mutation records the same audit
+actions as the in-memory registry, written transactionally with the change.
 
-Scope (deliberately thin):
+Returns the same domain :class:`~asset_store_core.models.Asset` objects so the
+:class:`~asset_store_core.guard.StorageGuard` facade and HTTP adapters are
+backend-agnostic.
 
-- Implemented: ``reserve_asset``, ``commit_asset``, ``resolve_alias`` with the
-  same validation, alias-conflict, checksum (FR-022) and state-transition rules,
-  plus transactional ``alias.create`` / ``asset.commit`` audit rows.
-- Deferred to B-009: quota accounting/ceilings, alias detach/rebind, annotations,
-  expire/delete, the FR-003 tombstone grace window, and connection pooling.
-
-``psycopg`` (v3) is an optional dependency; install the ``pg`` extra
-(``pip install asset-store-prototype[pg]``). It ships inline types, so no stubs
-are needed. Like the in-memory registry, an instance is **not** thread-safe: it
-holds a single connection and serialises operations per transaction.
+The schema is bootstrapped with ``CREATE TABLE IF NOT EXISTS`` on connect; a
+SQLAlchemy model + Alembic migration history is a tracked follow-up (it does not
+change the durable contract validated here). ``psycopg`` (v3) is an optional
+dependency; install the ``pg`` extra (``pip install asset-store-prototype[pg]``).
+Like the in-memory registry, an instance is **not** thread-safe: it holds a
+single connection and serialises operations per transaction.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from datetime import timedelta
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from asset_store_core.errors import (
     AliasConflictError,
+    AliasImmutableError,
     AliasNotFoundError,
     AssetNotFoundError,
     ChecksumMismatchError,
     InvalidStateTransitionError,
+    QuotaExceededError,
     ValidationError,
 )
 from asset_store_core.ids import new_asset_id
 from asset_store_core.models import (
+    AliasBinding,
     Asset,
     AssetState,
     AuditEvent,
+    BucketQuota,
     EvictionPolicy,
+    PartitionQuota,
     utcnow,
 )
 from asset_store_core.paths import normalize_relative_alias, normalize_space
-from asset_store_core.registry import _alias_under_partition, _normalize_alias_specs
+from asset_store_core.registry import (
+    _alias_under_partition,
+    _normalize_alias_specs,
+    _partition_from_scoped_alias,
+)
 from asset_store_core.storage import build_storage_key, normalize_partition_id
 
 try:
@@ -59,6 +68,13 @@ except ImportError as exc:  # pragma: no cover - exercised only without the pg e
 
 if TYPE_CHECKING:
     from psycopg import Connection
+
+# Partition commits are rejected once prospective usage reaches 105% of the byte
+# quota; the 5% band absorbs concurrent in-flight uploads (FR-066, ADR-009).
+_PARTITION_HARD_RATIO = 1.05
+
+# Spaces whose partitions enable quota-triggered eviction sweeps by default (FR-067).
+_SWEEP_DEFAULT_SPACES = frozenset({"cache", "tmp"})
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS assets (
@@ -91,41 +107,91 @@ CREATE TABLE IF NOT EXISTS aliases (
     PRIMARY KEY (space, alias)
 );
 
+CREATE INDEX IF NOT EXISTS aliases_asset_id_idx ON aliases (asset_id);
+
+CREATE TABLE IF NOT EXISTS alias_tombstones (
+    space       text NOT NULL,
+    alias       text NOT NULL,
+    grace_until timestamptz NOT NULL,
+    PRIMARY KEY (space, alias)
+);
+
+CREATE TABLE IF NOT EXISTS partition_quotas (
+    space                  text NOT NULL,
+    partition_id           text NOT NULL,
+    quota_bytes            bigint,
+    quota_asset_count      bigint,
+    used_bytes             bigint NOT NULL DEFAULT 0,
+    used_asset_count       bigint NOT NULL DEFAULT 0,
+    eviction_sweep_enabled boolean NOT NULL DEFAULT false,
+    PRIMARY KEY (space, partition_id)
+);
+
+CREATE TABLE IF NOT EXISTS bucket_quotas (
+    space          text PRIMARY KEY,
+    quota_bytes    bigint,
+    used_bytes     bigint NOT NULL DEFAULT 0,
+    warn_threshold double precision NOT NULL DEFAULT 0.80,
+    hard_ceiling   double precision NOT NULL DEFAULT 1.00
+);
+
 CREATE TABLE IF NOT EXISTS audit_events (
-    id               bigserial PRIMARY KEY,
-    action           text NOT NULL,
-    target           text NOT NULL,
+    id                bigserial PRIMARY KEY,
+    action            text NOT NULL,
+    target            text NOT NULL,
     caller_service_id text NOT NULL,
-    outcome          text NOT NULL,
-    before           jsonb NOT NULL DEFAULT '{}'::jsonb,
-    after            jsonb NOT NULL DEFAULT '{}'::jsonb,
-    ts               timestamptz NOT NULL
+    outcome           text NOT NULL,
+    before            jsonb NOT NULL DEFAULT '{}'::jsonb,
+    after             jsonb NOT NULL DEFAULT '{}'::jsonb,
+    ts                timestamptz NOT NULL
 );
 """
 
 
 class PostgresAssetRegistry:
-    """Durable reserve/commit/resolve over Postgres (thin S-002 spike)."""
+    """Durable, full-surface asset registry over Postgres (B-009)."""
 
-    __slots__ = ("_conn",)
+    __slots__ = ("_alias_grace", "_conn")
 
-    def __init__(self, connection: Connection[Any], *, bootstrap_schema: bool = True) -> None:
+    def __init__(
+        self,
+        connection: Connection[Any],
+        *,
+        bootstrap_schema: bool = True,
+        alias_name_grace_period: timedelta | None = None,
+    ) -> None:
         self._conn = connection
         # Autocommit + explicit ``transaction()`` blocks is the recommended psycopg-3
-        # pattern: standalone reads commit immediately (no lingering open transaction),
-        # so each multi-statement op below opens a real top-level transaction rather
-        # than a savepoint nested in a stray read transaction.
+        # pattern: standalone reads commit immediately, so each multi-statement op
+        # below opens a real top-level transaction rather than a savepoint nested in
+        # a stray read transaction.
         self._conn.autocommit = True
+        if alias_name_grace_period is None:
+            self._alias_grace = timedelta(days=7)
+        elif alias_name_grace_period < timedelta(0):
+            raise ValidationError("alias_name_grace_period must not be negative")
+        else:
+            self._alias_grace = alias_name_grace_period
         if bootstrap_schema:
             with self._conn.transaction():
                 self._conn.execute(_SCHEMA)
 
     @classmethod
-    def connect(cls, dsn: str, *, bootstrap_schema: bool = True) -> PostgresAssetRegistry:
+    def connect(
+        cls,
+        dsn: str,
+        *,
+        bootstrap_schema: bool = True,
+        alias_name_grace_period: timedelta | None = None,
+    ) -> PostgresAssetRegistry:
         """Open a new connection from ``dsn`` and return a registry."""
 
         connection = psycopg.connect(dsn, row_factory=dict_row)
-        return cls(connection, bootstrap_schema=bootstrap_schema)
+        return cls(
+            connection,
+            bootstrap_schema=bootstrap_schema,
+            alias_name_grace_period=alias_name_grace_period,
+        )
 
     def close(self) -> None:
         self._conn.close()
@@ -135,6 +201,8 @@ class PostgresAssetRegistry:
 
     def __exit__(self, *_exc: object) -> None:
         self.close()
+
+    # ------------------------------------------------------------------ writes
 
     def reserve_asset(
         self,
@@ -161,12 +229,7 @@ class PostgresAssetRegistry:
 
         with self._conn.transaction():
             for scoped_alias in scoped.values():
-                row = self._conn.execute(
-                    "SELECT 1 FROM aliases WHERE space = %s AND alias = %s",
-                    (norm_space, scoped_alias),
-                ).fetchone()
-                if row is not None:
-                    raise AliasConflictError(f"alias {norm_space}/{scoped_alias!r} already exists")
+                self._require_alias_name_available(norm_space, scoped_alias)
 
             self._conn.execute(
                 """
@@ -235,7 +298,8 @@ class PostgresAssetRegistry:
         now = utcnow()
         with self._conn.transaction():
             row = self._conn.execute(
-                "SELECT state, mime FROM assets WHERE asset_id = %s FOR UPDATE",
+                "SELECT state, mime, space, partition_id FROM assets "
+                "WHERE asset_id = %s FOR UPDATE",
                 (asset_id,),
             ).fetchone()
             if row is None:
@@ -244,6 +308,10 @@ class PostgresAssetRegistry:
                 raise InvalidStateTransitionError(
                     f"asset {asset_id!r} cannot be committed from state {row['state']!r}"
                 )
+
+            self._enforce_quota(
+                space=row["space"], partition_id=row["partition_id"], new_bytes=size_bytes
+            )
 
             self._conn.execute(
                 """
@@ -260,6 +328,9 @@ class PostgresAssetRegistry:
                     asset_id,
                 ),
             )
+            self._acquire_quota(
+                space=row["space"], partition_id=row["partition_id"], nbytes=size_bytes
+            )
             self._write_audit(
                 action="asset.commit",
                 target=asset_id,
@@ -269,6 +340,229 @@ class PostgresAssetRegistry:
             )
 
         return self._load_asset(asset_id)
+
+    def update_annotations(
+        self,
+        *,
+        asset_id: str,
+        patch: Mapping[str, str],
+        caller_service_id: str,
+        overwrite: bool = False,
+    ) -> Asset:
+        """Merge or replace the annotation map (FR-005)."""
+
+        now = utcnow()
+        with self._conn.transaction():
+            row = self._conn.execute(
+                "SELECT state, annotations FROM assets WHERE asset_id = %s FOR UPDATE",
+                (asset_id,),
+            ).fetchone()
+            if row is None:
+                raise AssetNotFoundError(asset_id)
+            if row["state"] == AssetState.DELETED.value:
+                raise InvalidStateTransitionError(
+                    f"cannot update annotations on deleted asset {asset_id!r}"
+                )
+
+            before = dict(row["annotations"])
+            merged = dict(patch) if overwrite else {**before, **patch}
+            self._conn.execute(
+                "UPDATE assets SET annotations = %s, updated_at = %s WHERE asset_id = %s",
+                (Jsonb(merged), now, asset_id),
+            )
+            self._write_audit(
+                action="asset.annotations_update",
+                target=asset_id,
+                caller_service_id=caller_service_id,
+                before=before,
+                after=merged,
+            )
+
+        return self._load_asset(asset_id)
+
+    def expire_asset(self, *, asset_id: str, caller_service_id: str) -> Asset:
+        """Transition ``available`` → ``expired`` (FR-006)."""
+
+        return self._transition_out_of_available(
+            asset_id=asset_id,
+            caller_service_id=caller_service_id,
+            allowed_from=(AssetState.AVAILABLE,),
+            new_state=AssetState.EXPIRED,
+            action="asset.expire",
+            verb="expire",
+        )
+
+    def delete_asset(self, *, asset_id: str, caller_service_id: str) -> Asset:
+        """Transition to ``deleted`` from ``available`` or ``expired`` (FR-007)."""
+
+        return self._transition_out_of_available(
+            asset_id=asset_id,
+            caller_service_id=caller_service_id,
+            allowed_from=(AssetState.AVAILABLE, AssetState.EXPIRED),
+            new_state=AssetState.DELETED,
+            action="asset.delete",
+            verb="delete",
+        )
+
+    def set_eviction_policy(
+        self,
+        *,
+        asset_id: str,
+        eviction_policy: EvictionPolicy,
+        caller_service_id: str,
+    ) -> Asset:
+        """Set an asset's eviction policy and audit the change (FR-063)."""
+
+        now = utcnow()
+        with self._conn.transaction():
+            row = self._conn.execute(
+                "SELECT state, eviction_policy FROM assets WHERE asset_id = %s FOR UPDATE",
+                (asset_id,),
+            ).fetchone()
+            if row is None:
+                raise AssetNotFoundError(asset_id)
+            if row["state"] == AssetState.DELETED.value:
+                raise InvalidStateTransitionError(
+                    f"cannot set eviction policy on deleted asset {asset_id!r}"
+                )
+
+            self._conn.execute(
+                "UPDATE assets SET eviction_policy = %s, updated_at = %s WHERE asset_id = %s",
+                (eviction_policy.value, now, asset_id),
+            )
+            self._write_audit(
+                action="asset.eviction_policy_set",
+                target=asset_id,
+                caller_service_id=caller_service_id,
+                before={"eviction_policy": row["eviction_policy"]},
+                after={"eviction_policy": eviction_policy.value},
+            )
+
+        return self._load_asset(asset_id)
+
+    # ----------------------------------------------------------------- aliases
+
+    def detach_alias(self, *, space: str, alias: str, caller_service_id: str) -> None:
+        """Detach an **immutable** alias with tombstone grace (FR-003)."""
+
+        norm_space = normalize_space(space)
+        norm_alias = normalize_relative_alias(alias)
+        with self._conn.transaction():
+            binding = self._load_binding(norm_space, norm_alias)
+            if binding.mutable:
+                raise AliasImmutableError(
+                    f"use detach_mutable_alias for mutable alias {binding.qualified_alias!r}"
+                )
+            asset_id = binding.asset_id
+            if asset_id is None:
+                raise InvalidStateTransitionError(f"alias {binding.qualified_alias!r} is not bound")
+
+            self._conn.execute(
+                "DELETE FROM aliases WHERE space = %s AND alias = %s", (norm_space, norm_alias)
+            )
+            if self._alias_grace > timedelta(0):
+                self._conn.execute(
+                    """
+                    INSERT INTO alias_tombstones (space, alias, grace_until)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (space, alias) DO UPDATE SET grace_until = EXCLUDED.grace_until
+                    """,
+                    (norm_space, norm_alias, utcnow() + self._alias_grace),
+                )
+            self._write_audit(
+                action="alias.detach",
+                target=binding.qualified_alias,
+                caller_service_id=caller_service_id,
+                before={"asset_id": asset_id},
+                after={},
+            )
+            self._mark_for_gc_if_orphaned(asset_id, caller_service_id)
+
+    def detach_mutable_alias(
+        self, *, space: str, alias: str, caller_service_id: str
+    ) -> AliasBinding:
+        """Detach a **mutable** alias in preparation for ``rebind_alias`` (FR-003)."""
+
+        norm_space = normalize_space(space)
+        norm_alias = normalize_relative_alias(alias)
+        now = utcnow()
+        with self._conn.transaction():
+            binding = self._load_binding(norm_space, norm_alias)
+            if not binding.mutable:
+                raise AliasImmutableError(
+                    f"use detach_alias for immutable alias {binding.qualified_alias!r}"
+                )
+            old_asset_id = binding.asset_id
+            if old_asset_id is None:
+                raise InvalidStateTransitionError(
+                    f"mutable alias {binding.qualified_alias!r} is already detached"
+                )
+
+            self._conn.execute(
+                """
+                UPDATE aliases
+                   SET asset_id = NULL, previous_asset_id = %s, updated_at = %s
+                 WHERE space = %s AND alias = %s
+                """,
+                (old_asset_id, now, norm_space, norm_alias),
+            )
+            self._write_audit(
+                action="alias.detach_mutable",
+                target=binding.qualified_alias,
+                caller_service_id=caller_service_id,
+                before={"asset_id": old_asset_id},
+                after={"asset_id": ""},
+            )
+            self._mark_for_gc_if_orphaned(old_asset_id, caller_service_id)
+
+        return self._load_binding(norm_space, norm_alias)
+
+    def rebind_alias(
+        self, *, space: str, alias: str, new_asset_id: str, caller_service_id: str
+    ) -> AliasBinding:
+        """Rebind a **mutable** alias after ``detach_mutable_alias`` (FR-008)."""
+
+        norm_space = normalize_space(space)
+        norm_alias = normalize_relative_alias(alias)
+        now = utcnow()
+        with self._conn.transaction():
+            binding = self._load_binding(norm_space, norm_alias)
+            if not binding.mutable:
+                raise AliasImmutableError(f"alias {binding.qualified_alias!r} is immutable")
+            if binding.asset_id is not None:
+                raise InvalidStateTransitionError(
+                    f"mutable alias {binding.qualified_alias!r} must be detached before rebind"
+                )
+
+            new_asset = self._load_asset(new_asset_id)
+            if new_asset.space != binding.space:
+                raise AliasConflictError("cannot rebind an alias across buckets")
+            if new_asset.partition_id != _partition_from_scoped_alias(binding.alias):
+                raise AliasConflictError("cannot rebind an alias across partitions")
+            if new_asset.state is not AssetState.AVAILABLE:
+                raise InvalidStateTransitionError(
+                    f"rebind target asset {new_asset_id!r} must be available, "
+                    f"got {new_asset.state.value!r}"
+                )
+
+            previous_asset_id = binding.previous_asset_id or ""
+            self._conn.execute(
+                """
+                UPDATE aliases
+                   SET asset_id = %s, previous_asset_id = NULL, updated_at = %s
+                 WHERE space = %s AND alias = %s
+                """,
+                (new_asset_id, now, norm_space, norm_alias),
+            )
+            self._write_audit(
+                action="alias.rebind",
+                target=binding.qualified_alias,
+                caller_service_id=caller_service_id,
+                before={"asset_id": previous_asset_id},
+                after={"asset_id": new_asset_id},
+            )
+
+        return self._load_binding(norm_space, norm_alias)
 
     def resolve_alias(self, *, space: str, alias: str) -> Asset:
         """Resolve an alias to an ``available`` asset (FR-002)."""
@@ -293,8 +587,101 @@ class PostgresAssetRegistry:
             )
         return asset
 
+    # ------------------------------------------------------------------ quotas
+
+    def set_partition_quota(
+        self,
+        *,
+        space: str,
+        partition_id: str,
+        quota_bytes: int | None = None,
+        quota_asset_count: int | None = None,
+        eviction_sweep_enabled: bool | None = None,
+    ) -> PartitionQuota:
+        """Configure a partition's quota limits, preserving live usage (FR-066)."""
+
+        if quota_bytes is not None and quota_bytes < 0:
+            raise ValidationError("quota_bytes must not be negative")
+        if quota_asset_count is not None and quota_asset_count < 0:
+            raise ValidationError("quota_asset_count must not be negative")
+
+        norm_space = normalize_space(space)
+        norm_partition = normalize_partition_id(partition_id)
+        with self._conn.transaction():
+            current = self._partition_quota(norm_space, norm_partition, for_update=True)
+            sweep = (
+                current.eviction_sweep_enabled
+                if eviction_sweep_enabled is None
+                else eviction_sweep_enabled
+            )
+            self._conn.execute(
+                """
+                INSERT INTO partition_quotas (
+                    space, partition_id, quota_bytes, quota_asset_count,
+                    used_bytes, used_asset_count, eviction_sweep_enabled
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (space, partition_id) DO UPDATE SET
+                    quota_bytes = EXCLUDED.quota_bytes,
+                    quota_asset_count = EXCLUDED.quota_asset_count,
+                    eviction_sweep_enabled = EXCLUDED.eviction_sweep_enabled
+                """,
+                (
+                    norm_space,
+                    norm_partition,
+                    quota_bytes,
+                    quota_asset_count,
+                    current.used_bytes,
+                    current.used_asset_count,
+                    sweep,
+                ),
+            )
+        return self.get_partition_quota(space=norm_space, partition_id=norm_partition)
+
+    def set_bucket_quota(
+        self,
+        *,
+        space: str,
+        quota_bytes: int | None = None,
+        warn_threshold: float = 0.80,
+        hard_ceiling: float = 1.00,
+    ) -> BucketQuota:
+        """Configure a space's bucket-wide quota, preserving live usage (FR-068)."""
+
+        if quota_bytes is not None and quota_bytes < 0:
+            raise ValidationError("quota_bytes must not be negative")
+
+        norm_space = normalize_space(space)
+        with self._conn.transaction():
+            current = self._bucket_quota(norm_space, for_update=True)
+            self._conn.execute(
+                """
+                INSERT INTO bucket_quotas (
+                    space, quota_bytes, used_bytes, warn_threshold, hard_ceiling
+                ) VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (space) DO UPDATE SET
+                    quota_bytes = EXCLUDED.quota_bytes,
+                    warn_threshold = EXCLUDED.warn_threshold,
+                    hard_ceiling = EXCLUDED.hard_ceiling
+                """,
+                (norm_space, quota_bytes, current.used_bytes, warn_threshold, hard_ceiling),
+            )
+        return self.get_bucket_quota(space=norm_space)
+
+    def get_partition_quota(self, *, space: str, partition_id: str) -> PartitionQuota:
+        """Return the (possibly default) partition quota counters."""
+
+        return self._partition_quota(normalize_space(space), normalize_partition_id(partition_id))
+
+    def get_bucket_quota(self, *, space: str) -> BucketQuota:
+        """Return the (possibly default) bucket quota counters."""
+
+        return self._bucket_quota(normalize_space(space))
+
+    # -------------------------------------------------------------------- audit
+
+    @property
     def audit_events(self) -> tuple[AuditEvent, ...]:
-        """Return recorded audit events in insertion order."""
+        """Recorded audit events in insertion order (FR-008/FR-016)."""
 
         rows = self._conn.execute(
             """
@@ -314,6 +701,241 @@ class PostgresAssetRegistry:
                 ts=row["ts"],
             )
             for row in rows
+        )
+
+    # ----------------------------------------------------------------- helpers
+
+    def _transition_out_of_available(
+        self,
+        *,
+        asset_id: str,
+        caller_service_id: str,
+        allowed_from: tuple[AssetState, ...],
+        new_state: AssetState,
+        action: str,
+        verb: str,
+    ) -> Asset:
+        """Shared ``available``/``expired`` → new-state transition with quota release."""
+
+        allowed = {state.value for state in allowed_from}
+        now = utcnow()
+        with self._conn.transaction():
+            row = self._conn.execute(
+                "SELECT state, space, partition_id, size_bytes FROM assets "
+                "WHERE asset_id = %s FOR UPDATE",
+                (asset_id,),
+            ).fetchone()
+            if row is None:
+                raise AssetNotFoundError(asset_id)
+            if row["state"] not in allowed:
+                raise InvalidStateTransitionError(
+                    f"asset {asset_id!r} cannot {verb} from state {row['state']!r}"
+                )
+
+            self._conn.execute(
+                "UPDATE assets SET state = %s, updated_at = %s WHERE asset_id = %s",
+                (new_state.value, now, asset_id),
+            )
+            if row["state"] == AssetState.AVAILABLE.value:
+                self._release_quota(
+                    space=row["space"],
+                    partition_id=row["partition_id"],
+                    nbytes=row["size_bytes"] or 0,
+                )
+            self._write_audit(
+                action=action,
+                target=asset_id,
+                caller_service_id=caller_service_id,
+                before={"state": row["state"]},
+                after={"state": new_state.value},
+            )
+
+        return self._load_asset(asset_id)
+
+    def _mark_for_gc_if_orphaned(self, asset_id: str, caller_service_id: str) -> None:
+        """Mark an asset with zero remaining aliases for GC (FR-003).
+
+        Reuses ``expired`` so the normal GC sweep handles the ``expired → deleted``
+        transition; the distinct ``asset.gc_mark`` action records that the trigger
+        was alias removal. Mirrors the in-memory registry, which does not release
+        quota on this path (that happens on the subsequent expire/delete).
+        """
+
+        remaining = self._conn.execute(
+            "SELECT 1 FROM aliases WHERE asset_id = %s LIMIT 1", (asset_id,)
+        ).fetchone()
+        if remaining is not None:
+            return
+        row = self._conn.execute(
+            "SELECT state FROM assets WHERE asset_id = %s FOR UPDATE", (asset_id,)
+        ).fetchone()
+        if row is None:
+            return
+        if row["state"] in (AssetState.EXPIRED.value, AssetState.DELETED.value):
+            return
+        self._conn.execute(
+            "UPDATE assets SET state = %s, updated_at = %s WHERE asset_id = %s",
+            (AssetState.EXPIRED.value, utcnow(), asset_id),
+        )
+        self._write_audit(
+            action="asset.gc_mark",
+            target=asset_id,
+            caller_service_id=caller_service_id,
+            before={"state": row["state"], "reason": "zero_aliases"},
+            after={"state": AssetState.EXPIRED.value},
+        )
+
+    def _require_alias_name_available(self, norm_space: str, alias_name: str) -> None:
+        """Raise if the alias name exists or is within its tombstone grace window."""
+
+        existing = self._conn.execute(
+            "SELECT 1 FROM aliases WHERE space = %s AND alias = %s", (norm_space, alias_name)
+        ).fetchone()
+        if existing is not None:
+            raise AliasConflictError(f"alias {norm_space}/{alias_name!r} already exists")
+
+        tomb = self._conn.execute(
+            "SELECT grace_until FROM alias_tombstones WHERE space = %s AND alias = %s",
+            (norm_space, alias_name),
+        ).fetchone()
+        if tomb is None:
+            return
+        if utcnow() >= tomb["grace_until"]:
+            self._conn.execute(
+                "DELETE FROM alias_tombstones WHERE space = %s AND alias = %s",
+                (norm_space, alias_name),
+            )
+            return
+        raise AliasConflictError(
+            f"alias {norm_space}/{alias_name!r} already exists or is within grace period"
+        )
+
+    def _enforce_quota(self, *, space: str, partition_id: str, new_bytes: int) -> None:
+        """Reject a commit that would breach a partition or bucket ceiling (FR-066/FR-068)."""
+
+        pq = self._partition_quota(space, partition_id, for_update=True)
+        if pq.quota_bytes is not None and (
+            pq.used_bytes + new_bytes >= pq.quota_bytes * _PARTITION_HARD_RATIO
+        ):
+            raise QuotaExceededError(
+                f"partition quota exceeded for {pq.space}/{pq.partition_id}", scope="partition"
+            )
+        if pq.quota_asset_count is not None and pq.used_asset_count + 1 > pq.quota_asset_count:
+            raise QuotaExceededError(
+                f"partition asset-count quota exceeded for {pq.space}/{pq.partition_id}",
+                scope="partition",
+            )
+
+        bq = self._bucket_quota(space, for_update=True)
+        if bq.quota_bytes is not None and (
+            bq.used_bytes + new_bytes >= bq.quota_bytes * bq.hard_ceiling
+        ):
+            raise QuotaExceededError(f"bucket quota exceeded for {bq.space}", scope="bucket")
+
+    def _acquire_quota(self, *, space: str, partition_id: str, nbytes: int) -> None:
+        """Increment partition + bucket usage after a successful commit."""
+
+        self._conn.execute(
+            """
+            INSERT INTO partition_quotas (
+                space, partition_id, used_bytes, used_asset_count, eviction_sweep_enabled
+            ) VALUES (%s, %s, %s, 1, %s)
+            ON CONFLICT (space, partition_id) DO UPDATE SET
+                used_bytes = partition_quotas.used_bytes + EXCLUDED.used_bytes,
+                used_asset_count = partition_quotas.used_asset_count + 1
+            """,
+            (space, partition_id, nbytes, space in _SWEEP_DEFAULT_SPACES),
+        )
+        self._conn.execute(
+            """
+            INSERT INTO bucket_quotas (space, used_bytes) VALUES (%s, %s)
+            ON CONFLICT (space) DO UPDATE SET
+                used_bytes = bucket_quotas.used_bytes + EXCLUDED.used_bytes
+            """,
+            (space, nbytes),
+        )
+
+    def _release_quota(self, *, space: str, partition_id: str, nbytes: int) -> None:
+        """Decrement usage counters (clamped at zero) when an asset leaves ``available``."""
+
+        self._conn.execute(
+            """
+            UPDATE partition_quotas
+               SET used_bytes = GREATEST(0, used_bytes - %s),
+                   used_asset_count = GREATEST(0, used_asset_count - 1)
+             WHERE space = %s AND partition_id = %s
+            """,
+            (nbytes, space, partition_id),
+        )
+        self._conn.execute(
+            "UPDATE bucket_quotas SET used_bytes = GREATEST(0, used_bytes - %s) WHERE space = %s",
+            (nbytes, space),
+        )
+
+    def _partition_quota(
+        self, norm_space: str, norm_partition: str, *, for_update: bool = False
+    ) -> PartitionQuota:
+        sql = (
+            "SELECT quota_bytes, quota_asset_count, used_bytes, used_asset_count, "
+            "eviction_sweep_enabled FROM partition_quotas WHERE space = %s AND partition_id = %s"
+        )
+        if for_update:
+            sql += " FOR UPDATE"
+        row = self._conn.execute(sql, (norm_space, norm_partition)).fetchone()
+        if row is None:
+            return PartitionQuota(
+                space=norm_space,
+                partition_id=norm_partition,
+                eviction_sweep_enabled=norm_space in _SWEEP_DEFAULT_SPACES,
+            )
+        return PartitionQuota(
+            space=norm_space,
+            partition_id=norm_partition,
+            quota_bytes=row["quota_bytes"],
+            quota_asset_count=row["quota_asset_count"],
+            used_bytes=row["used_bytes"],
+            used_asset_count=row["used_asset_count"],
+            eviction_sweep_enabled=row["eviction_sweep_enabled"],
+        )
+
+    def _bucket_quota(self, norm_space: str, *, for_update: bool = False) -> BucketQuota:
+        sql = (
+            "SELECT quota_bytes, used_bytes, warn_threshold, hard_ceiling "
+            "FROM bucket_quotas WHERE space = %s"
+        )
+        if for_update:
+            sql += " FOR UPDATE"
+        row = self._conn.execute(sql, (norm_space,)).fetchone()
+        if row is None:
+            return BucketQuota(space=norm_space)
+        return BucketQuota(
+            space=norm_space,
+            quota_bytes=row["quota_bytes"],
+            used_bytes=row["used_bytes"],
+            warn_threshold=row["warn_threshold"],
+            hard_ceiling=row["hard_ceiling"],
+        )
+
+    def _load_binding(self, norm_space: str, norm_alias: str) -> AliasBinding:
+        row = self._conn.execute(
+            """
+            SELECT space, alias, asset_id, mutable, previous_asset_id,
+                   created_at, updated_at, created_by_service_id
+              FROM aliases WHERE space = %s AND alias = %s
+            """,
+            (norm_space, norm_alias),
+        ).fetchone()
+        if row is None:
+            raise AliasNotFoundError(f"{norm_space}/{norm_alias}")
+        return AliasBinding(
+            space=row["space"],
+            alias=row["alias"],
+            asset_id=row["asset_id"],
+            mutable=row["mutable"],
+            previous_asset_id=row["previous_asset_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            created_by_service_id=row["created_by_service_id"],
         )
 
     def _write_audit(

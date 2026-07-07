@@ -15,11 +15,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install dependencies first for better layer caching. The [s3] extra pulls in
-# boto3 so the durable S3 backend is available in the container.
+# Install dependencies first for better layer caching. The [s3,pg] extras pull in
+# boto3 and psycopg so the durable S3 and Postgres backends are available.
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install ".[s3]"
+RUN pip install ".[s3,pg]"
 
 # Drop privileges.
 RUN useradd --no-create-home --uid 10001 appuser

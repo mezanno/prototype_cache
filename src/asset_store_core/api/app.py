@@ -46,6 +46,7 @@ from asset_store_core.models import utcnow
 from asset_store_core.object_store import LocalObjectStore, ObjectStoreBackend
 from asset_store_core.paths import normalize_space
 from asset_store_core.registry import InMemoryAssetRegistry
+from asset_store_core.registry_base import AssetRegistry
 from asset_store_core.service_policy import assert_service_bucket_allowed
 
 CAPABILITY_SCHEME = "capability"
@@ -53,7 +54,7 @@ CAPABILITY_SCHEME = "capability"
 
 def create_app(
     *,
-    registry: InMemoryAssetRegistry | None = None,
+    registry: AssetRegistry | None = None,
     store: ObjectStoreBackend | None = None,
 ) -> FastAPI:
     """Build the FastAPI app, optionally injecting registry/store for tests."""
@@ -329,8 +330,10 @@ def create_app_from_env() -> FastAPI:
     ``ASSET_STORE_S3_REGION``/``_ACCESS_KEY``/``_SECRET_KEY``); otherwise the
     in-memory :class:`~asset_store_core.object_store.LocalObjectStore` is used.
 
-    The registry stays in-memory in this slice; the durable Postgres-backed
-    registry is tracked separately as B-009.
+    When ``ASSET_STORE_PG_DSN`` is set, the durable
+    :class:`~asset_store_core.pg_registry.PostgresAssetRegistry` is wired (B-009);
+    otherwise the in-memory :class:`~asset_store_core.registry.InMemoryAssetRegistry`
+    is used.
     """
 
     store: ObjectStoreBackend | None = None
@@ -344,4 +347,12 @@ def create_app_from_env() -> FastAPI:
             access_key=_require_env("ASSET_STORE_S3_ACCESS_KEY"),
             secret_key=_require_env("ASSET_STORE_S3_SECRET_KEY"),
         )
-    return create_app(store=store)
+
+    registry: AssetRegistry | None = None
+    dsn = os.environ.get("ASSET_STORE_PG_DSN")
+    if dsn:
+        from asset_store_core.pg_registry import PostgresAssetRegistry
+
+        registry = PostgresAssetRegistry.connect(dsn)
+
+    return create_app(registry=registry, store=store)
