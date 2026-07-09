@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from fetcher_service.client import AssetStoreClient, AssetStoreError
+from fetcher_service.config import rule_set_from_env
 from fetcher_service.fetcher import SyntheticFetcher, UrlFetcher
 from fetcher_service.rules import RuleSet, default_rule_set
 from fetcher_service.service import (
@@ -81,7 +82,7 @@ def create_app(
 ) -> FastAPI:
     """Build the fetcher FastAPI app, optionally injecting dependencies for tests."""
 
-    rules = rules if rules is not None else default_rule_set()
+    rules = rules if rules is not None else _rules_from_env()
     fetcher = fetcher if fetcher is not None else SyntheticFetcher()
     client = asset_store_client if asset_store_client is not None else _client_from_env()
 
@@ -138,3 +139,9 @@ def _client_from_env() -> AssetStoreClient:
     service_id = os.environ.get("FETCHER_SERVICE_ID", "fetcher")
     http = httpx.Client(base_url=base_url, timeout=30.0)
     return AssetStoreClient(http, service_id=service_id, service_secret=secret)
+
+
+def _rules_from_env() -> RuleSet:
+    """Load the rule set from ``FETCHER_RULES_FILE`` or fall back to the default."""
+
+    return rule_set_from_env() or default_rule_set()

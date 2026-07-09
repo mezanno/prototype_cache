@@ -12,6 +12,7 @@ passthrough, and is default-deny for everything else.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -133,6 +134,39 @@ class HostPassthroughRule:
         if not segments:
             return None
         tail = "/".join(segments)
+        if url.query:
+            tail = f"{tail}?{url.query}"
+        return RuleMatch(mirror_id=self.mirror_id, aliases=(tail,))
+
+
+@dataclass(frozen=True, slots=True)
+class RegexRule:
+    """Generic host rule: match the normalized path with an anchored named-group
+    regex and build the alias tail from a ``{group}`` template.
+
+    The regex is used only to **match and extract** — it never performs semantic
+    normalization (which stays in code, e.g. :class:`IIIFImageRule`). The pattern
+    is anchored (``re.fullmatch`` against the slash-joined path, no leading slash)
+    and restricted to a safe subset by the loader (named groups only; no
+    backreferences or lookaround) to keep evaluation predictable and testable.
+
+    ``pattern`` matches the normalized path; a query string, when present, is
+    appended verbatim as ``?<query>`` so distinct query variants stay distinct.
+    """
+
+    host: str
+    mirror_id: str
+    pattern: re.Pattern[str]
+    alias_template: str
+
+    def match(self, url: NormalizedUrl) -> RuleMatch | None:
+        if not _host_matches(url, self.host):
+            return None
+        path = "/".join(url.path_segments)
+        matched = self.pattern.fullmatch(path)
+        if matched is None:
+            return None
+        tail = self.alias_template.format(**matched.groupdict())
         if url.query:
             tail = f"{tail}?{url.query}"
         return RuleMatch(mirror_id=self.mirror_id, aliases=(tail,))

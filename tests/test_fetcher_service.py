@@ -9,6 +9,7 @@ outbound network: the synthetic fetcher supplies deterministic bytes.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +17,7 @@ from fastapi.testclient import TestClient
 from asset_store_core.api import create_app as create_asset_store_app
 from fetcher_service.app import create_app as create_fetcher_app
 from fetcher_service.client import AssetStoreClient
+from fetcher_service.config import RuleConfigError, load_rule_set, rule_set_from_env
 from fetcher_service.fetcher import FetchedContent, SyntheticFetcher
 from fetcher_service.normalize import InvalidUrl, normalize_url
 from fetcher_service.rules import (
@@ -160,6 +162,141 @@ def test_iiif_ignores_query_parameters() -> None:
     )
     assert bare is not None and tracked is not None
     assert bare.aliases == tracked.aliases
+
+
+# --------------------------------------------------------------------------- #
+# Declarative rule-config loader (TOML)
+# --------------------------------------------------------------------------- #
+
+
+def test_config_loads_typed_rules() -> None:
+    rules = load_rule_set(
+        """
+        [[rule]]
+        type = "iiif"
+        host = "gallica.bnf.fr"
+        mirror_id = "gallica"
+
+        [[rule]]
+        type = "passthrough"
+        host = "images.example.org"
+        mirror_id = "example"
+        """
+    )
+    iiif = rules.evaluate(
+        normalize_url("https://gallica.bnf.fr/iiif/ark:/x/full/full/0/native.jpg")
+    )
+    passthrough = rules.evaluate(normalize_url("https://images.example.org/a/b.jpg"))
+    assert iiif is not None
+    assert iiif.primary_alias == "iiif/ark:/x/full/full/0/default.jpg"
+    assert passthrough is not None
+    assert passthrough.primary_alias == "a/b.jpg"
+
+
+def test_config_iiif_custom_path_prefix() -> None:
+    rules = load_rule_set(
+        """
+        [[rule]]
+        type = "iiif"
+        host = "img.example.org"
+        mirror_id = "example"
+        path_prefix = ["images", "iiif"]
+        """
+    )
+    match = rules.evaluate(
+        normalize_url("https://img.example.org/images/iiif/ID/full/full/0/default.jpg")
+    )
+    assert match is not None
+    assert match.primary_alias == "iiif/ID/full/full/0/default.jpg"
+
+
+def test_config_regex_rule_matches_and_extracts() -> None:
+    rules = load_rule_set(
+        r"""
+        [[rule]]
+        type = "regex"
+        host = "images.example.org"
+        mirror_id = "example"
+        path_match = '^img/(?P<id>[^/]+)\.(?P<fmt>jpg|png)$'
+        alias_template = "img/{id}.{fmt}"
+        """
+    )
+    match = rules.evaluate(normalize_url("https://images.example.org/img/cat.png"))
+    assert match is not None
+    assert match.mirror_id == "example"
+    assert match.primary_alias == "img/cat.png"
+    # Non-matching path falls through to default-deny.
+    assert rules.evaluate(normalize_url("https://images.example.org/other/cat.png")) is None
+
+
+def test_config_regex_first_match_wins_over_passthrough() -> None:
+    rules = load_rule_set(
+        r"""
+        [[rule]]
+        type = "regex"
+        host = "images.example.org"
+        mirror_id = "example"
+        path_match = '^img/(?P<id>[^/]+)\.jpg$'
+        alias_template = "canonical/{id}"
+
+        [[rule]]
+        type = "passthrough"
+        host = "images.example.org"
+        mirror_id = "example"
+        """
+    )
+    match = rules.evaluate(normalize_url("https://images.example.org/img/cat.jpg"))
+    assert match is not None
+    assert match.primary_alias == "canonical/cat"
+
+
+def test_config_rejects_unknown_type() -> None:
+    with pytest.raises(RuleConfigError, match="unknown type"):
+        load_rule_set('[[rule]]\ntype = "bogus"\nhost = "h"\nmirror_id = "m"\n')
+
+
+def test_config_rejects_missing_field() -> None:
+    with pytest.raises(RuleConfigError, match="mirror_id"):
+        load_rule_set('[[rule]]\ntype = "passthrough"\nhost = "h"\n')
+
+
+def test_config_rejects_unsafe_regex_construct() -> None:
+    with pytest.raises(RuleConfigError, match="disallowed construct"):
+        load_rule_set(
+            '[[rule]]\ntype = "regex"\nhost = "h"\nmirror_id = "m"\n'
+            "path_match = '^(?=x)(?P<id>.+)$'\nalias_template = \"{id}\"\n"
+        )
+
+
+def test_config_rejects_template_with_unknown_group() -> None:
+    with pytest.raises(RuleConfigError, match="unknown group"):
+        load_rule_set(
+            '[[rule]]\ntype = "regex"\nhost = "h"\nmirror_id = "m"\n'
+            "path_match = '^(?P<id>.+)$'\nalias_template = \"{id}/{missing}\"\n"
+        )
+
+
+def test_config_rejects_invalid_toml() -> None:
+    with pytest.raises(RuleConfigError, match="invalid TOML"):
+        load_rule_set("this is = = not toml")
+
+
+def test_config_from_env_loads_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "rules.toml"
+    path.write_text(
+        '[[rule]]\ntype = "passthrough"\nhost = "images.example.org"\nmirror_id = "example"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FETCHER_RULES_FILE", str(path))
+    rules = rule_set_from_env()
+    assert rules is not None
+    match = rules.evaluate(normalize_url("https://images.example.org/a.jpg"))
+    assert match is not None and match.primary_alias == "a.jpg"
+
+
+def test_config_from_env_unset_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FETCHER_RULES_FILE", raising=False)
+    assert rule_set_from_env() is None
 
 
 # --------------------------------------------------------------------------- #
