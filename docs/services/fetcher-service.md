@@ -46,6 +46,16 @@ sequenceDiagram
 
 **Callers:** task-api, task orchestrator, and (indirectly) workers that receive aliases in task definitions. **Not** asset-store, **not** workers talking to heritage sites directly.
 
+> The sequence diagram shows `PUT presigned` as the eventual data path. In the prototype the fetcher uses the **guarded proxy upload** (`PUT /objects/{alias}`) instead — see *Transport & data plane* below.
+
+---
+
+## Transport & data plane ([`ADR-017`](../spec/03_ARCHITECTURE.md))
+
+Both the **control plane** (capability mint, `resolve`, `reserve`, `commit`) and the **data plane** (payload bytes) run over **HTTP+JSON** to asset-store in the prototype. The fetcher uploads via the **guarded proxy** (`PUT /objects/{alias}`), so every byte is audited at the guard and no long-lived signed URL is handed out.
+
+If a hot path ever needs throughput, the performance lever is **presigned upload/download (direct fetcher↔S3)** per [`ADR-003`](../spec/03_ARCHITECTURE.md) — **not** a second RPC protocol such as gRPC. gRPC would add a toolchain for low-volume control calls without helping byte movement; presigned URLs remove the proxy hop, which is where the cost actually is. Server-side presigned **PUT** is not implemented yet and needs an explicit hands-off/commit signal to prevent double-write; this is tracked as [`R-013`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md). Until then, proxy upload is the safe, simple default.
+
 ---
 
 ## Scope

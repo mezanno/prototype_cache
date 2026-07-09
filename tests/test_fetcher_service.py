@@ -1,0 +1,346 @@
+"""fetcher-service Step-1 (stub) tests — B-020.
+
+Unit tests for URL normalization and the rewrite-rule engine (pure functions,
+including the ADR-014 dedup property), plus contract tests of ``ensure_url`` and
+the FastAPI app driven against an in-memory asset-store via ``TestClient``. No
+outbound network: the synthetic fetcher supplies deterministic bytes.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+from asset_store_core.api import create_app as create_asset_store_app
+from fetcher_service.app import create_app as create_fetcher_app
+from fetcher_service.client import AssetStoreClient
+from fetcher_service.fetcher import FetchedContent, SyntheticFetcher
+from fetcher_service.normalize import InvalidUrl, normalize_url
+from fetcher_service.rules import (
+    HostPassthroughRule,
+    IIIFImageRule,
+    RuleSet,
+    default_rule_set,
+)
+from fetcher_service.service import (
+    InvalidRequestError,
+    UpstreamError,
+    UpstreamTimeoutError,
+    ensure_url,
+)
+
+FETCHER_SECRET = "dev-secret:fetcher"
+
+
+class _FailingFetcher:
+    """Test double: always fails the outbound fetch (Step-2 error taxonomy)."""
+
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def fetch(self, url: str) -> FetchedContent:
+        raise self._exc
+
+
+def _asset_store_client() -> tuple[AssetStoreClient, TestClient]:
+    """Build an AssetStoreClient wired to a fresh in-memory asset-store app."""
+
+    http = TestClient(create_asset_store_app())
+    return AssetStoreClient(http, service_id="fetcher", service_secret=FETCHER_SECRET), http
+
+
+# --------------------------------------------------------------------------- #
+# URL normalization
+# --------------------------------------------------------------------------- #
+
+
+def test_normalize_lowercases_and_drops_default_port() -> None:
+    n = normalize_url("HTTPS://Gallica.BNF.fr:443/iiif/ark:/12148/x/full/full/0/default.jpg")
+    assert n.scheme == "https"
+    assert n.host == "gallica.bnf.fr"
+    assert n.port is None
+    assert n.canonical.startswith("https://gallica.bnf.fr/iiif/")
+
+
+def test_normalize_strips_trailing_slash_and_fragment() -> None:
+    n = normalize_url("https://images.example.org/a/b/#frag")
+    assert n.path == "/a/b"
+    assert "frag" not in n.canonical
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "ftp://host/x", "file:///etc/passwd", "https://"])
+def test_normalize_rejects_bad_urls(bad: str) -> None:
+    with pytest.raises(InvalidUrl):
+        normalize_url(bad)
+
+
+# --------------------------------------------------------------------------- #
+# Rewrite-rule engine (ADR-014)
+# --------------------------------------------------------------------------- #
+
+
+def test_iiif_rule_derives_normalized_alias() -> None:
+    rules = default_rule_set()
+    match = rules.evaluate(
+        normalize_url("https://gallica.bnf.fr/iiif/ark:/12148/btv1/full/full/0/default.jpg")
+    )
+    assert match is not None
+    assert match.mirror_id == "gallica"
+    assert match.primary_alias == "iiif/ark:/12148/btv1/full/full/0/default.jpg"
+
+
+def test_iiif_rule_dedups_native_and_default_quality() -> None:
+    """v1 'native' and v2/v3 'default' quality address byte-identical content."""
+
+    rules = default_rule_set()
+    v1 = rules.evaluate(
+        normalize_url("https://gallica.bnf.fr/iiif/ark:/12148/btv1/full/full/0/native.jpg")
+    )
+    v2 = rules.evaluate(
+        normalize_url("https://gallica.bnf.fr/iiif/ark:/12148/btv1/full/full/0/default.jpg")
+    )
+    assert v1 is not None and v2 is not None
+    assert v1.aliases == v2.aliases
+
+
+def test_iiif_rule_normalizes_rotation_and_case() -> None:
+    rules = RuleSet(rules=(IIIFImageRule(host="gallica.bnf.fr", mirror_id="gallica"),))
+    a = rules.evaluate(normalize_url("https://gallica.bnf.fr/iiif/ID/FULL/MAX/000/DEFAULT.JPG"))
+    b = rules.evaluate(normalize_url("https://gallica.bnf.fr/iiif/ID/full/max/0/default.jpg"))
+    assert a is not None and b is not None
+    assert a.aliases == b.aliases == ("iiif/ID/full/max/0/default.jpg",)
+
+
+def test_distinct_image_params_map_to_distinct_aliases() -> None:
+    rules = default_rule_set()
+    full = rules.evaluate(
+        normalize_url("https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg")
+    )
+    region = rules.evaluate(
+        normalize_url("https://gallica.bnf.fr/iiif/ark:/x/0,0,100,100/full/0/default.jpg")
+    )
+    assert full is not None and region is not None
+    assert full.aliases != region.aliases
+
+
+def test_passthrough_rule_uses_normalized_path() -> None:
+    rules = RuleSet(rules=(HostPassthroughRule(host="images.example.org", mirror_id="example"),))
+    match = rules.evaluate(normalize_url("https://images.example.org/photos/cat.jpg"))
+    assert match is not None
+    assert match.mirror_id == "example"
+    assert match.primary_alias == "photos/cat.jpg"
+
+
+def test_unmatched_host_is_not_cacheable() -> None:
+    assert default_rule_set().evaluate(normalize_url("https://evil.example.net/x.jpg")) is None
+
+
+def test_passthrough_query_distinguishes_aliases() -> None:
+    """Extra query parameters produce distinct passthrough aliases (distinct bytes)."""
+
+    rules = RuleSet(rules=(HostPassthroughRule(host="images.example.org", mirror_id="example"),))
+    plain = rules.evaluate(normalize_url("https://images.example.org/img/cat.jpg"))
+    sized = rules.evaluate(normalize_url("https://images.example.org/img/cat.jpg?w=200"))
+    assert plain is not None and sized is not None
+    assert plain.aliases != sized.aliases
+    assert sized.primary_alias == "img/cat.jpg?w=200"
+
+
+def test_iiif_ignores_query_parameters() -> None:
+    """IIIF identity is fully in the path; tracking query params must not fork the alias."""
+
+    rules = default_rule_set()
+    bare = rules.evaluate(
+        normalize_url("https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg")
+    )
+    tracked = rules.evaluate(
+        normalize_url("https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg?utm=abc")
+    )
+    assert bare is not None and tracked is not None
+    assert bare.aliases == tracked.aliases
+
+
+# --------------------------------------------------------------------------- #
+# ensure_url orchestration
+# --------------------------------------------------------------------------- #
+
+
+def test_ensure_url_cache_miss_then_hit_is_idempotent() -> None:
+    client, http = _asset_store_client()
+    rules = default_rule_set()
+    fetcher = SyntheticFetcher()
+    url = "https://gallica.bnf.fr/iiif/ark:/12148/btv1/full/full/0/default.jpg"
+
+    first = ensure_url(client, rules, fetcher, url=url)
+    assert first.cache_hit is False
+    assert first.bucket == "cache"
+    assert first.partition_id == "gallica"
+    assert first.qualified_alias == "cache/gallica/iiif/ark:/12148/btv1/full/full/0/default.jpg"
+
+    second = ensure_url(client, rules, fetcher, url=url)
+    assert second.cache_hit is True
+    assert second.asset_id == first.asset_id
+    assert second.qualified_alias == first.qualified_alias
+
+    # Stored bytes are the verifiable synthetic payload echoing the URL.
+    read = http.get(
+        f"/objects/{first.qualified_alias}",
+        headers={"Authorization": f"Capability {_read_cap(client)}"},
+    )
+    assert read.status_code == 200
+    payload = json.loads(read.content)
+    assert payload["stub"] is True
+    assert payload["url"].startswith("https://gallica.bnf.fr/iiif/")
+
+
+def _read_cap(client: AssetStoreClient) -> str:
+    """Mint a read capability for the gallica cache prefix (test helper)."""
+
+    response = client._http.post(  # noqa: SLF001 - test-only access
+        "/capabilities",
+        headers={"Authorization": "Service fetcher:dev-secret:fetcher"},
+        json={
+            "operation": "read",
+            "scope_prefix": "cache/gallica",
+            "ttl_seconds": 300,
+            "single_use": False,
+        },
+    )
+    cap_id: str = response.json()["capability_id"]
+    return cap_id
+
+
+def test_ensure_url_two_variants_hit_same_asset() -> None:
+    client, _ = _asset_store_client()
+    rules = default_rule_set()
+    fetcher = SyntheticFetcher()
+
+    first = ensure_url(
+        client,
+        rules,
+        fetcher,
+        url="https://gallica.bnf.fr/iiif/ark:/x/full/full/0/native.jpg",
+    )
+    second = ensure_url(
+        client,
+        rules,
+        fetcher,
+        url="https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg",
+    )
+    assert first.cache_hit is False
+    assert second.cache_hit is True
+    assert second.asset_id == first.asset_id
+
+
+def test_ensure_url_non_cacheable_requires_tmp_id() -> None:
+    client, _ = _asset_store_client()
+    with pytest.raises(InvalidRequestError):
+        ensure_url(
+            client,
+            default_rule_set(),
+            SyntheticFetcher(),
+            url="https://evil.example.net/x.jpg",
+        )
+
+
+def test_ensure_url_non_cacheable_stages_in_tmp() -> None:
+    client, _ = _asset_store_client()
+    result = ensure_url(
+        client,
+        default_rule_set(),
+        SyntheticFetcher(),
+        url="https://evil.example.net/x.jpg",
+        tmp_id="task-42",
+    )
+    assert result.bucket == "tmp"
+    assert result.partition_id == "task-42"
+    assert result.qualified_alias.startswith("tmp/task-42/")
+    assert result.cache_hit is False
+
+
+def test_ensure_url_invalid_url_raises() -> None:
+    client, _ = _asset_store_client()
+    with pytest.raises(InvalidRequestError):
+        ensure_url(client, default_rule_set(), SyntheticFetcher(), url="not-a-url")
+
+
+def test_ensure_url_propagates_upstream_error() -> None:
+    client, _ = _asset_store_client()
+    fetcher = _FailingFetcher(UpstreamError("origin returned 500"))
+    with pytest.raises(UpstreamError):
+        ensure_url(
+            client,
+            default_rule_set(),
+            fetcher,
+            url="https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg",
+        )
+
+
+# --------------------------------------------------------------------------- #
+# FastAPI app contract
+# --------------------------------------------------------------------------- #
+
+
+def test_app_ensure_url_endpoint_happy_path() -> None:
+    store_client, _ = _asset_store_client()
+    app = create_fetcher_app(asset_store_client=store_client)
+    fetcher_client = TestClient(app)
+
+    resp = fetcher_client.post(
+        "/v1/ensure-url",
+        json={"url": "https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["cache_hit"] is False
+    assert body["bucket"] == "cache"
+    assert body["partition_id"] == "gallica"
+
+
+def test_app_ensure_url_invalid_url_returns_400() -> None:
+    store_client, _ = _asset_store_client()
+    app = create_fetcher_app(asset_store_client=store_client)
+    fetcher_client = TestClient(app)
+
+    resp = fetcher_client.post("/v1/ensure-url", json={"url": "ftp://x/y"})
+    assert resp.status_code == 400
+    assert resp.json()["title"] == "Invalid request"
+
+
+def test_app_healthz() -> None:
+    store_client, _ = _asset_store_client()
+    app = create_fetcher_app(asset_store_client=store_client)
+    fetcher_client = TestClient(app)
+    assert fetcher_client.get("/healthz").json() == {"status": "ok"}
+
+
+def test_app_upstream_error_returns_502() -> None:
+    store_client, _ = _asset_store_client()
+    app = create_fetcher_app(
+        asset_store_client=store_client,
+        fetcher=_FailingFetcher(UpstreamError("origin 500")),
+    )
+    fetcher_client = TestClient(app)
+    resp = fetcher_client.post(
+        "/v1/ensure-url",
+        json={"url": "https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg"},
+    )
+    assert resp.status_code == 502
+    assert resp.json()["title"] == "Upstream fetch failed"
+
+
+def test_app_upstream_timeout_returns_504() -> None:
+    store_client, _ = _asset_store_client()
+    app = create_fetcher_app(
+        asset_store_client=store_client,
+        fetcher=_FailingFetcher(UpstreamTimeoutError("origin timed out")),
+    )
+    fetcher_client = TestClient(app)
+    resp = fetcher_client.post(
+        "/v1/ensure-url",
+        json={"url": "https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg"},
+    )
+    assert resp.status_code == 504
+    assert resp.json()["title"] == "Upstream timeout"
