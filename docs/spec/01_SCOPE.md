@@ -247,12 +247,12 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 - **Preconditions:** Task includes remote URL. Fetcher credential allows `cache` + `tmp`. Domain policy configured (`Q-022`).
 - **Trigger:** Orchestrator calls `POST /v1/ensure-url` on fetcher before worker dispatch.
 - **Main flow:**
-  1. Fetcher normalizes URL; derives cache alias candidates under `cache/{mirror_id}/`.
-  2. **Cache hit** (and not `no_cache`): resolve existing alias → return `asset_id`, `cache_hit=true`.
-  3. **Miss:** HTTP GET remote; if domain cacheable → write `cache/{mirror_id}/…`; else → `tmp/{tmpid}/…`; commit via guard.
+  1. Fetcher normalizes URL; derives the **canonical cache alias** under `cache/{mirror_id}/` — this alias **is the cache key** (equivalent URL variants normalize to the same alias, so they collide on lookup by construction).
+  2. **Cache hit** (and not `no_cache`): resolve the alias (the cache key) → return `asset_id`, `cache_hit=true`.
+  3. **Miss:** HTTP GET remote; if domain cacheable → write under the canonical `cache/{mirror_id}/…` alias; else → `tmp/{tmpid}/…`; commit via guard.
   4. Return qualified alias to task-api for task definition.
   5. Worker later reads via SCN-002 (never hits remote origin).
-- **Expected result:** Idempotent `ensure_url` for same URL returns same alias on second call (cache hit).
+- **Expected result:** Idempotent `ensure_url` for same URL returns same alias on second call (cache hit) — the alias is both the lookup key and the stored name, so lookup and storage cannot drift.
 - **Error/failure paths:** upstream 502/504; SSRF blocked; guard 403 if fetcher misconfigured.
 - **Observability checks:** `fetch_cache_hit`, `fetch_remote_errors`, bytes to `cache` vs `tmp`.
 - **Open questions:** Q-023 (fetcher phasing). Cache alias derivation and allowlist resolved by [`ADR-014`](03_ARCHITECTURE.md) (URL→alias rewrite rules).
@@ -283,10 +283,10 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 - **Trigger:** User runs "Run OCR" over N remote IIIF page URLs.
 - **Main flow (asset-store touchpoints only):**
   1. Task-api validates the user/team/project token and the request payload (out of asset-store scope).
-  2. For each remote page URL, task-api calls the fetcher (`SCN-007`): a **publicly-cacheable** domain lands in `cache/{mirror_id}/…`; a **non-cacheable** URL lands in the user's `tmp/{tmpid}/…` staging. Either way the worker later reads a local alias, never the origin.
+  2. For each remote page URL, task-api calls the fetcher (`SCN-007`): a **publicly-cacheable** domain lands in `cache/{mirror_id}/…` under its **canonical alias (the cache key)**; a **non-cacheable** URL lands in the user's `tmp/{tmpid}/…` staging. Either way the worker later reads a local alias, never the origin.
   3. Task-api provisions a result prefix `results/{userid}/{taskid}/attempt-1/` with read-for-user / append-for-worker semantics (`SCN-005`, FR-069).
   4. Worker reads inputs by alias (`SCN-002`) and writes outputs under the result prefix (`SCN-005`).
-- **Expected result:** Re-running with the same cacheable URLs reuses cached assets (idempotent `ensure_url`); the user can read results but not mutate them.
+- **Expected result:** Re-running with the same cacheable URLs reuses cached assets (idempotent `ensure_url`, keyed on the canonical alias); the user can read results but not mutate them.
 - **Error/failure paths:** fetch failure (`502`/`504`) aborts before worker dispatch; non-cacheable remote falls back to `tmp`; capability `403` if any identity is mis-scoped.
 - **Observability checks:** `fetch_cache_hit`, bytes to `cache` vs `tmp`, result write success rate.
 - **Open questions:** Q-030; capability verb granularity (`Q-032`). Cache alias/allowlist resolved by [`ADR-014`](03_ARCHITECTURE.md).
@@ -303,12 +303,12 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
   2. The mirror derives **one or more** cache alias candidates for the requested origin image (same URL normalization as the fetcher, `SCN-007`). Because several distinct URLs can address the **same underlying asset** (e.g. two Gallica IIIF API versions, or scheme/host/parameter variants of one image), the rule set maps each such variant to the **same** `cache/{mirror_id}/…` asset.
   3. **Cache hit:** resolve any matching alias via storage-guard (read-capability flow, `SCN-002`); registry resolves; presigned GET for bucket `cache`.
   4. The mirror streams the cached bytes to the user — the authoritative origin is never contacted.
-  5. **Cache miss:** the mirror delegates to the fetcher (`SCN-007`) to populate `cache`. The fetcher commits the asset once and **attaches every equivalent alias** (all matching URL variants) to that single `asset_id`, so a later request via any variant is a cache hit; asset-store itself still performs no outbound HTTP.
+  5. **Cache miss:** the mirror delegates to the fetcher (`SCN-007`) to populate `cache`. The fetcher commits the asset once under its **single canonical alias**; because equivalent URL variants **normalize to that same alias**, a later request via any variant is a cache hit; asset-store itself still performs no outbound HTTP.
 - **Expected result:** The user receives the same image bytes the origin would serve, with no load on the authoritative source on a cache hit; repeat requests — **including via a different but equivalent URL variant** — are served entirely from `cache`.
 - **Error/failure paths:** 403 if the requested URL is not on the allowlist; 404/410 if not cached and the fetch fails; 403 if the mirror capability does not cover the alias.
 
 - **Observability checks:** user-read cache-hit ratio; bytes served from `cache`; zero origin requests on a hit.
-- **Cache-rule note:** Both the **allowlist** and the **URL→alias mapping** are a single, declarative **rewrite-rule set** ([`ADR-014`](03_ARCHITECTURE.md)): ordered host/path-pattern rules that yield both an allow/deny decision and the canonical `{mirror_id}` + alias set. Byte-identical URL variants (e.g. different Gallica IIIF API revisions) map to the **same** alias set → one `asset_id`; distinct image parameters map to **distinct** aliases. A single request may therefore produce **multiple aliases** that all point to one `asset_id`; the cache logic (and the fetcher commit path) must support attaching several aliases to one asset.
+- **Cache-rule note:** Both the **allowlist** and the **URL→alias mapping** are a single, declarative **rewrite-rule set** ([`ADR-014`](03_ARCHITECTURE.md)): ordered host/path-pattern rules that yield both an allow/deny decision and the canonical `{mirror_id}` + alias. Byte-identical URL variants (e.g. different Gallica IIIF API revisions) **normalize to the same canonical alias** → one `asset_id`; distinct image parameters map to **distinct** aliases. Cross-URL dedup is achieved by normalization to a **single** alias, not by attaching several aliases to one asset; binding multiple distinct aliases to one `asset_id` is deferred to the access-control use case ([`Q-034`](05_BACKLOG_AND_OPEN_QUESTIONS.md)).
 - **Scope note:** Applies to **image bytes only**. Cached **IIIF manifests are explicitly excluded** — a manifest embeds absolute origin URLs that would be wrong when served from the mirror, and manifest relaying/rewriting is out of scope (see Out Of Scope; `iiif-image-mirror` must not relay or rewrite Presentation manifests).
 - **Open questions:** [`Q-025`](05_BACKLOG_AND_OPEN_QUESTIONS.md) (IIIF/mirror phasing). Domain cacheability policy + URL→alias rule format resolved by [`ADR-014`](03_ARCHITECTURE.md).
 

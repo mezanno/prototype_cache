@@ -127,10 +127,36 @@ Examples of **tmp** use ([`../spec/01_SCOPE.md`](../spec/01_SCOPE.md)):
 
 Cache mapping and cache allowlisting are a **single declarative artifact**: an ordered list of rewrite rules, keyed by origin. The same rule set is evaluated identically by the fetcher and by any cache client (e.g. `iiif-image-mirror`), so the allowlist decision and the canonical alias never drift apart.
 
+The **canonical alias is the cache key**: `ensure_url` resolves (and, on a miss, writes) the asset under exactly that alias, so lookup and storage share one name and equivalent URL variants collide on it by construction.
+
 Each rule matches an origin URL (host + path/query pattern) and produces:
 
 1. an **allow/deny** decision, and
-2. zero-or-more **canonical cache aliases** under `cache/{mirror_id}/…`.
+2. the **canonical cache alias** under `cache/{mirror_id}/…`.
+
+### Rule config format (TOML)
+
+Rules are authored as an ordered TOML `[[rule]]` array and loaded via `FETCHER_RULES_FILE` (falling back to the built-in default set). Three `type`s are supported:
+
+- `iiif` — IIIF Image API origin; fields `host`, `mirror_id`, optional `path_prefix` (default `["iiif"]`). Rotation/quality canonicalization and the `native`→`default` dedup are done in code, not config.
+- `passthrough` — cache every path on a host verbatim; fields `host`, `mirror_id`.
+- `regex` — generic host with an anchored, **named-group** regex that **matches and extracts only**; fields `host`, `mirror_id`, `path_match`, `alias_template`. The regex is a **safe subset** — backreferences and lookaround are rejected at load time, and every `{group}` in `alias_template` must be a capture group — so a rule set stays predictable and exhaustively unit-testable offline.
+
+```toml
+[[rule]]
+type = "iiif"
+host = "gallica.bnf.fr"
+mirror_id = "gallica"
+
+[[rule]]
+type = "regex"
+host = "images.example.org"
+mirror_id = "example"
+path_match = '^img/(?P<id>[^/]+)\.(?P<fmt>jpg|png)$'
+alias_template = "img/{id}.{fmt}"
+```
+
+**Dedup by normalization (single alias):** byte-identical URL variants normalize to the **same** canonical alias rather than binding several distinct aliases to one asset ([`ADR-014` amendment](../spec/03_ARCHITECTURE.md)); multi-alias-per-asset is deferred to the access-control use case ([`Q-034`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
 
 ### Allowlist semantics (default-deny)
 
@@ -138,12 +164,20 @@ Each rule matches an origin URL (host + path/query pattern) and produces:
 - The general fetcher may still fetch a non-cacheable URL into `tmp` (task-input staging).
 - A dedicated cache client such as `iiif-image-mirror` treats a non-match as **rejected** (`403`) — it must not fetch outside the allowlist.
 
-### Byte-identity is the dedup rule
+### Deduplication: name-dedup now, byte-identity deferred
 
-Multiple aliases attach to **one** `asset_id` **only** when the URLs address **byte-identical** content:
+**Primary dedup is by the canonical alias (the cache key).** Equivalent URLs normalize to the *same* alias and collide on lookup, so a second equivalent request is a cache **hit that never re-fetches**. This alone delivers the caching win with **zero extra machinery** — no content hashing, no blob sharing.
 
-- **Same asset** (dedup): different IIIF API revisions, host, or scheme variants of the *same* resource **with the same normalized parameters**.
-- **Different asset** (no dedup): any change to image parameters — region, size, rotation, quality, or format — yields **different bytes** and therefore a **distinct** alias.
+**Byte-identity (content-addressed) storage dedup** — storing identical bytes *once* and pointing several *different* aliases at one blob — is a **separate, additive** layer that is **deferred** ([`Q-035`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)). Why it is not needed at first:
+
+1. **The alias already does the dedup that matters.** With alias-as-cache-key, content dedup only helps when two *different* aliases carry identical bytes. And because a second equivalent URL is a name-level cache hit, we usually **never fetch the duplicate bytes** to compare in the first place — so the marginal saving is small.
+2. **The transfer-saving variant needs a proxied upload.** Only a proxy sees the bytes *before* they are stored, so only a proxy can skip the store to avoid the transfer. With presigned direct-to-S3 you cannot avoid the transfer without trusting a spoofable client-declared hash. The transport-agnostic alternative — post-upload "control-then-merge" (let the object land, read its server-side checksum, then merge duplicates) — saves **storage, not transfer**, and adds blob **refcounting**, a merge mutation with concurrency hazards, a transient duplicate, and **ambiguous quota attribution** (whose bytes are the shared ones?).
+3. **Cost scales with item size**, so if ever enabled it must be a **per-space (cache-only), partition-scoped** knob — never cross-partition in `users` (instant dedup / quota deltas become an *existence oracle* leaking that another user holds a file), pointless in `results` (download-once unique outputs, cf. ADR-009 LFU exclusion) and `tmp` (ephemeral).
+
+We already record a trustworthy server-side `sha256` on every write (`object-store` computes it, the registry stores it), so the one slice we keep now is a cheap **correctness detector** for [`R-011`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md): when we deliberately refetch (`no_cache`) or run an audit, compare the fresh checksum against the stored one for the same alias and alert on mismatch — no merge, no schema change.
+
+For byte-identical variants that address the *same* resource with the *same* normalized parameters (different IIIF API revisions, host, or scheme), the point is moot anyway: they **normalize to one alias**. Any change to region, size, rotation, quality, or format yields **different bytes** and therefore a **distinct** alias.
+
 
 ### IIIF Image API alias scheme
 
@@ -156,7 +190,7 @@ cache/{mirror_id}/iiif/{resource_id}/{region}/{size}/{rotation}/{quality}.{forma
 - `{resource_id}` — the ARK when the origin exposes one (e.g. Gallica `ark:/12148/…`), otherwise the origin's stable id. **ARK is not assumed** ([`Q-011`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
 - `{region}/{size}/{rotation}/{quality}.{format}` — the **normalized** IIIF Image API parameters (canonical spelling, e.g. `full`→`full`, default rotation `0`, lowercased format).
 
-Example — these two Gallica IIIF API-version URLs of the same region+size resolve to the **same** alias set and thus one `asset_id`:
+Example — these two Gallica IIIF API-version URLs of the same region+size normalize to the **same** canonical alias and thus one `asset_id`:
 
 ```
 https://gallica.bnf.fr/iiif/ark:/12148/btv1b8447236h/f1/full/max/0/default.jpg
@@ -168,7 +202,7 @@ whereas `full/1000,/0/default.jpg` is a **different** alias (different bytes).
 
 ### Correctness risk ([`R-011`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md))
 
-An over-broad equivalence rule can bind non-identical resources to one `asset_id` and serve wrong bytes. Mitigations: keep equivalence rules conservative (only known byte-identical variants), optionally verify a content hash on fetch before attaching an alias to an existing asset, and version/test the rule set per mirror.
+An over-broad equivalence rule can bind non-identical resources to one alias (the cache key) and serve wrong bytes. Mitigations: keep equivalence rules conservative (only known byte-identical variants), and version/test the rule set per mirror. As a cheap runtime detector, when the fetcher deliberately refetches (`no_cache`) or an audit job re-fetches, compare the fresh server-side `sha256` against the checksum already stored for that alias and alert on mismatch (a rule bound non-identical resources). Full content-hash-based dedup/verification on every fetch is deferred with content-addressed storage dedup ([`Q-035`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
 
 ### Manifests excluded
 

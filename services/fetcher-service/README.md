@@ -5,7 +5,7 @@ Remote-URL materialization for the `asset-store` module ([`ADR-008`](../../docs/
 **Phasing (Q-023, resolved):** an **in-repo** service that talks to asset-store over **HTTP+JSON** like any other caller ([`ADR-017`](../../docs/spec/03_ARCHITECTURE.md#adr-log)). Delivered in two steps (B-020):
 
 - **Step 1 — stub (done):** the `ensure_url` control flow — URL normalization, the declarative URL→alias rewrite-rule set ([`ADR-014`](../../docs/spec/03_ARCHITECTURE.md#adr-log), incl. IIIF dedup), cache lookup, and store-through-guarded-proxy — with a **no-network `SyntheticFetcher`** that emits deterministic JSON derived from the URL.
-- **Step 2 — the cache (next):** a real HTTP fetcher (timeouts, max body, redirect limit, SSRF controls), multi-alias attachment, and byte-identity dedup.
+- **Step 2 — the cache (next):** a real HTTP fetcher (timeouts, max body, redirect limit, SSRF controls) and a checksum-mismatch correctness detector (R-011). Dedup is by canonical alias (name); content-addressed storage dedup is deferred, per-space opt-in ([`Q-035`](../../docs/spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
 
 The implementation lives in [`src/fetcher_service/`](../../src/fetcher_service/); tests are in [`tests/test_fetcher_service.py`](../../tests/test_fetcher_service.py).
 
