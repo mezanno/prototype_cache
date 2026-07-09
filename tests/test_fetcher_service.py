@@ -9,8 +9,13 @@ outbound network: the synthetic fetcher supplies deterministic bytes.
 from __future__ import annotations
 
 import json
+import threading
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from time import sleep
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,7 +23,7 @@ from asset_store_core.api import create_app as create_asset_store_app
 from fetcher_service.app import create_app as create_fetcher_app
 from fetcher_service.client import AssetStoreClient
 from fetcher_service.config import RuleConfigError, load_rule_set, rule_set_from_env
-from fetcher_service.fetcher import FetchedContent, SyntheticFetcher
+from fetcher_service.fetcher import FetchedContent, HttpFetcher, SyntheticFetcher
 from fetcher_service.normalize import InvalidUrl, normalize_url
 from fetcher_service.rules import (
     HostPassthroughRule,
@@ -422,7 +427,7 @@ def test_ensure_url_propagates_upstream_error() -> None:
 
 def test_app_ensure_url_endpoint_happy_path() -> None:
     store_client, _ = _asset_store_client()
-    app = create_fetcher_app(asset_store_client=store_client)
+    app = create_fetcher_app(asset_store_client=store_client, fetcher=SyntheticFetcher())
     fetcher_client = TestClient(app)
 
     resp = fetcher_client.post(
@@ -481,3 +486,126 @@ def test_app_upstream_timeout_returns_504() -> None:
     )
     assert resp.status_code == 504
     assert resp.json()["title"] == "Upstream timeout"
+
+
+# --------------------------------------------------------------------------- #
+# HttpFetcher — real outbound HTTP against a loopback origin
+# --------------------------------------------------------------------------- #
+
+
+class _OriginHandler(BaseHTTPRequestHandler):
+    """Canned routes for the in-process origin used by HttpFetcher tests."""
+
+    def log_message(self, *args: object) -> None:  # silence test-server logging
+        pass
+
+    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        if self.path == "/ok":
+            body = b"hello world"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/redirect":
+            self.send_response(302)
+            self.send_header("Location", "/ok")
+            self.end_headers()
+        elif self.path == "/loop":
+            self.send_response(302)
+            self.send_header("Location", "/loop")
+            self.end_headers()
+        elif self.path == "/slow":
+            sleep(0.5)
+            self.send_response(200)
+            self.send_header("Content-Length", "1")
+            self.end_headers()
+            self.wfile.write(b"x")
+        elif self.path == "/big":
+            body = b"x" * 1024
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+
+@pytest.fixture
+def origin() -> Iterator[str]:
+    """Start a threaded loopback HTTP origin and yield its base URL."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _OriginHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def _loopback_fetcher(**kwargs: object) -> HttpFetcher:
+    """HttpFetcher permitted to reach the loopback origin (private hosts allowed)."""
+
+    return HttpFetcher(allow_private_hosts=True, **kwargs)  # type: ignore[arg-type]
+
+
+def test_http_fetcher_success(origin: str) -> None:
+    result = _loopback_fetcher().fetch(f"{origin}/ok")
+    assert result.data == b"hello world"
+    assert result.mime == "text/plain"
+
+
+def test_http_fetcher_follows_redirect(origin: str) -> None:
+    result = _loopback_fetcher().fetch(f"{origin}/redirect")
+    assert result.data == b"hello world"
+
+
+def test_http_fetcher_redirect_cap(origin: str) -> None:
+    with pytest.raises(UpstreamError, match="too many redirects"):
+        _loopback_fetcher(max_redirects=2).fetch(f"{origin}/loop")
+
+
+def test_http_fetcher_timeout(origin: str) -> None:
+    with pytest.raises(UpstreamTimeoutError):
+        _loopback_fetcher(read_timeout=0.1).fetch(f"{origin}/slow")
+
+
+def test_http_fetcher_body_cap(origin: str) -> None:
+    with pytest.raises(UpstreamError, match="max_bytes"):
+        _loopback_fetcher(max_bytes=100).fetch(f"{origin}/big")
+
+
+def test_http_fetcher_http_error(origin: str) -> None:
+    with pytest.raises(UpstreamError, match="HTTP 404"):
+        _loopback_fetcher().fetch(f"{origin}/missing")
+
+
+@pytest.mark.parametrize("blocked", ["http://127.0.0.1/x", "http://10.0.0.1/x", "http://[::1]/x"])
+def test_http_fetcher_ssrf_blocks_private(blocked: str) -> None:
+    with pytest.raises(UpstreamError, match="blocked address"):
+        HttpFetcher(allow_private_hosts=False).fetch(blocked)
+
+
+def test_http_fetcher_rejects_non_http_scheme() -> None:
+    with pytest.raises(UpstreamError, match="not allowed"):
+        HttpFetcher().fetch("ftp://example.org/x")
+
+
+def test_http_fetcher_revalidates_ssrf_after_redirect() -> None:
+    """A redirect to a private address is blocked on the second hop (no network)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/start":
+            return httpx.Response(302, headers={"location": "http://10.0.0.1/next"})
+        return httpx.Response(200, content=b"should-not-reach")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    fetcher = HttpFetcher(allow_private_hosts=False, client=client)
+    # Start at a public literal IP (allowed); the redirect target must be rejected.
+    with pytest.raises(UpstreamError, match="blocked address"):
+        fetcher.fetch("http://93.184.216.34/start")

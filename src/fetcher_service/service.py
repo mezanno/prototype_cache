@@ -13,6 +13,12 @@ import hashlib
 from dataclasses import dataclass
 
 from fetcher_service.client import AssetStoreClient
+from fetcher_service.errors import (
+    FetcherError,
+    InvalidRequestError,
+    UpstreamError,
+    UpstreamTimeoutError,
+)
 from fetcher_service.fetcher import UrlFetcher
 from fetcher_service.normalize import InvalidUrl, NormalizedUrl, normalize_url
 from fetcher_service.rules import RuleSet
@@ -20,26 +26,16 @@ from fetcher_service.rules import RuleSet
 CACHE_BUCKET = "cache"
 TMP_BUCKET = "tmp"
 
-
-class FetcherError(Exception):
-    """Base class for fetcher request errors."""
-
-
-class InvalidRequestError(FetcherError):
-    """The request cannot be served as asked (bad URL, missing tmp_id). Maps to 400."""
-
-
-class UpstreamError(FetcherError):
-    """The origin fetch failed (connection, HTTP error, oversized body). Maps to 502.
-
-    Raised by :class:`~fetcher_service.fetcher.UrlFetcher` implementations that
-    perform outbound HTTP (Step 2). The Step-1 ``SyntheticFetcher`` never raises
-    it; the class exists so the control flow and error mapping are settled now.
-    """
-
-
-class UpstreamTimeoutError(UpstreamError):
-    """The origin fetch timed out. Maps to 504."""
+__all__ = [
+    "CACHE_BUCKET",
+    "TMP_BUCKET",
+    "EnsureUrlResult",
+    "FetcherError",
+    "InvalidRequestError",
+    "UpstreamError",
+    "UpstreamTimeoutError",
+    "ensure_url",
+]
 
 
 @dataclass(frozen=True, slots=True)

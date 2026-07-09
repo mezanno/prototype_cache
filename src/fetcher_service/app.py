@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from fetcher_service.client import AssetStoreClient, AssetStoreError
 from fetcher_service.config import rule_set_from_env
-from fetcher_service.fetcher import SyntheticFetcher, UrlFetcher
+from fetcher_service.fetcher import SyntheticFetcher, UrlFetcher, http_fetcher_from_env
 from fetcher_service.rules import RuleSet, default_rule_set
 from fetcher_service.service import (
     EnsureUrlResult,
@@ -83,7 +83,7 @@ def create_app(
     """Build the fetcher FastAPI app, optionally injecting dependencies for tests."""
 
     rules = rules if rules is not None else _rules_from_env()
-    fetcher = fetcher if fetcher is not None else SyntheticFetcher()
+    fetcher = fetcher if fetcher is not None else _fetcher_from_env()
     client = asset_store_client if asset_store_client is not None else _client_from_env()
 
     app = FastAPI(title="fetcher-service", version="0.1.0")
@@ -145,3 +145,11 @@ def _rules_from_env() -> RuleSet:
     """Load the rule set from ``FETCHER_RULES_FILE`` or fall back to the default."""
 
     return rule_set_from_env() or default_rule_set()
+
+
+def _fetcher_from_env() -> UrlFetcher:
+    """Real HTTP fetcher by default; the no-network stub when ``FETCHER_SYNTHETIC`` is set."""
+
+    if os.environ.get("FETCHER_SYNTHETIC", "").lower() in {"1", "true", "yes"}:
+        return SyntheticFetcher()
+    return http_fetcher_from_env()
