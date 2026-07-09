@@ -177,8 +177,24 @@ class GarageDataPlaneEndToEndTest(unittest.TestCase):
     """Certify the full HTTP data plane (reserve -> PUT -> commit -> GET) on Garage."""
 
     def setUp(self) -> None:
-        store = _build_store()
-        self.client = TestClient(create_app(store=store))
+        self.store = _build_store()
+        self.client = TestClient(create_app(store=self.store))
+        self._written: list[ObjectStoreLocation] = []
+
+    def tearDown(self) -> None:
+        for location in self._written:
+            self.store.delete_object(location)
+
+    def _register_for_cleanup(self, alias: str) -> None:
+        """Resolve a written alias and register its object for teardown deletion."""
+
+        space, rest = alias.split("/", 1)
+        resolved = self.client.get("/resolve", params={"space": space, "alias": rest})
+        if resolved.status_code == 200:
+            body = resolved.json()
+            self._written.append(
+                ObjectStoreLocation(bucket=body["space"], key=body["storage_key"])
+            )
 
     def _mint(self, *, operation: str, scope: str, service: str) -> str:
         response = self.client.post(
@@ -207,6 +223,7 @@ class GarageDataPlaneEndToEndTest(unittest.TestCase):
             f"/objects/{alias}", content=payload, headers=self._auth(write_cap)
         )
         self.assertEqual(201, written.status_code, written.text)
+        self._register_for_cleanup(alias)
         self.assertEqual("available", written.json()["state"])
         self.assertEqual(compute_checksum(payload), written.json()["checksum"])
 
@@ -222,6 +239,7 @@ class GarageDataPlaneEndToEndTest(unittest.TestCase):
 
         write_cap = self._mint(operation="write", scope=scope, service="upload-api")
         self.client.put(f"/objects/{alias}", content=payload, headers=self._auth(write_cap))
+        self._register_for_cleanup(alias)
 
         read_cap = self._mint(operation="read", scope=scope, service="upload-api")
         response = self.client.get(

@@ -17,7 +17,7 @@ pg = ["psycopg[binary]>=3.1", "alembic>=1.13"]
 packages = ["src/asset_store_core"]
 
 [dependency-groups]
-dev = ["ruff>=0.4", "mypy>=1.8", "pytest>=8.0", "pre-commit>=3.7", "httpx>=0.27", "boto3>=1.34", "psycopg[binary]>=3.1", "alembic>=1.13"]
+dev = ["ruff>=0.4", "mypy>=1.8", "pytest>=8.0", "pre-commit>=3.7", "httpx>=0.27", "boto3>=1.34", "psycopg[binary]>=3.1", "alembic>=1.13", "click>=8.1"]
 
 [tool.ruff]
 line-length = 100
@@ -36,7 +36,8 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "tools/bulk-loader/bulk_loader.py"]
+mypy_path = ["src", "tools/bulk-loader"]
 
 [[tool.mypy.overrides]]
 module = ["boto3.*", "botocore.*"]
