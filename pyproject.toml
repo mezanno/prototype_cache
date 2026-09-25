@@ -36,8 +36,8 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src", "tests", "tools/bulk-loader/bulk_loader.py"]
-mypy_path = ["src", "tools/bulk-loader"]
+files = ["src", "tests", "tools/bulk-loader/bulk_loader.py", "tools/worker-sim/worker_sim.py"]
+mypy_path = ["src", "tools/bulk-loader", "tools/worker-sim"]
 
 [[tool.mypy.overrides]]
 module = ["boto3.*", "botocore.*"]

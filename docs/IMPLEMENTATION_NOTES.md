@@ -2,6 +2,32 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Worker simulator milestone (B-012, 2026-09-25)
+
+The [worker-sim CLI](../tools/worker-sim/README.md) implements SCN-002/005 with
+trusted JSON task inputs, checksum-verified reads, deterministic result copies,
+and a completion manifest uploaded last (ADR-019). The simulator mints scoped
+capabilities as the worker service to model dispatch; it does not implement a task
+engine. JSON events and summary counters/latencies include a correlation id that
+is propagated to asset-store; existing service metrics and audit cover the calls.
+
+Security review: only worker identity is used, inputs are verified against task
+SHA-256 values, writes are confined to a validated result prefix, and secrets are
+read from the environment. CLI logs omit tokens, aliases and response bodies.
+The existing service policy limits buckets but does not authenticate an end-user
+partition owner; trusted task dispatch remains an upstream responsibility.
+
+Validation: **272 tests passed, none skipped**, with Garage/Postgres enabled,
+including 39 worker test cases; Ruff lint/format and strict mypy passed. Real
+backends use isolated test schemas; HTTP app calls use TestClient. This validates
+behavior, not deployment topology or NFR load/latency targets (B-015). The existing
+Starlette/httpx deprecation warning remains.
+
+Known limits: 50 MiB per input; no automatic write retry or capability refresh;
+partial outputs remain after failure; FR-069 result TTL support is pending B-014.
+Expired guarded reads currently return 409 rather than SCN-002's 410; tracked in
+B-014. The simulator fails safely on either response.
+
 ## Fetcher milestone (B-020, 2026-09-25)
 
 Real outbound HTTP, TOML URL rules and cache/tmp ingestion are implemented.
