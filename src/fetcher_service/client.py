@@ -10,6 +10,7 @@ R-013. Tests inject an ``httpx.Client`` bound to an in-memory asset-store app.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -84,7 +85,9 @@ class AssetStoreClient:
         headers = {"Authorization": f"Capability {capability_id}"}
         if mime:
             headers["Content-Type"] = mime
-        response = self._http.put(f"/objects/{qualified_alias}", content=data, headers=headers)
+        response = self._http.put(
+            f"/objects/{quote(qualified_alias, safe='/')}", content=data, headers=headers
+        )
         if response.status_code != 201:
             raise AssetStoreError(f"object write failed ({response.status_code}): {response.text}")
         asset: dict[str, Any] = response.json()

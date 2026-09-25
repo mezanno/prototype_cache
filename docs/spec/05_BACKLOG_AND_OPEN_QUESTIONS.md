@@ -101,7 +101,7 @@ Coarse-grained backlog. Refined into engineering tickets at Phase 1 kick-off. Or
 | B-008 | Spike S-004 (Garage certification as self-hosted backend) | Spike | P0 | B-005 | Garage validated as the self-hosted backend (STS-style tokens, lifecycle parity); notes appended |
 | B-009 | Asset-registry MVP: data model + migrations + FR-001..007 endpoints | Feature | P0 | B-006, B-007 | Integration tests covering SCN-001..005 happy paths green |
 | B-010 | Storage-guard MVP: service identity auth + FR-010..015 endpoints + audit log + bucket allowlist | Feature | P0 | B-009 | Capability scoping (S-4) and cross-bucket denial (FR-015) green |
-| B-020 | Fetcher-service MVP: ensure_url + cache/tmp policy ([`../services/fetcher-service.md`](../services/fetcher-service.md)) | Feature | P0 | B-010 | SCN-007 green |
+| B-020 | **Done (2026-09-25, ADR-018)** Fetcher-service MVP: ensure_url + cache/tmp policy ([`../services/fetcher-service.md`](../services/fetcher-service.md)) | Feature | P0 | B-010 | SCN-007 green |
 | B-011 | Bulk-loader CLI | Feature | P0 | B-009, B-010 | SCN-001 acceptance test green at 10k assets |
 | B-012 | Worker-sim CLI | Feature | P0 | B-009, B-010 | SCN-002 and SCN-005 acceptance tests green |
 | B-013 | Admin-UI (minimum: list, inspect, expire/delete, audit view) | Feature | P1 | B-009, B-010 | SCN-004 acceptance test green |

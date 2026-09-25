@@ -72,6 +72,29 @@ Without `.env.garage` exported, the integration tests **skip**, so the default
 > [`garage-init.sh`](garage-init.sh) are **DEV-ONLY** and intentionally
 > committed; `.env.garage` is gitignored and real secrets are never committed.
 
+## Fetcher integration test (B-020)
+
+From the repository root, start both backends and run the fetcher test:
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml up -d garage postgres
+bash deploy/compose/garage-init.sh
+set -a
+source deploy/compose/.env.garage
+set +a
+export ASSET_STORE_PG_DSN=postgresql://asset:asset@127.0.0.1:5432/asset_store
+uv run --locked pytest tests/test_fetcher_garage.py -q
+```
+
+The test starts its own loopback HTTP origin and uses HTTP TestClient calls between
+the apps, with real Garage storage and an isolated Postgres schema. It verifies
+cache hits, matching and mismatching refetches, upstream failure, and reads after
+reopening the registry. Its schema and committed objects are removed on exit.
+Missing backend environment variables skip the test; configured backend failures
+fail it. Use the disposable dev database for the full suite: older registry tests
+truncate tables. Stop the backends with
+`docker compose -f deploy/compose/docker-compose.yml stop garage postgres`.
+
 ## Postgres dev stack (S-002)
 
 A Postgres 16 instance for the durable registry spike

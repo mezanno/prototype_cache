@@ -192,9 +192,7 @@ class GarageDataPlaneEndToEndTest(unittest.TestCase):
         resolved = self.client.get("/resolve", params={"space": space, "alias": rest})
         if resolved.status_code == 200:
             body = resolved.json()
-            self._written.append(
-                ObjectStoreLocation(bucket=body["space"], key=body["storage_key"])
-            )
+            self._written.append(ObjectStoreLocation(bucket=body["space"], key=body["storage_key"]))
 
     def _mint(self, *, operation: str, scope: str, service: str) -> str:
         response = self.client.post(

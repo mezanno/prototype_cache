@@ -17,6 +17,10 @@ class InvalidRequestError(FetcherError):
     """The request cannot be served as asked (bad URL, missing tmp_id). Maps to 400."""
 
 
+class ContentMismatchError(FetcherError):
+    """Refetched bytes differ from an immutable alias's checksum (R-011); HTTP 409."""
+
+
 class UpstreamError(FetcherError):
     """The origin fetch failed (connection, HTTP error, oversized body, blocked host).
 

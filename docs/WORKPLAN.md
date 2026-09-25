@@ -8,86 +8,22 @@ The plan below is aligned with `ADR-001 = OVH S3 (hosted) + Garage (self-hosted)
 
 Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`spec/01_SCOPE.md`](spec/01_SCOPE.md) and [`spec/02_REQUIREMENTS.md`](spec/02_REQUIREMENTS.md). Backlog IDs (`B-*`) come from [`spec/05_BACKLOG_AND_OPEN_QUESTIONS.md`](spec/05_BACKLOG_AND_OPEN_QUESTIONS.md).
 
-## Current state (as of 2026-06-30)
+## Current state (2026-09-25)
 
-Ahead of the phase order below, a **pure domain core** already exists and is the
-foundation everything else wraps:
-
-- [`src/asset_store_core/`](../src/asset_store_core/) - in-memory registry, alias
-  model, path/bucket normalization, object-key layout, an object-store backend seam
-  (`ObjectStoreBackend` + in-memory `LocalObjectStore`), prefix-scoped capabilities,
-  the FR-015 service-to-bucket allowlist, and a `StorageGuard` facade that composes
-  capability + service-policy + registry/object-store calls. A first **real**
-  backend adapter now exists too:
-  [`s3_object_store.py`](../src/asset_store_core/s3_object_store.py) `S3ObjectStore`
-  (boto3, optional `s3` extra) implements the same `ObjectStoreBackend` seam
-  against any S3-compatible service and is certified against Garage (see below).
-  A durable registry adapter exists too:
-  [`pg_registry.py`](../src/asset_store_core/pg_registry.py) `PostgresAssetRegistry`
-  (psycopg 3, optional `pg` extra) implements the **full** `AssetRegistry` seam at
-  parity with the in-memory registry — reserve/commit/resolve, lifecycle
-  (expire/delete/annotations), alias detach/rebind + tombstone grace, two-tier
-  quotas, eviction policy, and the transactional audit trail — certified against
-  Postgres 16 (gated tests). The app factory wires it in whenever
-  `ASSET_STORE_PG_DSN` is set, and durability across an app restart is proven on
-  the unified compose stack (B-009). The schema is owned by an Alembic migration
-  history under [`migrations/`](../migrations/) (`alembic upgrade head`); the
-  runtime `CREATE TABLE IF NOT EXISTS` bootstrap is retained as a dev/test
-  convenience.
-- [`src/asset_store_core/api/`](../src/asset_store_core/api/) - a FastAPI app
-  (single process per ADR-002) exposing `/healthz`, `/readyz`, `/metrics`,
-  reserve/commit/resolve, capability mint, and a capability-guarded data plane
-  (`PUT`/`GET /objects/{alias}`, FR-010..015) where minted capabilities double as
-  opaque bearer tokens via `Authorization: Capability <id>` (ADR-003 proxy mode),
-  a `GET /audit` read endpoint over the registry's audit trail (FR-008/FR-016),
-  and the asset/alias lifecycle transitions over HTTP (`PATCH
-  /assets/{id}/annotations`, `POST /assets/{id}/expire`, `POST /assets/{id}/delete`,
-  `POST /aliases/detach`, `POST /aliases/detach-mutable`, `POST /aliases/rebind`,
-  FR-003/FR-005..008), the per-asset `eviction_policy` flag (`PATCH
-  /assets/{id}/eviction-policy`) plus two-tier quota config/usage endpoints
-  (`PUT`/`GET /quotas/partition`, `PUT`/`GET /quotas/bucket`) with commit-time
-  `413` ceilings (FR-063/FR-066/FR-068, ADR-009),
-  with a uniform RFC 7807 `application/problem+json` error model. Observability is
-  wired in (ADR-013): Prometheus metrics, structured JSON logs, and an
-  `X-Correlation-Id` per request.
-- [`tests/`](../tests/) - 104 unit/integration/contract tests, all green, covering
-  FR-001..008, FR-010..016, FR-020..022 (reserve -> PUT -> commit -> resolve,
-  guarded read/write incl. scope/operation/expiry/single-use denials), FR-022
-  checksum invariants, the audit read endpoint, the asset/alias lifecycle
-  endpoints, quota accounting + eviction policy (FR-063/FR-066/FR-068), the HTTP
-  contract incl.
-  problem+json, and the metrics/log/correlation-id skeleton. A further **8
-  Garage-gated integration tests**
-  ([`tests/test_s3_garage_integration.py`](../tests/test_s3_garage_integration.py))
-  certify `S3ObjectStore` and the full HTTP data plane against a live Garage;
-  they **skip** unless `deploy/compose/.env.garage` is exported, so the default
-  `uv run pytest` run stays Docker-free (104 passed, 8 skipped).
-- [`deploy/compose/`](../deploy/compose/) - a single-node **Garage dev stack**
-  ([`docker-compose.garage.yml`](../deploy/compose/docker-compose.garage.yml) +
-  [`garage.toml`](../deploy/compose/garage/garage.toml) +
-  idempotent [`garage-init.sh`](../deploy/compose/garage-init.sh) that provisions
-  the `cache`/`tmp`/`users`/`results` buckets and a fixed DEV-ONLY key, writing
-  gitignored `.env.garage`). DEV-ONLY credentials are intentionally committed in
-  `garage.toml`/`garage-init.sh`; real secrets are never committed.
-- `services/`, `tools/` - placeholders only.
-
-Run the suite: `PYTHONPATH=src python -m unittest discover -s tests` (or
-`uv run pytest` once the dev-tooling task below lands).
-
-This is a "domain-core-first" head start on Phase 2, built before the Phase 1
-scaffold. It does **not** move the phase boundaries; it means Phase 2's registry
-work (B-009) extends an existing, tested core rather than starting from zero.
-
-**Core gaps already known** (carry into B-009 so they are not lost):
-
-- FR-003 (zero-alias GC mark) and FR-008 (rebind `before`/`after` audit ids) are
-  now **closed** in the in-memory core with tests.
-- `eviction_policy`, `PartitionQuota`, `BucketQuota` (FR-063/FR-066/FR-068, ADR-009)
-  are now **in the in-memory model** with commit-time ceilings, usage accounting,
-  HTTP endpoints, and a commit-time bucket fill-ratio gauge
-  (`asset_store_bucket_fill_ratio`) plus a `quota.bucket_warn` log on
-  `warn_threshold` crossing; the async LFU eviction sweeps (FR-064/FR-067) remain
-  deferred to the lifecycle worker.
+- B-009/B-010: durable Postgres registry, migrations, authenticated capabilities,
+  guarded uploads and presigned reads are implemented, with Garage/S3 storage.
+- B-011: bulk-loader CLI is implemented.
+- B-020: fetcher MVP is complete: real HTTP with SSRF checks, TOML alias rules,
+  cache/tmp ingestion, and forced-refetch checksum detection. Matching bytes reuse
+  the asset; mismatches return 409 without changing stored data. A Prometheus
+  counter and structured warning expose mismatches (ADR-018, R-011, FR-022).
+- `tests/test_fetcher_garage.py` exercises a real local HTTP origin, Garage bytes,
+  and an isolated Postgres schema through the HTTP app contracts. It checks cache
+  hits, equal/changed refetches, origin failure, quota/audit preservation and a
+  reopened registry. HTTP app calls use TestClient; this is not a deployment test.
+- Quality tooling and CI are configured; backend tests remain environment-gated.
+- **Next: B-012 worker-sim**, then B-014 lifecycle/cleanup. Admin UI, Swarm,
+  operational dashboards, security hardening and load certification remain open.
 
 ## Engineering quality bar
 
@@ -157,7 +93,7 @@ prototype:
 - B-011 - `bulk-loader` CLI implementing SCN-001 against 10k assets. **Done:** a `click` CLI (`tools/bulk-loader/`) that authenticates as the `bulk-loader` service, mints one **write** capability scoped to `cache/{mirror_id}` (the capability model requires a bucket plus at least one segment, so a bare-bucket `cache/` scope is not representable; per-mirror still covers a whole run and FR-015 confines the service to `cache`), and streams each manifest row (`alias,mime,path` CSV) through the guarded `PUT /objects/{alias}` (server-side reserve->PUT->commit). Batch semantics are **best-effort per row** (Q-001 resolved): good rows commit and become resolvable, failed rows are reported (`alias,path,error`) with a non-zero exit; `--fail-fast` opts into stop-on-first-failure. The alias is the stable citation name `cache/{mirror_id}/{row-alias}` with **no batch-id in the path** (a per-run batch-id is only a correlation label, so re-runs resolve identically). Deviates from the SCN-001 sketch, which scoped the capability to `cache/{mirror}/{batch-id}/` — that prefix would not cover `cache/{mirror}/...` aliases. Covered by in-memory unit/contract tests plus a Garage-gated end-to-end test (bytes land in S3 and read back). Future admin/user attribution on top of the service identity is tracked as Q-030.
 - **B-020 - `fetcher-service` (cache service) MVP** (SCN-007) — **prioritized ahead of B-012 (2026-07-09)** as the current focus. `ensure_url`: given a remote URL, apply the URL->alias rewrite-rule set / cache allowlist (ADR-014, Q-021/Q-022), resolve the canonical `cache/{mirror_id}/…` alias if already present, otherwise fetch and ingest into `cache` (via the same write-capability + guarded data-plane path as the bulk-loader), and return the stable alias. Uses `tmp` for staging where needed. See [`services/fetcher-service.md`](services/fetcher-service.md). **Phasing (Q-023) resolved: in-repo service, HTTP+JSON to asset-store (ADR-017).** Delivered in two steps:
   - **Step 1 — fetcher stub (Done, 2026-07-09):** `ensure_url` control flow (normalize → rewrite rules incl. IIIF dedup → cache lookup → store), the `POST /v1/ensure-url` FastAPI app, and a no-network `SyntheticFetcher` (deterministic URL-derived JSON). `cache` hit/miss idempotency and `tmp` staging over the guarded proxy PUT. Code in [`src/fetcher_service/`](../src/fetcher_service/); tests in [`tests/test_fetcher_service.py`](../tests/test_fetcher_service.py).
-  - **Step 2 — the cache (In progress):** a **declarative rule-config language** (TOML `[[rule]]` array → `RuleSet`; `type` ∈ `iiif`/`passthrough`/`regex`, with a **safe-regex subset** — anchored named-group match/extract only, no backreferences/lookaround; semantic normalization stays in code) — **Done (2026-07-09)**, loaded via `FETCHER_RULES_FILE`. A real **`HttpFetcher`** (connect/read timeouts, max-body cap, redirect limit with per-hop SSRF re-validation, default-deny of private/loopback/reserved addresses; env-overridable via `FETCHER_HTTP_*` / `FETCHER_ALLOW_PRIVATE_HOSTS`; `FETCHER_SYNTHETIC` selects the stub) tested against a threaded loopback origin — **Done (2026-07-09)**. Remaining: a cheap checksum-mismatch **correctness detector** (R-011; fresh vs stored `sha256` on `no_cache`/audit refetch), and a Garage-gated e2e. **Content-addressed (byte-identity) storage dedup dropped** — dedup is by canonical alias (name), so it adds little on top; full blob-level dedup is deferred, per-space opt-in (`Q-035`). **Multi-alias attachment dropped** — cross-URL dedup is achieved by canonical normalization to a **single** alias (ADR-014 amendment 2026-07-09); multi-alias binding deferred to the access-control use case (`Q-034`).
+  - **Step 2 — the cache (Done, 2026-09-25):** a **declarative rule-config language** (TOML `[[rule]]` array → `RuleSet`; `type` ∈ `iiif`/`passthrough`/`regex`, with a **safe-regex subset** — anchored named-group match/extract only, no backreferences/lookaround; semantic normalization stays in code) — **Done (2026-07-09)**, loaded via `FETCHER_RULES_FILE`. A real **`HttpFetcher`** (connect/read timeouts, max-body cap, redirect limit with per-hop SSRF re-validation, default-deny of private/loopback/reserved addresses; env-overridable via `FETCHER_HTTP_*` / `FETCHER_ALLOW_PRIVATE_HOSTS`; `FETCHER_SYNTHETIC` selects the stub) tested against a threaded loopback origin — **Done (2026-07-09)**. Delivered: checksum-mismatch **correctness detector** (R-011, ADR-018; fresh vs stored `sha256` on `no_cache`), and a Garage/Postgres-gated e2e. Background audit scheduling remains outside this slice. **Content-addressed (byte-identity) storage dedup dropped** — dedup is by canonical alias (name), so it adds little on top; full blob-level dedup is deferred, per-space opt-in (`Q-035`). **Multi-alias attachment dropped** — cross-URL dedup is achieved by canonical normalization to a **single** alias (ADR-014 amendment 2026-07-09); multi-alias binding deferred to the access-control use case (`Q-034`).
 - B-012 - `worker-sim` CLI implementing SCN-002 (read path) and SCN-005 (write path). **Deprioritized behind B-020** at the user's request; still required for the Phase 2 exit criteria.
 - B-014 - Lifecycle worker: sweep `pending` orphans; `expired -> deleted` after grace.
 
@@ -225,52 +161,13 @@ prototype:
 - Twice-weekly delivery sync: backlog progress, blockers, risks.
 - Single source of truth: `docs/spec/` and the ADR table.
 
-## Immediate next actions (revised 2026-06-30)
+## Immediate next actions (2026-09-25)
 
-**Status update (2026-07-09):** B-009 (durable registry) and B-010 (storage-guard:
-service-identity auth, issuance audit, presigned reads) are **complete**. The active
-priority is the **caching service**; bulk pre-loading is a prerequisite for
-warming the cache, so **B-011 (`bulk-loader`) is complete** and the current task is
-now **B-020 (`fetcher-service`, the cache service)** — prioritized ahead of B-012
-(`worker-sim`) at the user's request. B-012 and B-014 (lifecycle worker) follow.
-
-
-The domain core is now in place and ADR-001/002 are
-effectively settled (MinIO disqualified; compose chosen), so the next actions are
-reordered to **lock quality first, then grow the core into a running service**.
-
-1. **Lock the test + tooling baseline (B-003, brought forward).** `pytest` is
-   configured in [`pyproject.toml`](../pyproject.toml) but is not a declared dev
-   dependency, so `uv run pytest` currently fails and tests only run via
-   `PYTHONPATH=src ... unittest`. Add `pytest` to the dev extra, wire `ruff` +
-   `mypy --strict`, add pre-commit, and a minimal CI job running all three.
-   *Done = one command runs lint, types, and tests green on a clean checkout.*
-2. **Close the known core gaps** (FR-003 zero-alias GC mark; FR-008 rebind
-   `before`/`after` audit ids) with tests, while the core is still small and
-   infrastructure-free. **(done 2026-06-30)**
-3. **Add the storage adapter seam.** Define the `storage` backend interface plus a
-   local/in-memory implementation; defer Garage/OVH wiring. Cover
-   reserve -> PUT -> commit -> resolve with integration tests against the fake backend.
-   **(done 2026-06-30)**
-4. **Add the guard facade.** One place that composes `service_policy` (FR-015) +
-   capability checks (FR-010..013) + registry calls, so auth is never spread across
-   callers. Re-run the S-4 scoping suite through it. **(done 2026-06-30)**
-5. **Stand up the FastAPI app (B-002/B-010 slice).** Expose reserve/commit/resolve
-   and capability mint over HTTP with `/healthz` and `/readyz`; contract-test the
-   RFC 7807 error model. One process per ADR-002. **(done 2026-06-30)**
-6. **Observability skeleton (B-004).** Structured logs + `/metrics` from the first
-   endpoint, so every later PR is observable end to end. **(done 2026-06-30)**
-7. **Guarded data plane over HTTP.** Capability-enforced `PUT`/`GET /objects/{alias}`
-   through `StorageGuard`; minted capabilities act as opaque bearer tokens
-   (`Authorization: Capability <id>`, ADR-003 proxy mode). Contract-test the
-   scope/operation/expiry/single-use denial paths (FR-010..015). **(done 2026-06-30)**
-8. **Resume deferred spikes as needed:** S-001 object-store baseline and S-004
-   Garage certification (B-005, B-008) before real-backend wiring; S-003 InvenioRDM
-   compare (B-007) is now low priority since ADR-002 is effectively settled.
-
-Parallel doc hygiene (non-blocking): assign owners/dates to the remaining open
-`Q-*` rows (B-001) and flip ADR-001/002/003 from *Proposed* to *Accepted* in
-[`spec/03_ARCHITECTURE.md`](spec/03_ARCHITECTURE.md) once S-001/S-004 confirm them.
+1. **B-012 worker-sim:** exercise SCN-002 reads and SCN-005 result writes against
+   the durable stack, consuming aliases and scoped capabilities.
+2. **B-014 lifecycle worker:** pending-orphan cleanup, expiry and deletion sweeps.
+3. Continue operational/security hardening and performance certification against
+   the phase exit criteria above; completion of B-020 does not imply production readiness.
 
 ## Phase Dependency Diagram
 

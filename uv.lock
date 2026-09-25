@@ -57,6 +57,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "prometheus-client" },
     { name = "uvicorn" },
 ]
@@ -88,6 +89,7 @@ requires-dist = [
     { name = "alembic", marker = "extra == 'pg'", specifier = ">=1.13" },
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.34" },
     { name = "fastapi", specifier = ">=0.110" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "prometheus-client", specifier = ">=0.20" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'pg'", specifier = ">=3.1" },
     { name = "uvicorn", specifier = ">=0.30" },

@@ -8,7 +8,7 @@ The **fetcher-service** materializes remote URLs into `asset-store`. It performs
 
 | Step | What happens |
 |------|----------------|
-| 1. Cache lookup | Normalize URL → derive cache alias candidates → resolve via storage-guard |
+| 1. Cache lookup | Normalize URL → derive the canonical cache alias → resolve via storage-guard |
 | 2. On hit | Return existing `asset_id` + alias (unless caller sets `no_cache`) |
 | 3. On miss | HTTP GET remote origin |
 | 4. Store | Cacheable domain → `cache/{remote_mirror_id}/…`; else → `tmp/{tmpid}/…` |
@@ -78,7 +78,7 @@ The real outbound client is `HttpFetcher` (delivered 2026-07-09; the no-network 
 - URL normalization and cache-alias derivation via a **declarative URL→alias rewrite-rule set** ([`ADR-014`](../spec/03_ARCHITECTURE.md), [`Q-021`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
 - Domain allowlist policy: the rewrite-rule set **is** the cache allowlist — a URL matching no allow rule is not cacheable ([`ADR-014`](../spec/03_ARCHITECTURE.md), [`Q-022`](../spec/05_BACKLOG_AND_OPEN_QUESTIONS.md)).
 - HTTP client: timeouts, max body size, redirect limit, SSRF controls.
-- Integration with asset-store only: reserve → PUT → commit via storage-guard, attaching **all** aliases a rule yields to one `asset_id`.
+- Integration with asset-store only: reserve → PUT → commit via storage-guard, using the single canonical alias produced by the matching rule.
 - Observability: cache hit rate, fetch errors, bytes ingested.
 
 ### Out of scope
@@ -100,7 +100,7 @@ The real outbound client is `HttpFetcher` (delivered 2026-07-09; the no-network 
 |-------|----------|-------------|
 | `url` | yes | Remote URL to materialize |
 | `mirror_id` | yes for cache path | Partition under `cache` (e.g. `gallica`, `bnf`) |
-| `no_cache` | no | If `true`, skip cache lookup and force refetch |
+| `no_cache` | no | If `true`, force refetch; compare against any existing alias as described below |
 | `tmp_id` | no | Partition under `tmp` when not cacheable; server may assign |
 | `preferred_alias_suffix` | no | Hint for alias tail under partition |
 | `ttl_seconds` | no | Hint for asset TTL (esp. `tmp`) |
@@ -115,7 +115,25 @@ The real outbound client is `HttpFetcher` (delivered 2026-07-09; the no-network 
 | `bucket` | `cache` or `tmp` |
 | `partition_id` | Mirror id or tmp id |
 
-**Errors:** `400` invalid URL; `403` policy denied; `502` upstream fetch failed; `504` upstream timeout.
+**Errors:** `400` invalid URL; `403` policy denied; `409` refetched content differs from the stored checksum; `502` upstream fetch failed; `504` upstream timeout.
+
+### Forced refetch correctness (B-020, R-011; FR-022)
+
+`no_cache=true` forces an origin request but still resolves the alias for comparison.
+If absent, ingestion proceeds normally. If present, the fetcher computes
+`sha256:<hex>` over the fresh bytes and compares it with the registry checksum.
+Matching bytes return the existing asset with `cache_hit=false` (the origin was
+contacted), without minting a write capability or uploading again. Different bytes
+return `409` and leave the alias, payload, quotas, and registry audit unchanged.
+This applies to both `cache` and `tmp`; it never implicitly rebinds an alias.
+Origin failures retain their 502/504 response and also leave existing data intact.
+
+`/metrics` exposes `fetcher_refetch_checks_total{bucket,outcome}` with `match` and
+`mismatch` outcomes. A structured warning event `fetch.checksum_mismatch` identifies
+the bucket and asset id, without logging source URLs, credentials, or alias text.
+Operators should alert on any increase in the mismatch counter. This detects
+changed origins as well as incorrect equivalence rules; it does not distinguish
+the cause or run a background audit job.
 
 ---
 

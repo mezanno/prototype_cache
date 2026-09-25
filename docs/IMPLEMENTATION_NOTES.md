@@ -2,6 +2,26 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Fetcher milestone (B-020, 2026-09-25)
+
+Real outbound HTTP, TOML URL rules and cache/tmp ingestion are implemented.
+Forced refetch compares SHA-256 before any write: equal bytes reuse the existing
+asset; different bytes return 409 and emit `fetch.checksum_mismatch` plus
+`fetcher_refetch_checks_total{bucket,outcome}` at `/metrics` (ADR-018, R-011,
+FR-022). Existing aliases, bytes, quota usage and registry audit remain unchanged.
+The client percent-encodes alias paths, including query-derived alias characters.
+`httpx` is now a runtime dependency, so the installed fetcher works without dev extras.
+
+Security review for this slice: no additional capability permissions or mutable
+alias operations; mismatch warnings omit origin URLs/credentials/alias text.
+The existing prototype DNS-rebinding limitation and service-auth posture remain.
+No background audit scheduler or automatic cache refresh is introduced.
+
+Validation on 2026-09-25 (Python 3.13.2): **233 tests passed, none skipped** with
+Garage and Postgres enabled; Ruff lint/format and strict mypy passed. The suite
+reports an existing Starlette/httpx deprecation warning. See the
+[integration recipe](../deploy/compose/README.md#fetcher-integration-test-b-020).
+
 ## What is implemented today
 
 | Layer | Status |
@@ -107,7 +127,7 @@ tier and backend-native lifecycle remain on the S-001 to-do list. See
 | Raw blob store | **Yes** | Object store: Garage / OVH S3 ([`ADR-001`](spec/03_ARCHITECTURE.md), [`A_OSS_SURVEY.md`](spec/A_OSS_SURVEY.md)) |
 | Aliases + lifecycle + multi-name + audit | **No single match** | Custom registry (ADR-002 rejected InvenioRDM etc. as overshoot) |
 | Prefix-scoped, short-lived credentials | **Partial** | S3 presigned URLs + our guard semantics |
-| Heritage-specific fetch + cache policy | **No** | Planned fetcher-service |
+| Heritage-specific fetch + cache policy | **No** | Implemented fetcher-service |
 
 Products that look similar and why we did not adopt them as the whole stack:
 

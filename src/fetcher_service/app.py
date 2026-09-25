@@ -1,23 +1,25 @@
-"""FastAPI application factory for the fetcher-service stub (B-020, Step 1).
+"""FastAPI application for URL materialization and refetch checks (B-020).
 
-Exposes ``POST /v1/ensure-url`` plus ``/healthz`` and ``/readyz``. The app is a
-thin HTTP shell over :func:`fetcher_service.service.ensure_url`; the asset-store
-client, rule set, and fetcher seam are injectable for tests. By default it builds
-an :class:`~fetcher_service.client.AssetStoreClient` from the environment and the
-Step-1 :class:`~fetcher_service.fetcher.SyntheticFetcher` (no outbound network).
+Exposes ensure-url, health/readiness and Prometheus metrics. Dependencies are
+injectable; the default fetcher performs real HTTP, with an optional synthetic
+implementation selected via FETCHER_SYNTHETIC.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, generate_latest
 from pydantic import BaseModel, Field
 
+from asset_store_core.api.observability import JsonLogFormatter
 from fetcher_service.client import AssetStoreClient, AssetStoreError
 from fetcher_service.config import rule_set_from_env
+from fetcher_service.errors import ContentMismatchError
 from fetcher_service.fetcher import SyntheticFetcher, UrlFetcher, http_fetcher_from_env
 from fetcher_service.rules import RuleSet, default_rule_set
 from fetcher_service.service import (
@@ -90,9 +92,26 @@ def create_app(
     app.state.asset_store_client = client
     app.state.rules = rules
     app.state.fetcher = fetcher
+    metrics = CollectorRegistry()
+    refetch_checks = Counter(
+        "fetcher_refetch_checks_total",
+        "Forced refetch checksum comparisons (R-011).",
+        ["bucket", "outcome"],
+        registry=metrics,
+    )
+    logger = logging.getLogger("fetcher_service")
+    if not any(isinstance(h.formatter, JsonLogFormatter) for h in logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(JsonLogFormatter())
+        logger.addHandler(handler)
+
+    def record_refetch(bucket: str, outcome: str) -> None:
+        refetch_checks.labels(bucket, outcome).inc()
 
     @app.exception_handler(FetcherError)
     async def _fetcher_error(_request: Request, exc: FetcherError) -> JSONResponse:
+        if isinstance(exc, ContentMismatchError):
+            return _problem(409, "Cached content mismatch", str(exc))
         if isinstance(exc, InvalidRequestError):
             return _problem(400, "Invalid request", str(exc))
         if isinstance(exc, UpstreamTimeoutError):
@@ -108,6 +127,10 @@ def create_app(
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/metrics")
+    def prometheus_metrics() -> Response:
+        return Response(generate_latest(metrics), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/readyz")
     def readyz() -> dict[str, str]:
@@ -125,6 +148,7 @@ def create_app(
             tmp_id=body.tmp_id,
             preferred_alias_suffix=body.preferred_alias_suffix,
             capability_ttl_seconds=body.ttl_seconds,
+            record_refetch=record_refetch,
         )
         return EnsureUrlResponse.from_result(result)
 

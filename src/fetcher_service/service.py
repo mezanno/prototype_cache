@@ -1,7 +1,7 @@
 """``ensure_url`` orchestration (SCN-007, fetcher-service contract).
 
 Ties the pieces together: normalize the URL, evaluate the rewrite rules, look up
-the cache, and on a miss materialize bytes (Step 1: the synthetic stub) and store
+the cache, and on a miss materialize bytes (real HTTP by default) and store
 them through asset-store. Cacheable URLs land in ``cache/{mirror_id}/…``;
 non-cacheable URLs stage in ``tmp/{tmp_id}/…``. asset-store performs no outbound
 HTTP (ADR-008); all fetching happens here behind the :class:`UrlFetcher` seam.
@@ -10,10 +10,13 @@ HTTP (ADR-008); all fetching happens here behind the :class:`UrlFetcher` seam.
 from __future__ import annotations
 
 import hashlib
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from fetcher_service.client import AssetStoreClient
 from fetcher_service.errors import (
+    ContentMismatchError,
     FetcherError,
     InvalidRequestError,
     UpstreamError,
@@ -69,6 +72,7 @@ def ensure_url(
     tmp_id: str | None = None,
     preferred_alias_suffix: str | None = None,
     capability_ttl_seconds: int = 3600,
+    record_refetch: Callable[[str, str], None] | None = None,
 ) -> EnsureUrlResult:
     """Materialize ``url`` into asset-store and return its stable alias.
 
@@ -99,18 +103,40 @@ def ensure_url(
 
     qualified = f"{bucket}/{relative_alias}"
 
-    if not no_cache:
-        existing = client.resolve(space=bucket, alias=relative_alias)
-        if existing is not None:
-            return EnsureUrlResult(
-                asset_id=existing["asset_id"],
-                qualified_alias=qualified,
-                cache_hit=True,
-                bucket=bucket,
-                partition_id=partition_id,
-            )
+    existing = client.resolve(space=bucket, alias=relative_alias)
+    if existing is not None and not no_cache:
+        return EnsureUrlResult(
+            asset_id=existing["asset_id"],
+            qualified_alias=qualified,
+            cache_hit=True,
+            bucket=bucket,
+            partition_id=partition_id,
+        )
 
     content = fetcher.fetch(normalized.canonical)
+    if existing is not None:
+        checksum = f"sha256:{hashlib.sha256(content.data).hexdigest()}"
+        outcome = "match" if checksum == existing["checksum"] else "mismatch"
+        if record_refetch is not None:
+            record_refetch(bucket, outcome)
+        if outcome == "mismatch":
+            logging.getLogger("fetcher_service").warning(
+                "Refetched bytes differ for asset %s",
+                existing["asset_id"],
+                extra={
+                    "event": "fetch.checksum_mismatch",
+                    "space": bucket,
+                    "service": "fetcher-service",
+                },
+            )
+            raise ContentMismatchError("Refetched content differs from the stored asset")
+        return EnsureUrlResult(
+            asset_id=existing["asset_id"],
+            qualified_alias=qualified,
+            cache_hit=False,
+            bucket=bucket,
+            partition_id=partition_id,
+        )
     capability_id = client.mint_write_capability(
         scope_prefix=f"{bucket}/{partition_id}",
         ttl_seconds=capability_ttl_seconds,
