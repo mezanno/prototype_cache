@@ -291,8 +291,7 @@ def test_expired_input(client: TestClient) -> None:
     )
     assert response.status_code == 200
     report = worker_sim.run_task(client, task(checksum), service_secret=SECRET)
-    # Existing guarded read maps expired state to 409; 410 alignment is B-014.
-    assert report.status == "failed" and report.error == "HTTP 409"
+    assert report.status == "failed" and report.error == "HTTP 410"
     assert report.writes == 0
 
 

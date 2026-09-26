@@ -8,7 +8,7 @@ The plan below is aligned with `ADR-001 = OVH S3 (hosted) + Garage (self-hosted)
 
 Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`spec/01_SCOPE.md`](spec/01_SCOPE.md) and [`spec/02_REQUIREMENTS.md`](spec/02_REQUIREMENTS.md). Backlog IDs (`B-*`) come from [`spec/05_BACKLOG_AND_OPEN_QUESTIONS.md`](spec/05_BACKLOG_AND_OPEN_QUESTIONS.md).
 
-## Current state (2026-09-25)
+## Current state (2026-09-26)
 
 - B-009/B-010: durable Postgres registry, migrations, authenticated capabilities,
   guarded uploads and presigned reads are implemented, with Garage/S3 storage.
@@ -24,7 +24,10 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 - Quality tooling and CI are configured; backend tests remain environment-gated.
 - B-012: worker-sim is complete; verified reads, result copies and manifest-last
   publication pass against both in-memory and Garage/Postgres adapters (ADR-019).
-- **Next: B-014 lifecycle/cleanup.** Admin UI, Swarm,
+- B-014: lifecycle sweeps, TTL defaults/hints, access tracking and physical-capacity
+  gating are implemented. Dry-run is the default; explicit apply uses deletion
+  fencing and retryable payload cleanup (ADR-020, migration 0002).
+- **Next: B-013 admin path and B-018 security review.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ## Engineering quality bar
@@ -96,8 +99,8 @@ prototype:
 - **B-020 - `fetcher-service` (cache service) MVP** (SCN-007) — **Done (2026-09-25)**; previously prioritized ahead of B-012. `ensure_url`: given a remote URL, apply the URL->alias rewrite-rule set / cache allowlist (ADR-014, Q-021/Q-022), resolve the canonical `cache/{mirror_id}/…` alias if already present, otherwise fetch and ingest into `cache` (via the same write-capability + guarded data-plane path as the bulk-loader), and return the stable alias. Uses `tmp` for staging where needed. See [`services/fetcher-service.md`](services/fetcher-service.md). **Phasing (Q-023) resolved: in-repo service, HTTP+JSON to asset-store (ADR-017).** Delivered in two steps:
   - **Step 1 — fetcher stub (Done, 2026-07-09):** `ensure_url` control flow (normalize → rewrite rules incl. IIIF dedup → cache lookup → store), the `POST /v1/ensure-url` FastAPI app, and a no-network `SyntheticFetcher` (deterministic URL-derived JSON). `cache` hit/miss idempotency and `tmp` staging over the guarded proxy PUT. Code in [`src/fetcher_service/`](../src/fetcher_service/); tests in [`tests/test_fetcher_service.py`](../tests/test_fetcher_service.py).
   - **Step 2 — the cache (Done, 2026-09-25):** a **declarative rule-config language** (TOML `[[rule]]` array → `RuleSet`; `type` ∈ `iiif`/`passthrough`/`regex`, with a **safe-regex subset** — anchored named-group match/extract only, no backreferences/lookaround; semantic normalization stays in code) — **Done (2026-07-09)**, loaded via `FETCHER_RULES_FILE`. A real **`HttpFetcher`** (connect/read timeouts, max-body cap, redirect limit with per-hop SSRF re-validation, default-deny of private/loopback/reserved addresses; env-overridable via `FETCHER_HTTP_*` / `FETCHER_ALLOW_PRIVATE_HOSTS`; `FETCHER_SYNTHETIC` selects the stub) tested against a threaded loopback origin — **Done (2026-07-09)**. Delivered: checksum-mismatch **correctness detector** (R-011, ADR-018; fresh vs stored `sha256` on `no_cache`), and a Garage/Postgres-gated e2e. Background audit scheduling remains outside this slice. **Content-addressed (byte-identity) storage dedup dropped** — dedup is by canonical alias (name), so it adds little on top; full blob-level dedup is deferred, per-space opt-in (`Q-035`). **Multi-alias attachment dropped** — cross-URL dedup is achieved by canonical normalization to a **single** alias (ADR-014 amendment 2026-07-09); multi-alias binding deferred to the access-control use case (`Q-034`).
-- B-012 - **Done (2026-09-25):** `worker-sim` Click CLI with JSON tasks, worker-scoped capabilities, SHA-256 verified proxy reads, deterministic result copies and manifest-last publication. Structured events and JSON counters/timing share a correlation id with asset-store. Failure tests cover partial outputs, missing/expired/denied reads, quotas, conflicting attempts, checksum/transport errors and manifest failure. See [`services/worker-sim.md`](services/worker-sim.md), ADR-019, and `tests/test_worker_sim.py`. Full suite: 272 passed with Garage/Postgres enabled; lint, format and strict typing pass. TTL enforcement remains B-014; performance certification remains B-015.
-- B-014 - Lifecycle worker: sweep `pending` orphans; `expired -> deleted` after grace. Carry forward the guarded-read status gap found by B-012: expired assets currently return 409 instead of the SCN-002 specified 410. Result TTL hints/enforcement also remain unimplemented (FR-069).
+- B-012 - **Done (2026-09-25):** `worker-sim` Click CLI with JSON tasks, worker-scoped capabilities, SHA-256 verified proxy reads, deterministic result copies and manifest-last publication. Structured events and JSON counters/timing share a correlation id with asset-store. Failure tests cover partial outputs, missing/expired/denied reads, quotas, conflicting attempts, checksum/transport errors and manifest failure. See [`services/worker-sim.md`](services/worker-sim.md), ADR-019, and `tests/test_worker_sim.py`. Full suite: 272 passed with Garage/Postgres enabled; lint, format and strict typing pass. TTL enforcement is now delivered by B-014; performance certification remains B-015.
+- B-014 - **Done (2026-09-26):** dry-run-first lifecycle CLI; pending-orphan fencing, TTL expiry, grace-period deletion, admin-deleted payload cleanup, quota/pressure sweeps using size-times-age scoring, exempt/user/results protections, metrics and audit. Asset TTL hints/defaults and bounded presigned URLs are implemented; expired/deleted reads return 410/404. Migration 0002 adds lifecycle/access metadata and repairs legacy orphan quota accounting. See [`services/lifecycle-worker.md`](services/lifecycle-worker.md), ADR-020, and `tests/test_lifecycle_worker.py`. Validation: 303 tests passed with Garage/Postgres, none skipped; lint/format and strict mypy pass. Admin TTL extension, per-partition tmp TTL overrides and bulk-expire-by-prefix remain admin-path work (FR-042); independent alias deadlines remain deferred.
 
 **Exit criteria:**
 
@@ -163,12 +166,14 @@ prototype:
 - Twice-weekly delivery sync: backlog progress, blockers, risks.
 - Single source of truth: `docs/spec/` and the ADR table.
 
-## Immediate next actions (2026-09-25)
+## Immediate next actions (2026-09-26)
 
-1. **B-014 lifecycle worker:** pending-orphan cleanup, expiry and deletion sweeps;
-   resolve result TTL support and the expired-read HTTP status gap.
-2. Continue operational/security hardening and performance certification against
-   the phase exit criteria above; completion of B-020 does not imply production readiness.
+1. **B-013 admin path:** list/filter/inspect assets, lifecycle controls and audit view;
+   finish admin TTL extension and bulk-expire-by-prefix (FR-040..042).
+2. **B-018 security review:** review control-plane authorization, deployment secrets,
+   HTTPS posture and scoped capability misuse before wider exposure.
+3. Operational deployment, alert wiring and B-015 performance certification remain;
+   completed prototype milestones do not imply production readiness.
 
 ## Phase Dependency Diagram
 

@@ -14,11 +14,14 @@ implementations may expose additional helpers.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from contextlib import AbstractContextManager
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from asset_store_core.models import (
     AliasBinding,
     Asset,
+    AssetState,
     AuditEvent,
     BucketQuota,
     EvictionPolicy,
@@ -56,6 +59,7 @@ class AssetRegistry(Protocol):
         mime: str | None = ...,
         annotations: Mapping[str, str] | None = ...,
         eviction_policy: EvictionPolicy = ...,
+        ttl_seconds: int | None = ...,
     ) -> Asset: ...
 
     def commit_asset(
@@ -120,3 +124,23 @@ class AssetRegistry(Protocol):
     ) -> BucketQuota: ...
 
     def get_bucket_quota(self, *, space: str) -> BucketQuota: ...
+
+    def list_assets(self) -> tuple[Asset, ...]:
+        """Snapshot for maintenance; includes unpurged deleted assets."""
+
+    def asset_lock(self, asset_id: str) -> AbstractContextManager[Asset]:
+        """Serialize uploads and maintenance for an asset (ADR-020)."""
+
+    def record_read(self, asset_id: str) -> None:
+        """Record successful proxy reads / presign issuance (FR-053)."""
+
+    def lifecycle_update(
+        self,
+        asset: Asset,
+        *,
+        state: AssetState,
+        now: datetime,
+        reason: str,
+        payload_deleted: bool = False,
+    ) -> Asset:
+        """Update/audit a locked asset and release available quota once."""

@@ -2,6 +2,37 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Lifecycle milestone (B-014, 2026-09-26)
+
+The [lifecycle worker](services/lifecycle-worker.md) now previews or applies
+TTL expiry, pending-orphan cleanup, expired payload deletion after grace, and
+size/age-based pressure/quota eviction. It preserves exemptions and protects
+users/results from automatic capacity eviction. It also collects payloads of
+administratively deleted assets. Retention metadata survives restarts; new tmp
+and results assets receive bounded default deadlines, with per-reservation hints.
+
+Safety: cleanup commits a deleted-state fence before deleting bytes, then records
+a purge marker; retries are safe after storage failure or interrupted metadata
+updates. Postgres row locks coordinate cleanup with guarded uploads. Tests verify
+cross-connection lock/recheck behavior. A zero-alias expiry accounting bug is fixed
+and migration 0002 repairs existing counters. Expired reads now return 410,
+deleted reads 404; new presigned URLs are capped by asset lifetime. Direct S3
+reads are approximated by presigned issuance in access statistics.
+
+Configuration and the migration/runbook are in the lifecycle contract. Dry-run is
+the default; tests applied cleanup only to isolated/disposable data. Metrics and
+JSON logs are implemented; Prometheus alert rules are supplied but must be wired
+into the deployment. This trusted worker has direct database/S3 access; no public
+cleanup endpoint or new caller capability was added. Existing control-plane
+security hardening remains B-018. The in-memory adapter remains single-threaded.
+
+Validation: **303 tests passed, none skipped** with Garage/Postgres enabled,
+including migration backfill/downgrade, actual CLI dry-run/apply and metrics,
+access/TTL behavior, exemption/scoring, stale candidates and failed-delete retries.
+Ruff lint/format and strict mypy pass. Existing Starlette/httpx test deprecation
+warning remains. Capacity is an estimate over registered committed bytes; pending
+bytes/unregistered objects are excluded. Scale/load certification remains B-015.
+
 ## Worker simulator milestone (B-012, 2026-09-25)
 
 The [worker-sim CLI](../tools/worker-sim/README.md) implements SCN-002/005 with
@@ -24,9 +55,9 @@ behavior, not deployment topology or NFR load/latency targets (B-015). The exist
 Starlette/httpx deprecation warning remains.
 
 Known limits: 50 MiB per input; no automatic write retry or capability refresh;
-partial outputs remain after failure; FR-069 result TTL support is pending B-014.
-Expired guarded reads currently return 409 rather than SCN-002's 410; tracked in
-B-014. The simulator fails safely on either response.
+partial outputs remain after failure. B-014 now provides result TTL defaults and
+API hints, cleanup, and the specified 410 expired-read response. The simulator
+uses the service default result TTL; its task format has no separate TTL option.
 
 ## Fetcher milestone (B-020, 2026-09-25)
 
@@ -94,7 +125,7 @@ request a presigned URL:
 - **Authorization:** `StorageGuard.presign_read` runs the full read authorization
   (`resolve_for_read`: capability scope/operation/expiry + FR-015 bucket allowlist +
   alias resolve), then asks the object store to sign the URL. The effective TTL is
-  `min(expires_in, 3600, capability remaining lifetime)` so a URL never outlives the
+  `min(expires_in, 3600, capability remaining lifetime, asset remaining lifetime if set)` so a URL never outlives the
   grant that minted it.
 - **Single-use is refused:** a presigned URL is fetched outside the guard, so
   single-use (FR-013) cannot be enforced on it — `presign_read` rejects single-use

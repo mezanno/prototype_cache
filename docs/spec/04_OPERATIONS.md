@@ -119,3 +119,13 @@ These will live in `docs/runbooks/` once the implementation lands; placeholders 
 - `RUNBOOK-004` Audit log overflow - rotate, archive, alert tuning.
 - `RUNBOOK-005` Garbage collection stuck - manual trigger and inspection.
 - `RUNBOOK-006` License or CVE response - swap object-store image, rotate keys.
+
+## Lifecycle worker operations (B-014)
+
+The [lifecycle runbook](../services/lifecycle-worker.md#runbook) documents migration
+0002, dry-run/apply, periodic scheduling, capacity/retention configuration, retry
+semantics and metric export. Sample high-water/exhaustion/error alerts are in
+[`deploy/observability/lifecycle-alerts.yml`](../../deploy/observability/lifecycle-alerts.yml).
+Alerts are supplied as rules, not automatically installed by the dev stack.
+`gc_evicted_total` counts successful lifecycle actions (expiry and purge separately),
+not unique assets. Ratios/exhaustion describe the pass's planning snapshot.

@@ -117,3 +117,10 @@ docker compose -f docker-compose.postgres.yml down
 The `asset:asset` credentials are **DEV-ONLY**. Without `ASSET_STORE_PG_DSN` the
 registry tests **skip**. The registry bootstraps its own tables
 (`CREATE TABLE IF NOT EXISTS`) on first connect.
+
+## Lifecycle maintenance (B-014)
+
+Run migration `0002_lifecycle` before using the updated API or worker against an
+existing database. See the [lifecycle runbook](../../docs/services/lifecycle-worker.md#runbook)
+for fresh versus legacy-bootstrap databases, dry-run/apply commands, scheduling
+and Prometheus textfile metrics. Cleanup is never auto-applied by Compose.

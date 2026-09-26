@@ -85,6 +85,10 @@ class Asset:
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
     expires_at: datetime | None = None
+    expired_at: datetime | None = None
+    last_read_at: datetime | None = None
+    read_count: int = 0
+    payload_deleted_at: datetime | None = None
     owner_service_id: str = "system"
     eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT
 

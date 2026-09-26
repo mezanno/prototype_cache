@@ -17,10 +17,13 @@ from asset_store_core.errors import (
     AliasConflictError,
     AliasImmutableError,
     AliasNotFoundError,
+    AssetDeletedError,
+    AssetExpiredError,
     AssetNotFoundError,
     AssetStoreError,
     CapabilityAlreadyConsumedError,
     CapabilityDeniedError,
+    CapacityExceededError,
     ChecksumMismatchError,
     InvalidStateTransitionError,
     ObjectNotFoundError,
@@ -39,6 +42,9 @@ _STATUS_BY_ERROR: dict[type[AssetStoreError], int] = {
     CapabilityAlreadyConsumedError: 403,
     AliasNotFoundError: 404,
     AssetNotFoundError: 404,
+    AssetExpiredError: 410,
+    AssetDeletedError: 404,
+    CapacityExceededError: 503,
     ObjectNotFoundError: 404,
     AliasConflictError: 409,
     AliasImmutableError: 409,
@@ -74,7 +80,10 @@ def register_exception_handlers(app: FastAPI) -> None:
             status = _STATUS_BY_ERROR.get(type(exc), 500)
         if isinstance(exc, QuotaExceededError):
             extra["scope"] = exc.scope
-        return _problem(status=status, title=type(exc).__name__, detail=str(exc), **extra)
+        response = _problem(status=status, title=type(exc).__name__, detail=str(exc), **extra)
+        if isinstance(exc, CapacityExceededError):
+            response.headers["Retry-After"] = "60"
+        return response
 
     async def handle_validation(request: Request, exc: Exception) -> Response:
         errors = exc.errors() if isinstance(exc, RequestValidationError) else []

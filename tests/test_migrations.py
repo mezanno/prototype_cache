@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -129,6 +130,48 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual([e.action for e in registry.audit_events][-1], "asset.commit")
         finally:
             registry.close()
+
+    def test_lifecycle_upgrade_backfills_existing_rows(self) -> None:
+        """B-014 preserves metadata and repairs legacy zero-alias GC accounting."""
+        import psycopg
+        from alembic import command
+
+        assert _DSN is not None
+        command.upgrade(_alembic_config(), "0001_initial_schema")
+        now = datetime.now(UTC)
+        with psycopg.connect(_DSN) as conn:
+            for space, state in (
+                ("cache", "expired"),
+                ("tmp", "available"),
+                ("results", "pending"),
+                ("users", "available"),
+            ):
+                conn.execute(
+                    "INSERT INTO assets (asset_id, space, partition_id, storage_key, "
+                    "state, size_bytes, created_at, updated_at) "
+                    "VALUES (%s, %s, 'test', %s, %s, 10, %s, %s)",
+                    (space, space, f"test/{space}", state, now, now),
+                )
+            conn.execute(
+                "INSERT INTO partition_quotas (space, partition_id, used_bytes, "
+                "used_asset_count) VALUES ('cache', 'test', 10, 1)"
+            )
+            conn.execute("INSERT INTO bucket_quotas (space, used_bytes) VALUES ('cache', 10)")
+        command.upgrade(_alembic_config(), "head")
+        with PostgresAssetRegistry.connect(_DSN, bootstrap_schema=False) as registry:
+            assets = {a.space: a for a in registry.list_assets()}
+            self.assertEqual(assets["cache"].expired_at, now)
+            self.assertEqual(assets["tmp"].expires_at, now + timedelta(days=1))
+            self.assertEqual(assets["results"].expires_at, now + timedelta(days=365))
+            self.assertIsNone(assets["users"].expires_at)
+            self.assertEqual(assets["tmp"].read_count, 0)
+            self.assertIsNone(assets["cache"].payload_deleted_at)
+            self.assertEqual(registry.get_bucket_quota(space="cache").used_bytes, 0)
+            quota = registry.get_partition_quota(space="cache", partition_id="test")
+            self.assertEqual(quota.used_bytes, 0)
+        command.downgrade(_alembic_config(), "0001_initial_schema")
+        with psycopg.connect(_DSN) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM assets").fetchone(), (4,))
 
     def test_downgrade_base_is_reversible(self) -> None:
         from alembic import command

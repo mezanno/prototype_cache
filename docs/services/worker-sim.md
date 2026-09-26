@@ -52,10 +52,9 @@ bytes, total and read latency, and manifest success. Service-side metrics and
 issuance/commit audit events come from the existing guarded paths. Logs omit
 credentials, capabilities, source URLs, alias text, and backend response bodies.
 
-Result TTL hints are not yet supported by the guarded upload API. FR-069 TTL
-enforcement and cleanup remain B-014; this simulator does not claim to implement
-them. Q-008 remains open for future transactional bundle semantics.
-
-Known API alignment gap found by B-012 acceptance tests: the guarded read path
-currently returns 409 for expired assets, while SCN-002 specifies 410. Both are
-terminal failures for the simulator; align the service status in B-014.
+Result TTL hints and defaults are now supported by the guarded API (B-014,
+FR-069). This simulator uses the service default (365 days unless configured);
+its task JSON does not expose a TTL override. Cleanup runs in the separate
+[lifecycle worker](lifecycle-worker.md). Q-008 remains open for transactional
+bundle semantics. The expired-read status gap found by B-012 is closed: reads now
+return 410 as specified by SCN-002.

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from asset_store_core.capabilities import Capability, Operation, SingleUseLedger
-from asset_store_core.errors import CapabilityDeniedError, ValidationError
+from asset_store_core.errors import AssetExpiredError, CapabilityDeniedError, ValidationError
 from asset_store_core.models import Asset, utcnow
 from asset_store_core.object_store import ObjectStoreBackend
 from asset_store_core.paths import normalize_relative_alias, normalize_space, qualified_alias
@@ -125,6 +125,7 @@ class StorageGuard:
 
         guarded = self.resolve_for_read(capability=capability, alias=alias)
         data = self._store.get_object(guarded.location)
+        self._registry.record_read(guarded.asset.asset_id)
         self._ledger.record_successful_use(capability)
         return data
 
@@ -154,7 +155,12 @@ class StorageGuard:
         if remaining <= 0:
             raise CapabilityDeniedError("capability has expired")
         ttl = min(expires_in, MAX_PRESIGN_TTL_SECONDS, remaining)
+        if guarded.asset.expires_at is not None:
+            ttl = min(ttl, int((guarded.asset.expires_at - utcnow()).total_seconds()))
+            if ttl <= 0:
+                raise AssetExpiredError("asset lifetime is too short to presign")
         url = self._store.presign_get_url(guarded.location, expires_in=ttl)
+        self._registry.record_read(guarded.asset.asset_id)
         return PresignedRead(
             asset=guarded.asset,
             url=url,
@@ -171,6 +177,7 @@ class StorageGuard:
         mutable: bool = False,
         mime: str | None = None,
         expected_checksum: str | None = None,
+        ttl_seconds: int | None = None,
     ) -> Asset:
         """Authorize and perform reserve -> PUT -> commit for a new alias.
 
@@ -190,18 +197,22 @@ class StorageGuard:
             aliases={parsed.alias_in_partition: mutable},
             owner_service_id=capability.caller_service_id,
             mime=mime,
+            ttl_seconds=ttl_seconds,
         )
         location = ObjectStoreLocation.for_asset(
             space=pending.space, partition_id=pending.partition_id, asset_id=pending.asset_id
         )
-        stat = self._store.put_object(location, data)
-        asset = self._registry.commit_asset(
-            asset_id=pending.asset_id,
-            size_bytes=stat.size_bytes,
-            checksum=stat.checksum,
-            caller_service_id=capability.caller_service_id,
-            mime=mime,
-            expected_checksum=expected_checksum,
-        )
+        with self._registry.asset_lock(pending.asset_id) as locked:
+            if locked.state.value != "pending":
+                raise ValidationError("upload reservation is no longer pending")
+            stat = self._store.put_object(location, data)
+            asset = self._registry.commit_asset(
+                asset_id=pending.asset_id,
+                size_bytes=stat.size_bytes,
+                checksum=stat.checksum,
+                caller_service_id=capability.caller_service_id,
+                mime=mime,
+                expected_checksum=expected_checksum,
+            )
         self._ledger.record_successful_use(capability)
         return asset

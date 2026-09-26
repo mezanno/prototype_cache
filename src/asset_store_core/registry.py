@@ -25,7 +25,8 @@ the guard adapter exists.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import replace as dc_replace
 from datetime import datetime, timedelta
 from types import MappingProxyType
@@ -56,6 +57,13 @@ from asset_store_core.paths import (
     normalize_space,
     qualified_alias,
     qualified_alias_for_partition,
+)
+from asset_store_core.retention import (
+    capacity_limits,
+    enforce_capacity,
+    expiry_for,
+    require_live,
+    validate_cleanup_transition,
 )
 from asset_store_core.storage import build_storage_key, normalize_partition_id
 
@@ -140,6 +148,7 @@ class InMemoryAssetRegistry:
         mime: str | None = None,
         annotations: Mapping[str, str] | None = None,
         eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT,
+        ttl_seconds: int | None = None,
     ) -> Asset:
         """Reserve aliases and create a pending asset shell (FR-004)."""
 
@@ -170,6 +179,7 @@ class InMemoryAssetRegistry:
             updated_at=now,
             owner_service_id=owner_service_id,
             eviction_policy=eviction_policy,
+            expires_at=expiry_for(norm_space, ttl_seconds, now),
         )
         self._assets[asset_id] = asset
 
@@ -338,6 +348,7 @@ class InMemoryAssetRegistry:
             )
 
         asset = self._get_asset(binding.asset_id)
+        require_live(asset, utcnow())
         if not asset.is_resolvable:
             raise InvalidStateTransitionError(
                 f"asset {asset.asset_id!r} is not resolvable in state {asset.state.value!r}"
@@ -479,7 +490,9 @@ class InMemoryAssetRegistry:
                 f"asset {asset_id!r} cannot expire from state {asset.state.value!r}"
             )
 
-        updated = dc_replace(asset, state=AssetState.EXPIRED, updated_at=utcnow())
+        updated = dc_replace(
+            asset, state=AssetState.EXPIRED, updated_at=utcnow(), expired_at=utcnow()
+        )
         self._assets[asset_id] = updated
         self._release_quota(asset)
         self._audit(
@@ -641,6 +654,13 @@ class InMemoryAssetRegistry:
                 scope="partition",
             )
 
+        if space in capacity_limits():
+            physical = sum(
+                a.size_bytes or 0
+                for a in self._assets.values()
+                if a.space == space and a.payload_deleted_at is None
+            )
+            enforce_capacity(space, physical + new_bytes)
         bq = self._bucket_quota(space)
         if bq.quota_bytes is not None and (
             bq.used_bytes + new_bytes >= bq.quota_bytes * bq.hard_ceiling
@@ -673,6 +693,61 @@ class InMemoryAssetRegistry:
         )
         bq = self._bucket_quota(asset.space)
         self._bucket_quotas[bq.space] = dc_replace(bq, used_bytes=max(0, bq.used_bytes - nbytes))
+
+    def list_assets(self) -> tuple[Asset, ...]:
+        """Maintenance snapshot (ADR-020)."""
+        return tuple(a for a in self._assets.values() if a.payload_deleted_at is None)
+
+    @contextmanager
+    def asset_lock(self, asset_id: str) -> Iterator[Asset]:
+        """In-memory adapter is single-threaded; Postgres provides real row locks."""
+        yield self._get_asset(asset_id)
+
+    def record_read(self, asset_id: str) -> None:
+        """Record successful access without changing lifecycle timestamps (FR-053)."""
+        asset = self._get_asset(asset_id)
+        if asset.state is AssetState.AVAILABLE:
+            self._assets[asset_id] = dc_replace(
+                asset, last_read_at=utcnow(), read_count=asset.read_count + 1
+            )
+
+    def lifecycle_update(
+        self,
+        asset: Asset,
+        *,
+        state: AssetState,
+        now: datetime,
+        reason: str,
+        payload_deleted: bool = False,
+    ) -> Asset:
+        """Apply a locked, rechecked maintenance transition (FR-060/067)."""
+        if self._get_asset(asset.asset_id) != asset:
+            raise InvalidStateTransitionError("lifecycle candidate changed")
+        validate_cleanup_transition(asset, state, payload_deleted)
+        updated = dc_replace(
+            asset,
+            state=state,
+            updated_at=now,
+            expired_at=now if state is AssetState.EXPIRED else asset.expired_at,
+            payload_deleted_at=now if payload_deleted else asset.payload_deleted_at,
+        )
+        self._release_quota(asset)
+        self._assets[asset.asset_id] = updated
+        self._audit(
+            action=(
+                "asset.payload_delete"
+                if payload_deleted
+                else "asset.expire"
+                if state is AssetState.EXPIRED
+                else "asset.delete"
+            ),
+            target=asset.asset_id,
+            caller_service_id="lifecycle-worker",
+            outcome="success",
+            before={"state": asset.state.value},
+            after={"state": state.value, "reason": reason},
+        )
+        return updated
 
     def _get_asset(self, asset_id: str) -> Asset:
         try:
@@ -732,8 +807,11 @@ class InMemoryAssetRegistry:
             return
         if asset.state in (AssetState.EXPIRED, AssetState.DELETED):
             return
-        updated = dc_replace(asset, state=AssetState.EXPIRED, updated_at=utcnow())
+        updated = dc_replace(
+            asset, state=AssetState.EXPIRED, updated_at=utcnow(), expired_at=utcnow()
+        )
         self._assets[asset_id] = updated
+        self._release_quota(asset)
         self._audit(
             action="asset.gc_mark",
             target=asset_id,

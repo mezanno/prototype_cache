@@ -25,8 +25,9 @@ operations per transaction.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from datetime import timedelta
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -56,6 +57,13 @@ from asset_store_core.registry import (
     _alias_under_partition,
     _normalize_alias_specs,
     _partition_from_scoped_alias,
+)
+from asset_store_core.retention import (
+    capacity_limits,
+    enforce_capacity,
+    expiry_for,
+    require_live,
+    validate_cleanup_transition,
 )
 from asset_store_core.storage import build_storage_key, normalize_partition_id
 
@@ -95,7 +103,11 @@ CREATE TABLE IF NOT EXISTS assets (
     owner_service_id  text NOT NULL DEFAULT 'system',
     created_at        timestamptz NOT NULL,
     updated_at        timestamptz NOT NULL,
-    expires_at        timestamptz
+    expires_at        timestamptz,
+    expired_at        timestamptz,
+    last_read_at      timestamptz,
+    read_count        bigint NOT NULL DEFAULT 0,
+    payload_deleted_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS aliases (
@@ -217,6 +229,7 @@ class PostgresAssetRegistry:
         mime: str | None = None,
         annotations: Mapping[str, str] | None = None,
         eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT,
+        ttl_seconds: int | None = None,
     ) -> Asset:
         """Reserve aliases and create a pending asset shell (FR-001/FR-004)."""
 
@@ -238,8 +251,9 @@ class PostgresAssetRegistry:
                 """
                 INSERT INTO assets (
                     asset_id, space, partition_id, storage_key, state, mime,
-                    annotations, eviction_policy, owner_service_id, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    annotations, eviction_policy, owner_service_id,
+                    created_at, updated_at, expires_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     asset_id,
@@ -253,6 +267,7 @@ class PostgresAssetRegistry:
                     owner_service_id,
                     now,
                     now,
+                    expiry_for(norm_space, ttl_seconds, now),
                 ),
             )
 
@@ -584,6 +599,7 @@ class PostgresAssetRegistry:
             )
 
         asset = self._load_asset(row["asset_id"])
+        require_live(asset, utcnow())
         if not asset.is_resolvable:
             raise InvalidStateTransitionError(
                 f"asset {asset.asset_id!r} is not resolvable in state {asset.state.value!r}"
@@ -760,8 +776,10 @@ class PostgresAssetRegistry:
                 )
 
             self._conn.execute(
-                "UPDATE assets SET state = %s, updated_at = %s WHERE asset_id = %s",
-                (new_state.value, now, asset_id),
+                "UPDATE assets SET state = %s, updated_at = %s, "
+                "expired_at = CASE WHEN %s = 'expired' THEN %s ELSE expired_at END "
+                "WHERE asset_id = %s",
+                (new_state.value, now, new_state.value, now, asset_id),
             )
             if row["state"] == AssetState.AVAILABLE.value:
                 self._release_quota(
@@ -784,8 +802,7 @@ class PostgresAssetRegistry:
 
         Reuses ``expired`` so the normal GC sweep handles the ``expired → deleted``
         transition; the distinct ``asset.gc_mark`` action records that the trigger
-        was alias removal. Mirrors the in-memory registry, which does not release
-        quota on this path (that happens on the subsequent expire/delete).
+        was alias removal. Release available quota exactly once on this path.
         """
 
         remaining = self._conn.execute(
@@ -794,16 +811,22 @@ class PostgresAssetRegistry:
         if remaining is not None:
             return
         row = self._conn.execute(
-            "SELECT state FROM assets WHERE asset_id = %s FOR UPDATE", (asset_id,)
+            "SELECT state, space, partition_id, size_bytes FROM assets "
+            "WHERE asset_id = %s FOR UPDATE",
+            (asset_id,),
         ).fetchone()
         if row is None:
             return
         if row["state"] in (AssetState.EXPIRED.value, AssetState.DELETED.value):
             return
         self._conn.execute(
-            "UPDATE assets SET state = %s, updated_at = %s WHERE asset_id = %s",
-            (AssetState.EXPIRED.value, utcnow(), asset_id),
+            "UPDATE assets SET state = %s, updated_at = %s, expired_at = %s WHERE asset_id = %s",
+            (AssetState.EXPIRED.value, utcnow(), utcnow(), asset_id),
         )
+        if row["state"] == AssetState.AVAILABLE.value:
+            self._release_quota(
+                space=row["space"], partition_id=row["partition_id"], nbytes=row["size_bytes"] or 0
+            )
         self._write_audit(
             action="asset.gc_mark",
             target=asset_id,
@@ -854,6 +877,14 @@ class PostgresAssetRegistry:
             )
 
         bq = self._bucket_quota(space, for_update=True)
+        if space in capacity_limits():
+            usage = self._conn.execute(
+                "SELECT COALESCE(SUM(size_bytes), 0) AS bytes FROM assets "
+                "WHERE space = %s AND payload_deleted_at IS NULL",
+                (space,),
+            ).fetchone()
+            assert usage is not None
+            enforce_capacity(space, int(usage["bytes"]) + new_bytes)
         if bq.quota_bytes is not None and (
             bq.used_bytes + new_bytes >= bq.quota_bytes * bq.hard_ceiling
         ):
@@ -926,6 +957,11 @@ class PostgresAssetRegistry:
         )
 
     def _bucket_quota(self, norm_space: str, *, for_update: bool = False) -> BucketQuota:
+        if for_update:
+            self._conn.execute(
+                "INSERT INTO bucket_quotas (space) VALUES (%s) ON CONFLICT (space) DO NOTHING",
+                (norm_space,),
+            )
         sql = (
             "SELECT quota_bytes, used_bytes, warn_threshold, hard_ceiling "
             "FROM bucket_quotas WHERE space = %s"
@@ -991,12 +1027,86 @@ class PostgresAssetRegistry:
             ),
         )
 
+    def list_assets(self) -> tuple[Asset, ...]:
+        """Read unpurged maintenance candidates in one statement (ADR-020)."""
+        rows = self._conn.execute(
+            "SELECT a.*, ARRAY(SELECT alias FROM aliases WHERE asset_id = a.asset_id) "
+            "AS alias_names FROM assets a WHERE payload_deleted_at IS NULL"
+        ).fetchall()
+        return tuple(
+            self._asset_from_row(
+                row, frozenset(f"{row['space']}/{alias}" for alias in row["alias_names"])
+            )
+            for row in rows
+        )
+
+    @contextmanager
+    def asset_lock(self, asset_id: str) -> Iterator[Asset]:
+        """Serialize upload/commit and maintenance across connections (ADR-020)."""
+        with self._conn.transaction():
+            self._conn.execute(
+                "SELECT asset_id FROM assets WHERE asset_id = %s FOR UPDATE", (asset_id,)
+            ).fetchone()
+            yield self._load_asset(asset_id)
+
+    def record_read(self, asset_id: str) -> None:
+        """Atomic access counter, distinct from lifecycle timestamps (FR-053)."""
+        self._conn.execute(
+            "UPDATE assets SET last_read_at = %s, read_count = read_count + 1 "
+            "WHERE asset_id = %s AND state = 'available'",
+            (utcnow(), asset_id),
+        )
+
+    def lifecycle_update(
+        self,
+        asset: Asset,
+        *,
+        state: AssetState,
+        now: datetime,
+        reason: str,
+        payload_deleted: bool = False,
+    ) -> Asset:
+        """Apply an action within the caller's asset_lock transaction (FR-060/067)."""
+        if self._load_asset(asset.asset_id) != asset:
+            raise InvalidStateTransitionError("lifecycle candidate changed")
+        validate_cleanup_transition(asset, state, payload_deleted)
+        self._conn.execute(
+            "UPDATE assets SET state = %s, updated_at = %s, expired_at = %s, "
+            "payload_deleted_at = %s WHERE asset_id = %s",
+            (
+                state.value,
+                now,
+                now if state is AssetState.EXPIRED else asset.expired_at,
+                now if payload_deleted else asset.payload_deleted_at,
+                asset.asset_id,
+            ),
+        )
+        if asset.state is AssetState.AVAILABLE:
+            self._release_quota(
+                space=asset.space, partition_id=asset.partition_id, nbytes=asset.size_bytes or 0
+            )
+        self._write_audit(
+            action=(
+                "asset.payload_delete"
+                if payload_deleted
+                else "asset.expire"
+                if state is AssetState.EXPIRED
+                else "asset.delete"
+            ),
+            target=asset.asset_id,
+            caller_service_id="lifecycle-worker",
+            before={"state": asset.state.value},
+            after={"state": state.value, "reason": reason},
+        )
+        return self._load_asset(asset.asset_id)
+
     def _load_asset(self, asset_id: str) -> Asset:
         asset_row = self._conn.execute(
             """
             SELECT asset_id, space, partition_id, storage_key, state, mime, size_bytes,
                    checksum_algo, checksum, annotations, eviction_policy, owner_service_id,
-                   created_at, updated_at, expires_at
+                   created_at, updated_at, expires_at, expired_at, last_read_at,
+                   read_count, payload_deleted_at
               FROM assets WHERE asset_id = %s
             """,
             (asset_id,),
@@ -1010,6 +1120,10 @@ class PostgresAssetRegistry:
         ).fetchall()
         aliases = frozenset(f"{asset_row['space']}/{row['alias']}" for row in alias_rows)
 
+        return self._asset_from_row(asset_row, aliases)
+
+    @staticmethod
+    def _asset_from_row(asset_row: dict[str, Any], aliases: frozenset[str]) -> Asset:
         return Asset(
             asset_id=asset_row["asset_id"],
             space=asset_row["space"],
@@ -1025,6 +1139,10 @@ class PostgresAssetRegistry:
             created_at=asset_row["created_at"],
             updated_at=asset_row["updated_at"],
             expires_at=asset_row["expires_at"],
+            expired_at=asset_row["expired_at"],
+            last_read_at=asset_row["last_read_at"],
+            read_count=asset_row["read_count"],
+            payload_deleted_at=asset_row["payload_deleted_at"],
             owner_service_id=asset_row["owner_service_id"],
             eviction_policy=EvictionPolicy(asset_row["eviction_policy"]),
         )

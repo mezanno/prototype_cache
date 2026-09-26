@@ -148,6 +148,7 @@ def create_app(
             mime=body.mime,
             annotations=body.annotations,
             eviction_policy=body.eviction_policy,
+            ttl_seconds=body.ttl_seconds,
         )
         return AssetOut.from_asset(asset)
 
@@ -321,6 +322,7 @@ def create_app(
         capability: Capability = Depends(require_capability),
         mutable: bool = False,
         expected_checksum: str | None = None,
+        ttl_seconds: int | None = Query(default=None, gt=0),
     ) -> AssetOut:
         data = await request.body()
         mime = request.headers.get("content-type")
@@ -331,6 +333,7 @@ def create_app(
             mutable=mutable,
             mime=mime,
             expected_checksum=expected_checksum,
+            ttl_seconds=ttl_seconds,
         )
         observe_bucket_fill(asset.space)
         return AssetOut.from_asset(asset)

@@ -34,6 +34,7 @@ class ReserveRequest(BaseModel):
     mime: str | None = None
     annotations: dict[str, str] | None = None
     eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT
+    ttl_seconds: int | None = Field(default=None, gt=0)
 
 
 class CommitRequest(BaseModel):
@@ -61,6 +62,11 @@ class AssetOut(BaseModel):
     annotations: dict[str, str]
     created_at: datetime
     updated_at: datetime
+    expires_at: datetime | None
+    expired_at: datetime | None
+    last_read_at: datetime | None
+    read_count: int
+    payload_deleted_at: datetime | None
     owner_service_id: str
     eviction_policy: str
 
@@ -79,6 +85,11 @@ class AssetOut(BaseModel):
             annotations=dict(asset.annotations),
             created_at=asset.created_at,
             updated_at=asset.updated_at,
+            expires_at=asset.expires_at,
+            expired_at=asset.expired_at,
+            last_read_at=asset.last_read_at,
+            read_count=asset.read_count,
+            payload_deleted_at=asset.payload_deleted_at,
             owner_service_id=asset.owner_service_id,
             eviction_policy=asset.eviction_policy.value,
         )

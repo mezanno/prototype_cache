@@ -73,6 +73,18 @@ class InvalidStateTransitionError(AssetStoreError):
     """Raised when an asset lifecycle transition is not allowed."""
 
 
+class AssetExpiredError(InvalidStateTransitionError):
+    """Expired assets are gone for readers (FR-002, HTTP 410)."""
+
+
+class AssetDeletedError(InvalidStateTransitionError):
+    """Deleted assets are unavailable to readers (FR-002, HTTP 404)."""
+
+
+class CapacityExceededError(AssetStoreError):
+    """Physical capacity hard ceiling reached (FR-064, HTTP 503)."""
+
+
 class QuotaExceededError(AssetStoreError):
     """Raised when a commit would exceed a partition or bucket quota (FR-066/FR-068).
 

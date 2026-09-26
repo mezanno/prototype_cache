@@ -1,0 +1,24 @@
+# B-014 / FR-064. Load into Prometheus with lifecycle textfile metrics scraped.
+groups:
+  - name: asset-store-lifecycle
+    rules:
+      - alert: AssetStoreCapacityHigh
+        expr: storage_space_used_ratio > 0.80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Asset-store estimated occupancy exceeds 80% in {{ $labels.space }}"
+      - alert: AssetStoreEvictionExhausted
+        expr: gc_eviction_exhausted > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Eligible eviction candidates exhausted in {{ $labels.space }}"
+      - alert: AssetStoreCleanupErrors
+        expr: increase(gc_errors_total[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Asset-store cleanup is failing in {{ $labels.space }}"
