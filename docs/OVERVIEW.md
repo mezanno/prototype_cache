@@ -1,6 +1,6 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-09-26 · B-013 implemented (uncommitted) · Next: B-018 security review**
+> **Checkpoint: 2026-09-26 · B-013 committed (`8d88b94`) · Next: B-018 security review**
 >
 > Working ingestion, retrieval and cleanup prototype. Production readiness remains open.
 

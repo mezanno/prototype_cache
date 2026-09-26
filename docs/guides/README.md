@@ -8,6 +8,7 @@ using the **asset-store** module. For requirements and architecture, see
 ## Contents
 
 - [Bulk-loader — preload the cache](bulk-loader.md)
+- [Admin console](admin-console.md) — find assets, change retention, manage quotas and preview bulk expiry.
 
 ## Concepts you need
 
