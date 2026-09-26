@@ -22,6 +22,8 @@ console, not end-user authentication or a task-engine delegation endpoint.
   TTL seconds count from the action time and obey the existing bucket maxima.
   An expired asset can be restored if its payload is unpurged and quota allows;
   deleted assets cannot be restored. Alias deadlines remain shared per asset.
+- Previously issued presigned URLs remain usable until URL expiry or physical
+  deletion; expiry/delete immediately deny new guarded reads, not old S3 URLs.
 - Delete marks metadata terminal; B-014 removes bytes asynchronously. The UI makes
   pending payload cleanup explicit. Expire preserves bytes through the grace period.
 - Attach/detach aliases, edit annotations and eviction policy, configure partition

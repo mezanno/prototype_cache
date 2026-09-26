@@ -1,0 +1,86 @@
+{
+  "audit_contains_live_bearer": true,
+  "date": "2026-09-26",
+  "default_admin_credential_status": 200,
+  "dependency_scan": {
+    "findings": [
+      {
+        "advisories": [
+          {
+            "aliases": [
+              "GHSA-82r6-8w77-94w6"
+            ],
+            "fix_versions": [
+              "4.14.2"
+            ],
+            "id": "CVE-2026-63374"
+          },
+          {
+            "aliases": [
+              "GHSA-5p39-cfhj-2xmp"
+            ],
+            "fix_versions": [
+              "4.14.2"
+            ],
+            "id": "CVE-2026-64847"
+          },
+          {
+            "aliases": [
+              "GHSA-3w57-8xmc-8v26"
+            ],
+            "fix_versions": [
+              "4.14.2"
+            ],
+            "id": "CVE-2026-63349"
+          }
+        ],
+        "name": "anyio",
+        "version": "4.14.1"
+      }
+    ],
+    "packages_checked": 31,
+    "scope": "uv.lock runtime + s3,pg extras, current interpreter markers"
+  },
+  "focused_regressions": {
+    "passed": 90,
+    "skipped": 0,
+    "warnings": 1
+  },
+  "generated_scope_checks": {
+    "checks": 3600,
+    "failures": 0
+  },
+  "nested_quantifier_rule_accepted": true,
+  "presigned_get_after_expire": {
+    "payload_matches": true,
+    "status": 200
+  },
+  "quota_rejection_leaves_bytes": {
+    "metadata_size": null,
+    "state": "pending",
+    "status": 413,
+    "stored_size": 11
+  },
+  "reviewed_commit": "9640116",
+  "shared_connection_rollback": {
+    "annotation_persisted": false,
+    "other_operation_returned_success": true
+  },
+  "ssrf_shared_address_range": {
+    "blocked": false,
+    "is_global": false
+  },
+  "transport_receives_unpinned_hostname": true,
+  "unauthenticated_control_plane": {
+    "audit_actor": "admin",
+    "claimed_checksum": "invented",
+    "commit_status": 200,
+    "reserve_status": 201,
+    "resolve_status": 200,
+    "state": "available"
+  },
+  "unauthenticated_fetcher": {
+    "alias": "tmp/victim/chosen",
+    "status": 200
+  }
+}

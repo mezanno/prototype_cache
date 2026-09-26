@@ -1,8 +1,8 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-09-26 · B-013 committed (`8d88b94`) · Next: B-018 security review**
+> **Checkpoint: 2026-09-26 · B-013 committed (`8d88b94`) · B-018 reviewed · Next: SEC-01 remediation**
 >
-> Working ingestion, retrieval and cleanup prototype. Production readiness remains open.
+> Working prototype. **Security review found exposure blockers; remediation remains open.**
 
 **Purpose:** a shared repository for remote content, user uploads and worker results.
 Callers use stable **aliases**; asset-store owns metadata, access capabilities and
@@ -80,7 +80,7 @@ Future IIIF server / image-mirror consumers sit outside this module and are not 
 | **Admin path** · B-013 | 🟢 Implemented; visual QA pending | Console, authenticated admin API, cursor listing, inspect/audit, TTL restoration, aliases, quotas, bounded bulk expiry → browser acceptance check |
 | **Observability + CI** · B-003/004 | 🟡 Partial | Metrics, JSON logs, correlation IDs, sample lifecycle alerts; lint/types/tests CI → tracing, dashboards, alert wiring, image build/scan |
 | **Deployment + recovery** · B-016/017/019 | 🟡 Partial | Local Compose and Dockerfile → Swarm, chaos tests, backup/restore drill, pilot/rollback |
-| **Security + scale** · B-018/015 | ⚪ Planned validation | Scope tests exist → control-plane authorization review, secrets/HTTPS hardening and measured load/SLO certification |
+| **Security + scale** · B-018/015 | 🟡 Reviewed; remediation open | [B-018 findings](security/B018_REVIEW.md): anonymous registry writes, shared transactions, fetcher/deployment/resource risks → fixes and measured load/SLO certification |
 
 **Test substitutes:** `InMemoryAssetRegistry` and `LocalObjectStore` replace Postgres
 and S3 for infrastructure-free tests; `LocalObjectStore` is an in-memory dictionary.
@@ -106,7 +106,7 @@ flowchart LR
     core["DELIVERED<br/>Ingest and retrieve<br/>Fetcher + worker-sim"]
     lifecycle["DELIVERED · B-014<br/>Lifecycle cleanup"]
     admin["LATEST · B-013<br/>Admin console + API"]
-    security["NEXT · B-018<br/>Security review"]
+    security["NEXT · B-018 remediation<br/>SEC-01 authorization<br/>SEC-02 transaction isolation"]
     readiness["REMAINING<br/>Load + operations<br/>Recovery + pilot"]
     core --> lifecycle --> admin --> security --> readiness
     style core fill:#dcfce7,stroke:#15803d,color:#14532d
@@ -122,8 +122,8 @@ tests are environment-gated in ordinary runs. Browser visual/interaction QA rema
 pending (no browser available in the implementation session). This is not load or deployment certification.
 
 **Architect attention:** upstream services still own user→prefix authorization
-(R-012); process-local capabilities constrain replica/restart behavior; legacy reserve/commit control-plane
-authorization still needs review. Admin routes now require an authenticated admin. Keep these boundaries explicit before wider exposure.
+(R-012); process-local capabilities constrain replica/restart behavior; legacy reserve/commit/resolve authorization
+bypasses and shared-connection rollback were reproduced. Admin routes now require an authenticated admin. Keep these boundaries explicit before wider exposure.
 Per-alias deadlines and content deduplication remain deferred; several foundational
 ADRs/spikes still await formal close-out despite working code.
 
@@ -132,7 +132,7 @@ ADRs/spikes still await formal close-out despite working code.
 **Navigate:** [Architecture & decisions](spec/03_ARCHITECTURE.md) ·
 [Workplan](WORKPLAN.md) · [Implementation evidence & limitations](IMPLEMENTATION_NOTES.md) ·
 [Backlog & risks](spec/05_BACKLOG_AND_OPEN_QUESTIONS.md) ·
-[Lifecycle runbook](services/lifecycle-worker.md)
+[Lifecycle runbook](services/lifecycle-worker.md) · [Security review](security/B018_REVIEW.md)
 
 *This page is a status map, not a replacement for the specs. At each milestone,
 refresh the checkpoint, diagram labels, table and validation evidence together.*

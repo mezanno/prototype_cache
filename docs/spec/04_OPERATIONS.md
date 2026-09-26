@@ -51,7 +51,9 @@ Plus standard object-store and Postgres exporter metrics (request rate, latency,
 
 - **Format** - structured JSON, one line per event; fields include `ts`, `service`, `level`, `correlation_id`, `caller_service_id`, `space`, `alias` (when relevant), `event`, `message`.
 - **Correlation IDs** - one `correlation_id` per inbound request; propagated downstream via the `X-Correlation-Id` header.
-- **Redaction policy** - no secrets in logs; capability tokens replaced with their `capability_id` only; alias names allowed (they are not secrets by policy - operator guidance forbids putting PII in aliases).
+- **Redaction policy** - no secrets in logs; capability tokens replaced with a distinct non-secret identifier or digest;
+  **current implementation stores the live bearer as `capability_id` (SEC-07), so
+  this requirement is not yet met**; alias names allowed (they are not secrets by policy - operator guidance forbids putting PII in aliases).
 
 ### Tracing
 
@@ -99,8 +101,9 @@ Error budget for the read availability SLO: 0.1% of 30 days = ~43 minutes per 30
 
 ## Go-Live Checklist
 
-- [ ] Security review completed for the prototype scope (capability lifecycle, secrets, TLS, audit).
-- [ ] Threat model documented (STRIDE pass on `storage-guard`).
+- [x] Prototype security review performed — [B-018 findings](../security/B018_REVIEW.md).
+  **Remediation and security release sign-off remain open.**
+- [x] Threat model documented — [STRIDE map](../security/B018_REVIEW.md#stride-map-and-controls-that-held).
 - [ ] Runbooks written for: capability issuance failures, object-store node loss, Postgres failover, audit log overflow, garbage collection misfire.
 - [ ] Dashboards and alerts live in the chosen observability backend; on-call ownership defined.
 - [ ] Backup/restore tested for Postgres and the object store.

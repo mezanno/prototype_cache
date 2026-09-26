@@ -2,6 +2,23 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Security review (B-018, 2026-09-26)
+
+[Review and remediation plan](security/B018_REVIEW.md) against `9640116`:
+STRIDE, code/configuration review, 3,600 generated scope/path checks, isolated
+HTTP/Postgres/Garage probes, and a locked-runtime dependency audit. Confirmed
+anonymous registry mutation/actor spoofing, acknowledged changes lost through
+shared-connection rollback, predictable default admin credentials, unauthenticated
+fetcher writes, retained bytes after quota rejection, live bearer audit storage
+and still-valid presigned reads after registry expiry. SSRF transport/predicate
+gaps and process-local capability limits are also recorded with evidence limits.
+
+The dependency audit reports three advisories for AnyIO 4.14.1 (patched in
+4.14.2); vulnerable API use was not demonstrated in this application. No code or
+dependency fix was made during the review. Operator documentation now qualifies
+presigned-URL revocation. Review performed does **not** mean security-ready:
+SEC-01..10 remain open, linked to R-014..020; no risk acceptance was granted.
+
 ## Admin milestone (B-013, 2026-09-26)
 
 The [admin console](services/admin-ui.md) is served at `/admin` by the existing

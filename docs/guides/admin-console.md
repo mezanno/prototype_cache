@@ -22,11 +22,15 @@ Select an asset first. Each change asks for confirmation and refreshes its detai
 | Action | Effect |
 |---|---|
 | **Set TTL / restore expired** | Set a deadline in seconds **from now**. Can restore an expired asset before cleanup, if quota permits. `tmp` is capped at 7 days; `results` uses the operator's maximum (365 days by default). |
-| **Expire** | Stop reads now; keep bytes until the lifecycle worker's grace period ends. |
-| **Delete** | Stop reads now and make the asset terminal. The lifecycle worker removes bytes later; **TTL cannot undo deletion**. |
+| **Expire** | Stop new guarded reads now; keep bytes until the lifecycle worker's grace period ends. |
+| **Delete** | Stop new guarded reads now and make the asset terminal. The lifecycle worker removes bytes later; **TTL cannot undo deletion**. |
 | **Attach / Detach alias** | Add or remove a name. Enter the partition and path, e.g. `42/uploads/photo.jpg`, without the space. Removing the last alias schedules cleanup. |
 | **Save annotations** | Replace annotations with the entered JSON map, e.g. `{"note":"checked"}`. Payload bytes stay unchanged. |
 | **Save policy** | `exempt` protects against capacity/quota eviction, **not TTL expiry**. |
+
+**Already-issued download URLs can still work** until their expiry or physical
+payload deletion, even after Expire/Delete. Default URL lifetime is five minutes,
+with a one-hour maximum. Use the guarded proxy when immediate revocation is required.
 
 TTL changes affect every alias of the selected asset. If the console reports
 “asset changed”, select the asset again, review its current details and retry.
