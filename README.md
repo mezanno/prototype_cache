@@ -9,22 +9,14 @@ Define and validate a production-grade design for a deployable, testable, observ
 
 ## Current implementation slice
 
-The slice is infrastructure-free (in-memory backend; no Postgres or real S3 yet) but
-now spans the full request path end to end:
+Start with the **[visual architecture and progress overview](docs/OVERVIEW.md)**
+for component responsibilities, implementation status and the next milestone.
 
-- `src/asset_store_core/` — registry, **four storage buckets** (`cache`, `tmp`,
-  `users`, `results`), `partition_id`, object keys `{partition}/assets/{asset_id}`,
-  an object-store backend seam (`ObjectStoreBackend` + in-memory `LocalObjectStore`),
-  prefix-scoped capabilities, **service→bucket policy** (FR-015), and a `StorageGuard`
-  facade composing capability + policy + registry/object-store calls.
-- `src/asset_store_core/api/` — a FastAPI app (single process, ADR-002):
-  `/healthz`, `/readyz`, `/metrics`, reserve/commit/resolve, capability mint, and a
-  capability-guarded data plane (`PUT`/`GET /objects/{alias}`, FR-010..015) using
-  `Authorization: Capability <id>` bearer tokens. Errors use RFC 7807
-  `application/problem+json`; observability (ADR-013) adds Prometheus metrics,
-  structured JSON logs, and an `X-Correlation-Id` per request.
-- `tests/` — 72 unit/integration/contract tests, all green.
-- `services/`, `tools/`, `deploy/` — placeholders per `docs/WORKPLAN.md`.
+The prototype includes a FastAPI service, durable Postgres registry, Garage/S3
+storage adapter, scoped capabilities, fetcher, bulk-loader, worker simulator and
+lifecycle cleanup worker. In-memory adapters remain available for local tests.
+Admin tooling, security hardening and production readiness remain open;
+see the [workplan](docs/WORKPLAN.md) for remaining work.
 
 Run the tests and the API locally (uv-managed env):
 
