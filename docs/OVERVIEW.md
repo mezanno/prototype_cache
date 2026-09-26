@@ -1,6 +1,6 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-09-26 · B-014 committed (`cfcec41`) · Next: B-013 admin tooling**
+> **Checkpoint: 2026-09-26 · B-013 implemented (uncommitted) · Next: B-018 security review**
 >
 > Working ingestion, retrieval and cleanup prototype. Production readiness remains open.
 
@@ -24,7 +24,7 @@ flowchart TB
     bulk["IMPLEMENTED · bulk-loader CLI<br/>Batch ingestion"]
     worker["SIMULATED · worker-sim CLI<br/>Verified reads and result publication"]
     edge["PLANNED · upload-api / task-api<br/>User authorization and task dispatch"]
-    admin["PLANNED · admin-ui<br/>Inspect assets and operate lifecycle"]
+    admin["IMPLEMENTED · admin-ui<br/>Inspect assets and operate lifecycle"]
 
     subgraph service["asset-store · single service"]
         api["IMPLEMENTED · HTTP API<br/>Caller-facing control and data paths"]
@@ -46,7 +46,7 @@ flowchart TB
     bulk --> api
     worker --> api
     edge -.-> api
-    admin -.-> api
+    admin --> api
     registry --> pg
     adapter --> s3
     worker -->|"Optional presigned GET"| s3
@@ -56,9 +56,9 @@ flowchart TB
     classDef done fill:#dcfce7,stroke:#15803d,color:#14532d
     classDef simulated fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     classDef planned fill:#f1f5f9,stroke:#64748b,color:#334155,stroke-dasharray:5 5
-    class fetch,bulk,api,guard,registry,adapter,pg,s3,gc done
+    class fetch,bulk,api,guard,registry,adapter,pg,s3,gc,admin done
     class worker simulated
-    class edge,admin planned
+    class edge planned
 ```
 
 **Current byte paths:** writes are proxied through the guard (reserve → PUT → commit);
@@ -77,7 +77,7 @@ Future IIIF server / image-mirror consumers sit outside this module and are not 
 | **Bulk-loader** · B-011 | 🟢 Implemented CLI | Batch ingestion through guarded HTTP → 10k-asset acceptance/load evidence remains B-015 |
 | **Worker-sim** · B-012 | 🔵 Simulation, implemented | Real reads/writes, checksum verification, manifest published last → actual workers and task engine are external |
 | **Lifecycle worker** · B-014 | 🟢 Implemented | TTL, orphan cleanup, quota/capacity eviction, deletion retries, metrics → deploy/schedule explicitly; migration 0002 required |
-| **Admin path** · B-013 | 🟡 Partial; next | Existing expire/delete, quota and audit API primitives → UI, list/filter/inspect, TTL extension and bulk expiry |
+| **Admin path** · B-013 | 🟢 Implemented; visual QA pending | Console, authenticated admin API, cursor listing, inspect/audit, TTL restoration, aliases, quotas, bounded bulk expiry → browser acceptance check |
 | **Observability + CI** · B-003/004 | 🟡 Partial | Metrics, JSON logs, correlation IDs, sample lifecycle alerts; lint/types/tests CI → tracing, dashboards, alert wiring, image build/scan |
 | **Deployment + recovery** · B-016/017/019 | 🟡 Partial | Local Compose and Dockerfile → Swarm, chaos tests, backup/restore drill, pilot/rollback |
 | **Security + scale** · B-018/015 | ⚪ Planned validation | Scope tests exist → control-plane authorization review, secrets/HTTPS hardening and measured load/SLO certification |
@@ -104,25 +104,26 @@ not expiry. Deadlines are currently shared by all aliases of an asset.
 ```mermaid
 flowchart LR
     core["DELIVERED<br/>Ingest and retrieve<br/>Fetcher + worker-sim"]
-    lifecycle["LATEST · B-014<br/>Lifecycle cleanup"]
-    admin["NEXT · B-013<br/>Admin path"]
-    security["B-018<br/>Security review"]
+    lifecycle["DELIVERED · B-014<br/>Lifecycle cleanup"]
+    admin["LATEST · B-013<br/>Admin console + API"]
+    security["NEXT · B-018<br/>Security review"]
     readiness["REMAINING<br/>Load + operations<br/>Recovery + pilot"]
     core --> lifecycle --> admin --> security --> readiness
     style core fill:#dcfce7,stroke:#15803d,color:#14532d
     style lifecycle fill:#dcfce7,stroke:#15803d,color:#14532d
-    style admin fill:#fef3c7,stroke:#b45309,color:#78350f
-    style security fill:#f1f5f9,stroke:#64748b,color:#334155
+    style admin fill:#dcfce7,stroke:#15803d,color:#14532d
+    style security fill:#fef3c7,stroke:#b45309,color:#78350f
     style readiness fill:#f1f5f9,stroke:#64748b,color:#334155
 ```
 
-**Evidence:** last code validation recorded **303 passing tests**, none skipped,
+**Evidence:** last code validation recorded **326 passing tests**, none skipped,
 with Garage/Postgres enabled; lint, formatting and strict typing passed. Backend
-tests are environment-gated in ordinary runs. This is not load or deployment certification.
+tests are environment-gated in ordinary runs. Browser visual/interaction QA remains
+pending (no browser available in the implementation session). This is not load or deployment certification.
 
 **Architect attention:** upstream services still own user→prefix authorization
-(R-012); process-local capabilities constrain replica/restart behavior; admin
-authorization needs review. Keep these boundaries explicit before wider exposure.
+(R-012); process-local capabilities constrain replica/restart behavior; legacy reserve/commit control-plane
+authorization still needs review. Admin routes now require an authenticated admin. Keep these boundaries explicit before wider exposure.
 Per-alias deadlines and content deduplication remain deferred; several foundational
 ADRs/spikes still await formal close-out despite working code.
 

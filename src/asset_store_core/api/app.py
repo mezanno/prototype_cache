@@ -5,8 +5,9 @@ alias lifecycle transitions (expire/delete/annotations, alias detach/rebind),
 capability minting, and a capability-guarded data plane (``PUT``/``GET
 /objects/{alias}``) over HTTP, plus ``/healthz``, ``/readyz`` and ``/metrics``.
 Minted capabilities double as opaque bearer tokens presented via
-``Authorization: Capability <id>`` (ADR-003 proxy mode). Storage is the in-memory
-core; Postgres and a real S3 backend are wired later behind the same interfaces.
+``Authorization: Capability <id>`` (ADR-003 proxy mode). The environment factory
+selects Postgres and S3 backends; in-memory adapters
+remain available for local development and tests.
 """
 
 from __future__ import annotations
@@ -16,8 +17,9 @@ from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Query, Request, Response
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 
+from asset_store_core.api.admin import install_admin
 from asset_store_core.api.errors import register_exception_handlers
 from asset_store_core.api.metrics import SERVICE_NAME, build_metrics
 from asset_store_core.api.observability import ObservabilityMiddleware, configure_logging
@@ -126,6 +128,20 @@ def create_app(
             raise ServiceAuthError("malformed service credential; expected 'service_id:secret'")
         return credentials.authenticate(service_id, secret)
 
+    def require_admin(request: Request) -> str:
+        caller = require_service_identity(request)
+        if caller != "admin":
+            raise CapabilityDeniedError("admin identity required")
+        return caller
+
+    async def require_legacy_admin(request: Request) -> str:
+        caller = require_admin(request)
+        if request.method in {"POST", "PUT", "PATCH"}:
+            body = await request.json()
+            if isinstance(body, dict) and body.get("caller_service_id", caller) != caller:
+                raise CapabilityDeniedError("caller identity must match admin credential")
+        return caller
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -169,7 +185,11 @@ def create_app(
     def resolve(space: str, alias: str) -> AssetOut:
         return AssetOut.from_asset(registry.resolve_alias(space=space, alias=alias))
 
-    @app.patch("/assets/{asset_id}/annotations", response_model=AssetOut)
+    @app.patch(
+        "/assets/{asset_id}/annotations",
+        response_model=AssetOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def update_annotations(asset_id: str, body: AnnotationsUpdateRequest) -> AssetOut:
         asset = registry.update_annotations(
             asset_id=asset_id,
@@ -179,31 +199,47 @@ def create_app(
         )
         return AssetOut.from_asset(asset)
 
-    @app.post("/assets/{asset_id}/expire", response_model=AssetOut)
+    @app.post(
+        "/assets/{asset_id}/expire",
+        response_model=AssetOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def expire(asset_id: str, body: LifecycleRequest) -> AssetOut:
         asset = registry.expire_asset(asset_id=asset_id, caller_service_id=body.caller_service_id)
         return AssetOut.from_asset(asset)
 
-    @app.post("/assets/{asset_id}/delete", response_model=AssetOut)
+    @app.post(
+        "/assets/{asset_id}/delete",
+        response_model=AssetOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def delete(asset_id: str, body: LifecycleRequest) -> AssetOut:
         asset = registry.delete_asset(asset_id=asset_id, caller_service_id=body.caller_service_id)
         return AssetOut.from_asset(asset)
 
-    @app.post("/aliases/detach", status_code=204)
+    @app.post("/aliases/detach", status_code=204, dependencies=[Depends(require_legacy_admin)])
     def detach_alias(body: AliasDetachRequest) -> Response:
         registry.detach_alias(
             space=body.space, alias=body.alias, caller_service_id=body.caller_service_id
         )
         return Response(status_code=204)
 
-    @app.post("/aliases/detach-mutable", response_model=AliasBindingOut)
+    @app.post(
+        "/aliases/detach-mutable",
+        response_model=AliasBindingOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def detach_mutable_alias(body: AliasDetachRequest) -> AliasBindingOut:
         binding = registry.detach_mutable_alias(
             space=body.space, alias=body.alias, caller_service_id=body.caller_service_id
         )
         return AliasBindingOut.from_binding(binding)
 
-    @app.post("/aliases/rebind", response_model=AliasBindingOut)
+    @app.post(
+        "/aliases/rebind",
+        response_model=AliasBindingOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def rebind_alias(body: AliasRebindRequest) -> AliasBindingOut:
         binding = registry.rebind_alias(
             space=body.space,
@@ -213,7 +249,11 @@ def create_app(
         )
         return AliasBindingOut.from_binding(binding)
 
-    @app.patch("/assets/{asset_id}/eviction-policy", response_model=AssetOut)
+    @app.patch(
+        "/assets/{asset_id}/eviction-policy",
+        response_model=AssetOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def set_eviction_policy(asset_id: str, body: EvictionPolicyRequest) -> AssetOut:
         asset = registry.set_eviction_policy(
             asset_id=asset_id,
@@ -222,7 +262,11 @@ def create_app(
         )
         return AssetOut.from_asset(asset)
 
-    @app.put("/quotas/partition", response_model=PartitionQuotaOut)
+    @app.put(
+        "/quotas/partition",
+        response_model=PartitionQuotaOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def set_partition_quota(body: PartitionQuotaRequest) -> PartitionQuotaOut:
         quota = registry.set_partition_quota(
             space=body.space,
@@ -230,15 +274,24 @@ def create_app(
             quota_bytes=body.quota_bytes,
             quota_asset_count=body.quota_asset_count,
             eviction_sweep_enabled=body.eviction_sweep_enabled,
+            caller_service_id="admin",
         )
         return PartitionQuotaOut.from_quota(quota)
 
-    @app.get("/quotas/partition", response_model=PartitionQuotaOut)
+    @app.get(
+        "/quotas/partition",
+        response_model=PartitionQuotaOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def get_partition_quota(space: str, partition_id: str) -> PartitionQuotaOut:
         quota = registry.get_partition_quota(space=space, partition_id=partition_id)
         return PartitionQuotaOut.from_quota(quota)
 
-    @app.put("/quotas/bucket", response_model=BucketQuotaOut)
+    @app.put(
+        "/quotas/bucket",
+        response_model=BucketQuotaOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def set_bucket_quota(body: BucketQuotaRequest) -> BucketQuotaOut:
         quota = registry.set_bucket_quota(
             space=body.space,
@@ -248,11 +301,17 @@ def create_app(
         )
         return BucketQuotaOut.from_quota(quota)
 
-    @app.get("/quotas/bucket", response_model=BucketQuotaOut)
+    @app.get(
+        "/quotas/bucket",
+        response_model=BucketQuotaOut,
+        dependencies=[Depends(require_legacy_admin)],
+    )
     def get_bucket_quota(space: str) -> BucketQuotaOut:
         return BucketQuotaOut.from_quota(registry.get_bucket_quota(space=space))
 
-    @app.get("/audit", response_model=list[AuditEventOut])
+    @app.get(
+        "/audit", response_model=list[AuditEventOut], dependencies=[Depends(require_legacy_admin)]
+    )
     def list_audit(
         action: str | None = None,
         target: str | None = None,
@@ -364,6 +423,18 @@ def create_app(
         data = guard.read_bytes(capability=capability, alias=alias)
         return Response(content=data, media_type="application/octet-stream")
 
+    install_admin(
+        app,
+        registry,
+        require_admin,
+        Counter(
+            "asset_store_admin_actions_total",
+            "Admin mutation attempts by action and outcome",
+            ["action", "outcome"],
+            registry=metrics.registry,
+        ),
+        logger,
+    )
     return app
 
 

@@ -175,7 +175,11 @@ class ApiContractTest(unittest.TestCase):
             json={"operation": "write", "scope_prefix": "users/42/uploads", "ttl_seconds": 300},
             headers=_service_auth("worker"),
         )
-        events = self.client.get("/audit", params={"action": "capability.issue"}).json()
+        events = self.client.get(
+            "/audit",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"action": "capability.issue"},
+        ).json()
         outcomes = {(e["caller_service_id"], e["outcome"]) for e in events}
         self.assertIn(("upload-api", "granted"), outcomes)
         self.assertIn(("worker", "denied"), outcomes)

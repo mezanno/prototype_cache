@@ -27,7 +27,9 @@ class AuditEndpointTest(unittest.TestCase):
         return str(response.json()["asset_id"])
 
     def test_audit_is_empty_initially(self) -> None:
-        response = self.client.get("/audit")
+        response = self.client.get(
+            "/audit", headers={"Authorization": "Service admin:dev-secret:admin"}
+        )
         self.assertEqual(200, response.status_code)
         self.assertEqual([], response.json())
 
@@ -38,7 +40,9 @@ class AuditEndpointTest(unittest.TestCase):
             json={"size_bytes": 3, "checksum": "sha256:abc", "caller_service_id": "bulk-loader"},
         )
 
-        events = self.client.get("/audit").json()
+        events = self.client.get(
+            "/audit", headers={"Authorization": "Service admin:dev-secret:admin"}
+        ).json()
         actions = [event["action"] for event in events]
         self.assertIn("alias.create", actions)
         self.assertIn("asset.commit", actions)
@@ -52,7 +56,11 @@ class AuditEndpointTest(unittest.TestCase):
         self._reserve("a.png")
         self._reserve("b.png")
 
-        events = self.client.get("/audit", params={"action": "alias.create"}).json()
+        events = self.client.get(
+            "/audit",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"action": "alias.create"},
+        ).json()
         self.assertTrue(events)
         self.assertTrue(all(event["action"] == "alias.create" for event in events))
 
@@ -60,11 +68,19 @@ class AuditEndpointTest(unittest.TestCase):
         self._reserve("a.png")
         self._reserve("b.png")
 
-        events = self.client.get("/audit", params={"limit": 1}).json()
+        events = self.client.get(
+            "/audit",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"limit": 1},
+        ).json()
         self.assertEqual(1, len(events))
 
     def test_limit_out_of_range_is_rejected(self) -> None:
-        response = self.client.get("/audit", params={"limit": 0})
+        response = self.client.get(
+            "/audit",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"limit": 0},
+        )
         self.assertEqual(422, response.status_code)
 
 

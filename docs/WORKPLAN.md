@@ -27,7 +27,9 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 - B-014: lifecycle sweeps, TTL defaults/hints, access tracking and physical-capacity
   gating are implemented. Dry-run is the default; explicit apply uses deletion
   fencing and retryable payload cleanup (ADR-020, migration 0002).
-- **Next: B-013 admin path and B-018 security review.** Swarm,
+- B-013: admin console and authenticated API are implemented (ADR-021);
+  browser visual/interaction acceptance remains pending. See [admin contract](services/admin-ui.md).
+- **Next: B-018 security review.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ## Engineering quality bar
@@ -100,7 +102,7 @@ prototype:
   - **Step 1 — fetcher stub (Done, 2026-07-09):** `ensure_url` control flow (normalize → rewrite rules incl. IIIF dedup → cache lookup → store), the `POST /v1/ensure-url` FastAPI app, and a no-network `SyntheticFetcher` (deterministic URL-derived JSON). `cache` hit/miss idempotency and `tmp` staging over the guarded proxy PUT. Code in [`src/fetcher_service/`](../src/fetcher_service/); tests in [`tests/test_fetcher_service.py`](../tests/test_fetcher_service.py).
   - **Step 2 — the cache (Done, 2026-09-25):** a **declarative rule-config language** (TOML `[[rule]]` array → `RuleSet`; `type` ∈ `iiif`/`passthrough`/`regex`, with a **safe-regex subset** — anchored named-group match/extract only, no backreferences/lookaround; semantic normalization stays in code) — **Done (2026-07-09)**, loaded via `FETCHER_RULES_FILE`. A real **`HttpFetcher`** (connect/read timeouts, max-body cap, redirect limit with per-hop SSRF re-validation, default-deny of private/loopback/reserved addresses; env-overridable via `FETCHER_HTTP_*` / `FETCHER_ALLOW_PRIVATE_HOSTS`; `FETCHER_SYNTHETIC` selects the stub) tested against a threaded loopback origin — **Done (2026-07-09)**. Delivered: checksum-mismatch **correctness detector** (R-011, ADR-018; fresh vs stored `sha256` on `no_cache`), and a Garage/Postgres-gated e2e. Background audit scheduling remains outside this slice. **Content-addressed (byte-identity) storage dedup dropped** — dedup is by canonical alias (name), so it adds little on top; full blob-level dedup is deferred, per-space opt-in (`Q-035`). **Multi-alias attachment dropped** — cross-URL dedup is achieved by canonical normalization to a **single** alias (ADR-014 amendment 2026-07-09); multi-alias binding deferred to the access-control use case (`Q-034`).
 - B-012 - **Done (2026-09-25):** `worker-sim` Click CLI with JSON tasks, worker-scoped capabilities, SHA-256 verified proxy reads, deterministic result copies and manifest-last publication. Structured events and JSON counters/timing share a correlation id with asset-store. Failure tests cover partial outputs, missing/expired/denied reads, quotas, conflicting attempts, checksum/transport errors and manifest failure. See [`services/worker-sim.md`](services/worker-sim.md), ADR-019, and `tests/test_worker_sim.py`. Full suite: 272 passed with Garage/Postgres enabled; lint, format and strict typing pass. TTL enforcement is now delivered by B-014; performance certification remains B-015.
-- B-014 - **Done (2026-09-26):** dry-run-first lifecycle CLI; pending-orphan fencing, TTL expiry, grace-period deletion, admin-deleted payload cleanup, quota/pressure sweeps using size-times-age scoring, exempt/user/results protections, metrics and audit. Asset TTL hints/defaults and bounded presigned URLs are implemented; expired/deleted reads return 410/404. Migration 0002 adds lifecycle/access metadata and repairs legacy orphan quota accounting. See [`services/lifecycle-worker.md`](services/lifecycle-worker.md), ADR-020, and `tests/test_lifecycle_worker.py`. Validation: 303 tests passed with Garage/Postgres, none skipped; lint/format and strict mypy pass. Admin TTL extension, per-partition tmp TTL overrides and bulk-expire-by-prefix remain admin-path work (FR-042); independent alias deadlines remain deferred.
+- B-014 - **Done (2026-09-26):** dry-run-first lifecycle CLI; pending-orphan fencing, TTL expiry, grace-period deletion, admin-deleted payload cleanup, quota/pressure sweeps using size-times-age scoring, exempt/user/results protections, metrics and audit. Asset TTL hints/defaults and bounded presigned URLs are implemented; expired/deleted reads return 410/404. Migration 0002 adds lifecycle/access metadata and repairs legacy orphan quota accounting. See [`services/lifecycle-worker.md`](services/lifecycle-worker.md), ADR-020, and `tests/test_lifecycle_worker.py`. Validation: 303 tests passed with Garage/Postgres, none skipped; lint/format and strict mypy pass. Admin TTL extension and bulk-expire-by-prefix are delivered by B-013; per-partition tmp TTL overrides remain a separate policy follow-up (Q-036), and independent alias deadlines remain deferred.
 
 **Exit criteria:**
 
@@ -115,7 +117,10 @@ prototype:
 
 **Work items:**
 
-- B-013 - `admin-ui` covering SCN-004 (list, inspect, expire/delete, audit view).
+- B-013 - **Implemented (2026-09-26), browser QA pending:** console at `/admin`,
+  authenticated cursor listings/inspection/audit, revision-checked lifecycle and
+  TTL restoration, aliases, annotations, quotas and bounded bulk expiry. Both
+  registry adapters are covered. See [admin contract](services/admin-ui.md), ADR-021.
 - B-018 - Security review pass: STRIDE on `storage-guard`; secrets handling audit; HTTPS posture; capability TTL / scoping fuzzing.
 - Lifecycle hardening: rate limits on capability issuance per service identity; idempotency-key replay protection across services.
 - Backup hook for Postgres + a second S3 target (B-017) - design and basic implementation.
@@ -168,8 +173,8 @@ prototype:
 
 ## Immediate next actions (2026-09-26)
 
-1. **B-013 admin path:** list/filter/inspect assets, lifecycle controls and audit view;
-   finish admin TTL extension and bulk-expire-by-prefix (FR-040..042).
+1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
+   automated HTTP contracts and static JavaScript syntax checks pass.
 2. **B-018 security review:** review control-plane authorization, deployment secrets,
    HTTPS posture and scoped capability misuse before wider exposure.
 3. Operational deployment, alert wiring and B-015 performance certification remain;

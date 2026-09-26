@@ -46,19 +46,28 @@ class LifecycleEndpointTest(unittest.TestCase):
         asset_id = self._available("img.png")
 
         response = self.client.post(
-            f"/assets/{asset_id}/expire", json={"caller_service_id": "admin"}
+            f"/assets/{asset_id}/expire",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            json={"caller_service_id": "admin"},
         )
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("expired", response.json()["state"])
-        actions = [event["action"] for event in self.client.get("/audit").json()]
+        actions = [
+            event["action"]
+            for event in self.client.get(
+                "/audit", headers={"Authorization": "Service admin:dev-secret:admin"}
+            ).json()
+        ]
         self.assertIn("asset.expire", actions)
 
     def test_expire_from_pending_is_conflict(self) -> None:
         asset_id = self._reserve("img.png")
 
         response = self.client.post(
-            f"/assets/{asset_id}/expire", json={"caller_service_id": "admin"}
+            f"/assets/{asset_id}/expire",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            json={"caller_service_id": "admin"},
         )
 
         self.assertEqual(409, response.status_code)
@@ -68,7 +77,9 @@ class LifecycleEndpointTest(unittest.TestCase):
         asset_id = self._available("img.png")
 
         response = self.client.post(
-            f"/assets/{asset_id}/delete", json={"caller_service_id": "admin"}
+            f"/assets/{asset_id}/delete",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            json={"caller_service_id": "admin"},
         )
 
         self.assertEqual(200, response.status_code)
@@ -79,6 +90,7 @@ class LifecycleEndpointTest(unittest.TestCase):
 
         response = self.client.patch(
             f"/assets/{asset_id}/annotations",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={"patch": {"source": "gallica"}, "caller_service_id": "admin"},
         )
 
@@ -90,6 +102,7 @@ class LifecycleEndpointTest(unittest.TestCase):
 
         response = self.client.post(
             "/aliases/detach",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={"space": "cache", "alias": "gallica/img.png", "caller_service_id": "admin"},
         )
 
@@ -98,7 +111,12 @@ class LifecycleEndpointTest(unittest.TestCase):
             "/resolve", params={"space": "cache", "alias": "gallica/img.png"}
         )
         self.assertEqual(404, resolved.status_code)
-        actions = [event["action"] for event in self.client.get("/audit").json()]
+        actions = [
+            event["action"]
+            for event in self.client.get(
+                "/audit", headers={"Authorization": "Service admin:dev-secret:admin"}
+            ).json()
+        ]
         self.assertIn("alias.detach", actions)
 
     def test_detach_mutable_then_rebind(self) -> None:
@@ -107,6 +125,7 @@ class LifecycleEndpointTest(unittest.TestCase):
 
         detached = self.client.post(
             "/aliases/detach-mutable",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={"space": "cache", "alias": "gallica/ver.png", "caller_service_id": "admin"},
         )
         self.assertEqual(200, detached.status_code)
@@ -114,6 +133,7 @@ class LifecycleEndpointTest(unittest.TestCase):
 
         rebound = self.client.post(
             "/aliases/rebind",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={
                 "space": "cache",
                 "alias": "gallica/ver.png",
@@ -135,6 +155,7 @@ class LifecycleEndpointTest(unittest.TestCase):
 
         response = self.client.post(
             "/aliases/detach-mutable",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={"space": "cache", "alias": "gallica/img.png", "caller_service_id": "admin"},
         )
 

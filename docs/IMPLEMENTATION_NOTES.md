@@ -2,6 +2,40 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Admin milestone (B-013, 2026-09-26)
+
+The [admin console](services/admin-ui.md) is served at `/admin` by the existing
+FastAPI process. Its authenticated API supports keyset-paginated, filtered asset
+listings (including purged metadata), partition quota usage, metadata inspection,
+bounded recent audit queries, revision-checked lifecycle/annotation/alias changes,
+TTL restoration with quota checks and bounded bulk-expiry preview/apply. Quota
+configuration emits before/after audit. PostgreSQL filters/paginates in SQL.
+
+Legacy administrative routes now also require the admin service credential and
+reject spoofed body caller identities. Credentials stay in page memory, rendering
+uses text nodes (no HTML injection), and the page has a restrictive CSP. This does
+not complete B-018: existing reserve/commit/resolve authorization, dev-default
+credentials, user→prefix trust, per-human attribution and deployment posture still
+need review. The registry adapters' existing single-instance concurrency limits
+remain; no production scale claim is made.
+
+New critical paths emit admin action counters and structured action/outcome logs.
+Mutations use registry transactions and existing asset row locks. Alias changes
+now advance Postgres asset revisions consistently; an in-memory alias metadata
+bug that doubled an already supplied partition prefix is fixed.
+
+Validation: **326 tests passed**, none skipped, with Garage/Postgres enabled;
+Ruff lint/format, strict mypy and JavaScript syntax checks pass. Wheel packaging
+was checked to include all three console static assets. Browser visual
+and interaction acceptance remains **pending**: the available browser tool
+reported no connected browsers. HTTP tests verify static delivery, auth, CSP,
+SCN-004 actions, stale revisions, quota restoration, durable history and bounded
+bulk expiry. No operator data was changed by tests.
+
+No new migration is required beyond B-014's migration 0002. Per-partition tmp
+TTL defaults are explicitly tracked under Q-036, rather than silently added to
+the quota model. Browser QA should be completed before closing B-013 acceptance.
+
 ## Lifecycle milestone (B-014, 2026-09-26)
 
 The [lifecycle worker](services/lifecycle-worker.md) now previews or applies

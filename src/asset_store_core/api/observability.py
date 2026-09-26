@@ -23,7 +23,16 @@ LOGGER_NAME = "asset_store"
 
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="-")
 
-_OPTIONAL_FIELDS = ("caller_service_id", "space", "alias", "endpoint", "status", "duration_ms")
+_OPTIONAL_FIELDS = (
+    "caller_service_id",
+    "space",
+    "alias",
+    "endpoint",
+    "status",
+    "duration_ms",
+    "action",
+    "outcome",
+)
 
 
 def current_correlation_id() -> str:

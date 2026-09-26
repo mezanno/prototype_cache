@@ -124,3 +124,10 @@ Run migration `0002_lifecycle` before using the updated API or worker against an
 existing database. See the [lifecycle runbook](../../docs/services/lifecycle-worker.md#runbook)
 for fresh versus legacy-bootstrap databases, dry-run/apply commands, scheduling
 and Prometheus textfile metrics. Cleanup is never auto-applied by Compose.
+
+### Admin console (B-013)
+
+The asset-store service serves `/admin` on its existing HTTP port; no extra
+container is needed. Configure the `admin` service credential alongside the
+other identities. See the [console runbook](../../docs/services/admin-ui.md).
+Legacy administrative endpoints now require admin authentication as well.

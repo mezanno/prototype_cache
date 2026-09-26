@@ -14,8 +14,9 @@ for component responsibilities, implementation status and the next milestone.
 
 The prototype includes a FastAPI service, durable Postgres registry, Garage/S3
 storage adapter, scoped capabilities, fetcher, bulk-loader, worker simulator and
-lifecycle cleanup worker. In-memory adapters remain available for local tests.
-Admin tooling, security hardening and production readiness remain open;
+lifecycle cleanup worker, and an [admin console](docs/services/admin-ui.md) at `/admin`.
+In-memory adapters remain available for local tests. Browser acceptance, security
+hardening and production readiness remain open;
 see the [workplan](docs/WORKPLAN.md) for remaining work.
 
 Run the tests and the API locally (uv-managed env):

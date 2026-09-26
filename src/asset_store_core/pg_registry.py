@@ -31,6 +31,7 @@ from datetime import datetime, timedelta
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from asset_store_core.admin_query import AssetQuery
 from asset_store_core.errors import (
     AliasConflictError,
     AliasImmutableError,
@@ -494,6 +495,9 @@ class PostgresAssetRegistry:
                 before={"asset_id": asset_id},
                 after={},
             )
+            self._conn.execute(
+                "UPDATE assets SET updated_at=%s WHERE asset_id=%s", (utcnow(), asset_id)
+            )
             self._mark_for_gc_if_orphaned(asset_id, caller_service_id)
 
     def detach_mutable_alias(
@@ -530,6 +534,9 @@ class PostgresAssetRegistry:
                 caller_service_id=caller_service_id,
                 before={"asset_id": old_asset_id},
                 after={"asset_id": ""},
+            )
+            self._conn.execute(
+                "UPDATE assets SET updated_at=%s WHERE asset_id=%s", (now, old_asset_id)
             )
             self._mark_for_gc_if_orphaned(old_asset_id, caller_service_id)
 
@@ -571,6 +578,9 @@ class PostgresAssetRegistry:
                  WHERE space = %s AND alias = %s
                 """,
                 (new_asset_id, now, norm_space, norm_alias),
+            )
+            self._conn.execute(
+                "UPDATE assets SET updated_at=%s WHERE asset_id=%s", (now, new_asset_id)
             )
             self._write_audit(
                 action="alias.rebind",
@@ -616,6 +626,7 @@ class PostgresAssetRegistry:
         quota_bytes: int | None = None,
         quota_asset_count: int | None = None,
         eviction_sweep_enabled: bool | None = None,
+        caller_service_id: str = "system",
     ) -> PartitionQuota:
         """Configure a partition's quota limits, preserving live usage (FR-066)."""
 
@@ -653,6 +664,21 @@ class PostgresAssetRegistry:
                     current.used_asset_count,
                     sweep,
                 ),
+            )
+            self._write_audit(
+                action="admin.quota_set",
+                target=f"{norm_space}/{norm_partition}",
+                caller_service_id=caller_service_id,
+                before={
+                    "quota_bytes": str(current.quota_bytes),
+                    "quota_asset_count": str(current.quota_asset_count),
+                    "eviction_sweep_enabled": str(current.eviction_sweep_enabled),
+                },
+                after={
+                    "quota_bytes": str(quota_bytes),
+                    "quota_asset_count": str(quota_asset_count),
+                    "eviction_sweep_enabled": str(sweep),
+                },
             )
         return self.get_partition_quota(space=norm_space, partition_id=norm_partition)
 
@@ -1146,3 +1172,142 @@ class PostgresAssetRegistry:
             owner_service_id=asset_row["owner_service_id"],
             eviction_policy=EvictionPolicy(asset_row["eviction_policy"]),
         )
+
+    def recent_audit(
+        self, *, asset_id: str | None = None, limit: int = 100
+    ) -> tuple[AuditEvent, ...]:
+        """Bound query results in SQL rather than reading the full audit log (FR-041)."""
+        if not 1 <= limit <= 500:
+            raise ValidationError("audit limit must be between 1 and 500")
+        where = "TRUE"
+        values: list[object] = []
+        if asset_id is not None:
+            where = "target=%s OR before->>'asset_id'=%s OR after->>'asset_id'=%s"
+            values.extend([asset_id, asset_id, asset_id])
+        values.append(limit)
+        rows = self._conn.execute(
+            f"SELECT * FROM audit_events WHERE {where} ORDER BY id DESC LIMIT %s", values
+        ).fetchall()
+        return tuple(
+            AuditEvent(
+                action=row["action"],
+                target=row["target"],
+                caller_service_id=row["caller_service_id"],
+                outcome=row["outcome"],
+                before=MappingProxyType(dict(row["before"])),
+                after=MappingProxyType(dict(row["after"])),
+                ts=row["ts"],
+            )
+            for row in reversed(rows)
+        )
+
+    def get_asset(self, asset_id: str) -> Asset:
+        return self._load_asset(asset_id)
+
+    def query_assets(self, query: AssetQuery) -> tuple[Asset, ...]:
+        """Keyset pagination with SQL filters; no full registry snapshot (FR-040)."""
+        clauses: list[str] = []
+        values: list[object] = []
+        for column, value in (
+            ("space", query.space),
+            ("partition_id", query.partition_id),
+            ("state", query.state),
+        ):
+            if value is not None:
+                clauses.append(f"a.{column} = %s")
+                values.append(str(value))
+        for operator, date_value in ((">=", query.created_from), ("<=", query.created_to)):
+            if date_value is not None:
+                clauses.append(f"a.created_at {operator} %s")
+                values.append(date_value)
+        if query.prefix is not None:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM aliases n WHERE n.asset_id=a.asset_id "
+                "AND (n.space || '/' || n.alias = %s OR "
+                "left(n.space || '/' || n.alias, length(%s)) = %s))"
+            )
+            values.extend([query.prefix, query.prefix + "/", query.prefix + "/"])
+        after = query.after()
+        if after:
+            clauses.append("(a.created_at, a.asset_id) > (%s, %s)")
+            values.extend(after)
+        where = " AND ".join(clauses) or "TRUE"
+        values.append(query.limit + 1)
+        rows = self._conn.execute(
+            "SELECT a.*, ARRAY(SELECT alias FROM aliases WHERE asset_id=a.asset_id) "
+            f"AS alias_names FROM assets a WHERE {where} "
+            "ORDER BY a.created_at, a.asset_id LIMIT %s",
+            values,
+        ).fetchall()
+        return tuple(
+            self._asset_from_row(
+                row, frozenset(f"{row['space']}/{alias}" for alias in row["alias_names"])
+            )
+            for row in rows
+        )
+
+    def attach_alias(
+        self, *, asset_id: str, alias: str, mutable: bool, caller_service_id: str
+    ) -> AliasBinding:
+        """Attach within asset transaction; preserve alias tombstones (FR-003)."""
+        with self.asset_lock(asset_id) as asset:
+            if asset.state is AssetState.DELETED:
+                raise InvalidStateTransitionError("cannot attach to deleted asset")
+            name = _alias_under_partition(asset.partition_id, alias)
+            self._require_alias_name_available(asset.space, name)
+            now = utcnow()
+            try:
+                with self._conn.transaction():
+                    self._conn.execute(
+                        "INSERT INTO aliases (space, alias, asset_id, mutable, "
+                        "created_at, updated_at, created_by_service_id) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        (asset.space, name, asset_id, mutable, now, now, caller_service_id),
+                    )
+            except psycopg.errors.UniqueViolation as exc:
+                raise AliasConflictError(name) from exc
+            self._conn.execute("UPDATE assets SET updated_at=%s WHERE asset_id=%s", (now, asset_id))
+            self._write_audit(
+                action="alias.attach",
+                target=f"{asset.space}/{name}",
+                caller_service_id=caller_service_id,
+                after={"asset_id": asset_id, "mutable": str(mutable).lower()},
+            )
+            return self._load_binding(asset.space, name)
+
+    def set_asset_ttl(self, *, asset_id: str, ttl_seconds: int, caller_service_id: str) -> Asset:
+        """Restore expiry atomically with quota and audit (FR-042)."""
+        with self.asset_lock(asset_id) as asset:
+            if asset.state not in {AssetState.AVAILABLE, AssetState.EXPIRED}:
+                raise InvalidStateTransitionError("TTL requires available or expired asset")
+            if asset.size_bytes is None or asset.checksum is None:
+                raise InvalidStateTransitionError("cannot restore an uncommitted payload")
+            now = utcnow()
+            deadline = expiry_for(asset.space, ttl_seconds, now)
+            if asset.state is AssetState.EXPIRED:
+                self._conn.execute(
+                    "INSERT INTO bucket_quotas (space) VALUES (%s) ON CONFLICT DO NOTHING",
+                    (asset.space,),
+                )
+                self._bucket_quota(asset.space, for_update=True)
+                self._enforce_quota(
+                    space=asset.space,
+                    partition_id=asset.partition_id,
+                    new_bytes=asset.size_bytes or 0,
+                )
+                self._acquire_quota(
+                    space=asset.space, partition_id=asset.partition_id, nbytes=asset.size_bytes or 0
+                )
+            self._conn.execute(
+                "UPDATE assets SET state='available', expires_at=%s, "
+                "expired_at=NULL, updated_at=%s WHERE asset_id=%s",
+                (deadline, now, asset_id),
+            )
+            self._write_audit(
+                action="admin.ttl_set",
+                target=asset_id,
+                caller_service_id=caller_service_id,
+                before={"expires_at": str(asset.expires_at), "state": asset.state.value},
+                after={"expires_at": str(deadline), "state": "available"},
+            )
+            return self._load_asset(asset_id)

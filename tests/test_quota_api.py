@@ -49,17 +49,25 @@ class QuotaEndpointTest(unittest.TestCase):
 
         response = self.client.patch(
             f"/assets/{asset_id}/eviction-policy",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={"eviction_policy": "exempt", "caller_service_id": "admin"},
         )
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("exempt", response.json()["eviction_policy"])
-        actions = [event["action"] for event in self.client.get("/audit").json()]
+        actions = [
+            event["action"]
+            for event in self.client.get(
+                "/audit", headers={"Authorization": "Service admin:dev-secret:admin"}
+            ).json()
+        ]
         self.assertIn("asset.eviction_policy_set", actions)
 
     def test_default_partition_quota_reports_sweep_flag(self) -> None:
         response = self.client.get(
-            "/quotas/partition", params={"space": "cache", "partition_id": "gallica"}
+            "/quotas/partition",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "partition_id": "gallica"},
         )
         self.assertEqual(200, response.status_code)
         body = response.json()
@@ -69,13 +77,16 @@ class QuotaEndpointTest(unittest.TestCase):
     def test_set_and_get_partition_quota(self) -> None:
         put = self.client.put(
             "/quotas/partition",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={"space": "cache", "partition_id": "gallica", "quota_bytes": 500},
         )
         self.assertEqual(200, put.status_code)
 
         self._commit(self._reserve("a.png"), 30)
         got = self.client.get(
-            "/quotas/partition", params={"space": "cache", "partition_id": "gallica"}
+            "/quotas/partition",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "partition_id": "gallica"},
         ).json()
         self.assertEqual(500, got["quota_bytes"])
         self.assertEqual(30, got["used_bytes"])
@@ -83,6 +94,7 @@ class QuotaEndpointTest(unittest.TestCase):
     def test_commit_over_partition_quota_returns_413(self) -> None:
         self.client.put(
             "/quotas/partition",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={"space": "cache", "partition_id": "gallica", "quota_bytes": 50},
         )
         response = self._commit(self._reserve("a.png"), 60)
@@ -92,16 +104,28 @@ class QuotaEndpointTest(unittest.TestCase):
         self.assertEqual("partition", response.json()["scope"])
 
     def test_commit_over_bucket_quota_returns_413(self) -> None:
-        self.client.put("/quotas/bucket", json={"space": "cache", "quota_bytes": 100})
+        self.client.put(
+            "/quotas/bucket",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            json={"space": "cache", "quota_bytes": 100},
+        )
         response = self._commit(self._reserve("a.png"), 100)
 
         self.assertEqual(413, response.status_code)
         self.assertEqual("bucket", response.json()["scope"])
 
     def test_bucket_quota_roundtrip(self) -> None:
-        self.client.put("/quotas/bucket", json={"space": "cache", "quota_bytes": 1000})
+        self.client.put(
+            "/quotas/bucket",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            json={"space": "cache", "quota_bytes": 1000},
+        )
         self._commit(self._reserve("a.png"), 40)
-        got = self.client.get("/quotas/bucket", params={"space": "cache"}).json()
+        got = self.client.get(
+            "/quotas/bucket",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache"},
+        ).json()
         self.assertEqual(1000, got["quota_bytes"])
         self.assertEqual(40, got["used_bytes"])
 

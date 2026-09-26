@@ -213,3 +213,14 @@ as a proxy for direct S3 access. Physical-capacity estimates include unpurged
 expired/deleted committed bytes; available-asset quota counters do not. See the
 [lifecycle contract](../services/lifecycle-worker.md) for deletion fencing,
 configuration, retry behavior, migration and operational limits.
+
+### Admin prototype interpretation (B-013, ADR-021)
+
+The console lives at `/admin`, with its JSON API under `/admin/api`; the FR-042
+bulk route is therefore `/admin/api/aliases/expire`. Asset mutations check the
+inspected `updated_at` revision; quota configuration is audited replacement.
+Bulk expiry is preview/apply, bounded to 500 candidates with per-asset transactions
+and stale-candidate skip reporting. Set-TTL counts from now, applies bucket bounds,
+and restores expired assets only while their payload exists and quota permits.
+Delete immediately denies access; the B-014 worker removes the payload later.
+Per-partition tmp default-TTL overrides require a separate policy contract (Q-036).

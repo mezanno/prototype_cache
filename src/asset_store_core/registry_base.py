@@ -18,6 +18,7 @@ from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
+from asset_store_core.admin_query import AssetQuery
 from asset_store_core.models import (
     AliasBinding,
     Asset,
@@ -110,6 +111,7 @@ class AssetRegistry(Protocol):
         quota_bytes: int | None = ...,
         quota_asset_count: int | None = ...,
         eviction_sweep_enabled: bool | None = ...,
+        caller_service_id: str = ...,
     ) -> PartitionQuota: ...
 
     def get_partition_quota(self, *, space: str, partition_id: str) -> PartitionQuota: ...
@@ -144,3 +146,21 @@ class AssetRegistry(Protocol):
         payload_deleted: bool = False,
     ) -> Asset:
         """Update/audit a locked asset and release available quota once."""
+
+    def query_assets(self, query: AssetQuery) -> tuple[Asset, ...]:
+        """Return at most limit+1 rows, including purged metadata (FR-040)."""
+
+    def get_asset(self, asset_id: str) -> Asset: ...
+
+    def attach_alias(
+        self, *, asset_id: str, alias: str, mutable: bool, caller_service_id: str
+    ) -> AliasBinding: ...
+
+    def set_asset_ttl(
+        self, *, asset_id: str, ttl_seconds: int, caller_service_id: str
+    ) -> Asset: ...
+
+    def recent_audit(
+        self, *, asset_id: str | None = None, limit: int = 100
+    ) -> tuple[AuditEvent, ...]:
+        """Bounded recent events, optionally including an asset's alias history (FR-041)."""

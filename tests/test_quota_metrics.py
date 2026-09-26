@@ -16,6 +16,7 @@ class BucketFillMetricTest(unittest.TestCase):
     def _set_bucket_quota(self, *, quota_bytes: int, warn_threshold: float) -> None:
         response = self.client.put(
             "/quotas/bucket",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={
                 "space": "cache",
                 "quota_bytes": quota_bytes,

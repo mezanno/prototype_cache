@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>asset-store · Admin</title><link rel="stylesheet" href="/admin/admin.css"><script src="/admin/admin.js" defer></script></head>
+<body><header><div><span class="eyebrow">ASSET-STORE / OPERATIONS</span><h1>Asset console</h1><p>Inspect content, manage retention, follow the audit trail.</p></div><span class="badge">Prototype</span></header>
+<main>
+<section aria-label="Authentication" class="connection"><label>Admin secret <input id="secret" type="password" autocomplete="off" placeholder="Service credential"></label><button id="connect">Connect</button><button id="disconnect" class="secondary">Disconnect</button><small>Credential stays in this page only.</small></section>
+<p id="status" role="status" aria-live="polite">Connect to browse assets.</p>
+<div class="workspace"><section class="catalog"><h2>Repository</h2>
+<form id="filters"><div class="filter-grid">
+<label>Space<select name="space"><option value="">All spaces</option><option>cache</option><option>tmp</option><option>users</option><option>results</option></select></label>
+<label>Partition<input name="partition_id" placeholder="42"></label>
+<label>State<select name="state"><option value="">All states</option><option>pending</option><option>available</option><option>expired</option><option>deleted</option></select></label>
+<label>Alias prefix<input name="prefix" placeholder="results/42/task-7"></label>
+<label>Created from<input name="created_from" type="datetime-local"></label>
+<label>Created to<input name="created_to" type="datetime-local"></label></div>
+<button>Apply filters</button></form>
+<div id="quota"></div><div class="table-wrap"><table><thead><tr><th>Alias / asset</th><th>State</th><th>Bytes</th></tr></thead><tbody id="assets"><tr><td colspan="3">No assets loaded.</td></tr></tbody></table></div>
+<button id="next" class="secondary" disabled>Next page →</button>
+<details><summary>Partition quota</summary><p>Uses the space and partition filters above. Empty limits mean unlimited.</p><label>Byte limit<input id="quota-bytes" type="number" min="0"></label><label>Asset count limit<input id="quota-count" type="number" min="0"></label><label><input id="quota-sweep" type="checkbox"> Enable quota eviction (cache/tmp only)</label><button id="save-quota">Save quota</button></details>
+<details><summary>Bulk expiry</summary><p>Uses the alias prefix filter. Preview first; maximum 500 assets.</p><button id="preview" class="secondary">Preview matching assets</button><pre id="preview-result"></pre><button id="apply-bulk" class="danger" disabled>Expire previewed assets</button></details>
+<button id="audit" class="secondary">View recent global audit</button>
+</section>
+<section class="inspector"><h2>Asset inspection</h2><p id="selection">Choose an asset to inspect its metadata and history.</p><pre id="metadata"></pre>
+<div id="actions" hidden><h3>Retention</h3><p>Delete denies reads immediately. The lifecycle worker removes bytes later.</p><div class="row"><label>TTL from now (seconds)<input id="ttl" type="number" min="1" value="86400"></label><button id="set-ttl">Set TTL / restore expired</button></div><div class="row"><button id="expire" class="secondary">Expire</button><button id="delete" class="danger">Delete</button></div>
+<h3>Aliases</h3><label>Relative alias (including partition)<input id="alias" placeholder="42/uploads/photo.jpg"></label><label><input id="mutable" type="checkbox"> New alias may be rebound</label><div class="row"><button id="attach">Attach alias</button><button id="detach" class="secondary">Detach alias</button></div>
+<h3>Annotations</h3><label>JSON string-to-string map<textarea id="annotations" rows="5">{}</textarea></label><button id="save-annotations">Save annotations</button>
+<h3>Eviction policy</h3><label>Policy<select id="eviction"><option value="inherit">Inherit space policy</option><option value="exempt">Exempt from capacity eviction</option></select></label><button id="save-eviction">Save policy</button></div>
+<h3>Audit trail</h3><pre id="events">No events loaded.</pre></section></div></main>
+<footer>Aliases identify content. Payload bytes remain immutable.</footer></body></html>

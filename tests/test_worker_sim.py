@@ -135,12 +135,16 @@ def test_task_roundtrip_and_observability(client: TestClient, input_count: int) 
     assert output["source_alias"] == "cache/demo/input.bin"
     assert output["size_bytes"] == 5
     committed = client.get(
-        "/audit", params={"action": "asset.commit", "caller_service_id": "worker"}
+        "/audit",
+        headers={"Authorization": "Service admin:dev-secret:admin"},
+        params={"action": "asset.commit", "caller_service_id": "worker"},
     ).json()
     assert len(committed) == input_count + 1
     assert committed[0]["target"] == output["asset_id"]
     grants = client.get(
-        "/audit", params={"action": "capability.issue", "caller_service_id": "worker"}
+        "/audit",
+        headers={"Authorization": "Service admin:dev-secret:admin"},
+        params={"action": "capability.issue", "caller_service_id": "worker"},
     ).json()
     assert grants[0]["target"] == PREFIX
     assert grants[1]["target"] == "cache/demo/input.bin"
@@ -196,7 +200,9 @@ def test_quota_failure_no_manifest(client: TestClient) -> None:
     checksum = seed(client)
     assert (
         client.put(
-            "/quotas/partition", json={"space": "results", "partition_id": "42", "quota_bytes": 0}
+            "/quotas/partition",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            json={"space": "results", "partition_id": "42", "quota_bytes": 0},
         ).status_code
         == 200
     )
@@ -287,7 +293,9 @@ def test_expired_input(client: TestClient) -> None:
     checksum = seed(client)
     asset = client.get("/resolve", params={"space": "cache", "alias": "demo/input.bin"}).json()
     response = client.post(
-        f"/assets/{asset['asset_id']}/expire", json={"caller_service_id": "admin"}
+        f"/assets/{asset['asset_id']}/expire",
+        headers={"Authorization": "Service admin:dev-secret:admin"},
+        json={"caller_service_id": "admin"},
     )
     assert response.status_code == 200
     report = worker_sim.run_task(client, task(checksum), service_secret=SECRET)

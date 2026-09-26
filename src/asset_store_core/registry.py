@@ -31,6 +31,7 @@ from dataclasses import replace as dc_replace
 from datetime import datetime, timedelta
 from types import MappingProxyType
 
+from asset_store_core.admin_query import AssetQuery
 from asset_store_core.errors import (
     AliasConflictError,
     AliasImmutableError,
@@ -56,7 +57,6 @@ from asset_store_core.paths import (
     normalize_relative_alias,
     normalize_space,
     qualified_alias,
-    qualified_alias_for_partition,
 )
 from asset_store_core.retention import (
     capacity_limits,
@@ -163,7 +163,7 @@ class InMemoryAssetRegistry:
         asset_id = new_asset_id()
         now = utcnow()
         qualified_aliases = frozenset(
-            qualified_alias_for_partition(norm_space, norm_partition, alias_name)
+            qualified_alias(norm_space, _alias_under_partition(norm_partition, alias_name))
             for alias_name in alias_specs
         )
         asset = Asset(
@@ -562,6 +562,7 @@ class InMemoryAssetRegistry:
         quota_bytes: int | None = None,
         quota_asset_count: int | None = None,
         eviction_sweep_enabled: bool | None = None,
+        caller_service_id: str = "system",
     ) -> PartitionQuota:
         """Configure a partition's quota limits, preserving live usage counters (FR-066)."""
 
@@ -582,6 +583,22 @@ class InMemoryAssetRegistry:
             eviction_sweep_enabled=sweep,
         )
         self._partition_quotas[(updated.space, updated.partition_id)] = updated
+        self._audit(
+            action="admin.quota_set",
+            target=f"{updated.space}/{updated.partition_id}",
+            caller_service_id=caller_service_id,
+            outcome="success",
+            before={
+                "quota_bytes": str(current.quota_bytes),
+                "quota_asset_count": str(current.quota_asset_count),
+                "eviction_sweep_enabled": str(current.eviction_sweep_enabled),
+            },
+            after={
+                "quota_bytes": str(quota_bytes),
+                "quota_asset_count": str(quota_asset_count),
+                "eviction_sweep_enabled": str(sweep),
+            },
+        )
         return updated
 
     def set_bucket_quota(
@@ -841,6 +858,63 @@ class InMemoryAssetRegistry:
                 after=MappingProxyType(dict(after or {})),
             )
         )
+
+    def recent_audit(
+        self, *, asset_id: str | None = None, limit: int = 100
+    ) -> tuple[AuditEvent, ...]:
+        if not 1 <= limit <= 500:
+            raise ValidationError("audit limit must be between 1 and 500")
+        events = [
+            e
+            for e in self._audit_events
+            if asset_id is None
+            or e.target == asset_id
+            or e.before.get("asset_id") == asset_id
+            or e.after.get("asset_id") == asset_id
+        ]
+        return tuple(events[-limit:])
+
+    def get_asset(self, asset_id: str) -> Asset:
+        return self._get_asset(asset_id)
+
+    def query_assets(self, query: AssetQuery) -> tuple[Asset, ...]:
+        after = query.after()
+        assets = sorted(self._assets.values(), key=lambda a: (a.created_at, a.asset_id))
+        return tuple(
+            a
+            for a in assets
+            if query.matches(a) and (after is None or (a.created_at, a.asset_id) > after)
+        )[: query.limit + 1]
+
+    def set_asset_ttl(self, *, asset_id: str, ttl_seconds: int, caller_service_id: str) -> Asset:
+        """Set deadline and restore expired assets with quota checks (FR-042)."""
+        asset = self._get_asset(asset_id)
+        if asset.state not in {AssetState.AVAILABLE, AssetState.EXPIRED}:
+            raise InvalidStateTransitionError("TTL requires available or expired asset")
+        if asset.size_bytes is None or asset.checksum is None:
+            raise InvalidStateTransitionError("cannot restore an uncommitted payload")
+        now = utcnow()
+        deadline = expiry_for(asset.space, ttl_seconds, now)
+        if asset.state is AssetState.EXPIRED:
+            self._enforce_quota(
+                space=asset.space, partition_id=asset.partition_id, new_bytes=asset.size_bytes or 0
+            )
+            self._acquire_quota(
+                space=asset.space, partition_id=asset.partition_id, nbytes=asset.size_bytes or 0
+            )
+        updated = dc_replace(
+            asset, state=AssetState.AVAILABLE, expires_at=deadline, expired_at=None, updated_at=now
+        )
+        self._assets[asset_id] = updated
+        self._audit(
+            action="admin.ttl_set",
+            target=asset_id,
+            caller_service_id=caller_service_id,
+            outcome="success",
+            before={"expires_at": str(asset.expires_at), "state": asset.state.value},
+            after={"expires_at": str(deadline), "state": "available"},
+        )
+        return updated
 
 
 def _normalize_alias_specs(aliases: Iterable[str] | Mapping[str, bool]) -> dict[str, bool]:
