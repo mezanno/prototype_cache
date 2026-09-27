@@ -86,18 +86,19 @@ Each row is a single decision-blocking question. Until "Status" is `Resolved`, t
 | R-012 | **Confused-deputy / cross-tenant leak** (see Q-033). Because end-user authentication is delegated upstream, asset-store cannot verify that a caller truly acts for the end user whose prefix it names. A buggy or compromised edge service (e.g. `upload-api`) can request a capability for another user's prefix (`users/99/…`) that is still inside its own bucket allowlist, and asset-store **will grant it** — the cross-user guarantee is only as strong as the upstream service's user→prefix authz. | M | H | Concentrate the user→prefix mapping in a single, audited edge service; short-lived, single-key-scoped capabilities bound the blast radius; complete capability-issuance audit (FR-050, ADR-016) enables detection of anomalous prefix requests; forward step — propagate a verifiable end-user identity claim (OIDC, Q-014) so the guard can bind capability scope to the authenticated user rather than trusting the service, and reject a `partition_id` segment that does not match the signed user claim. Validate this boundary explicitly when the edge services are implemented. | TBD |
 | R-013 | **No server-side presigned `PUT`; proxy upload only** (`ADR-017`). Callers such as `fetcher-service` and `bulk-loader` push payload bytes through the guarded proxy (`PUT /objects/{alias}`), which is safe and fully audited but puts every uploaded byte on the service hot path. Under high ingest throughput this makes asset-store a bandwidth/CPU bottleneck. | M | M | Proxy upload is the deliberate prototype default (audit + simplicity, ADR-003); when a hot path needs throughput, implement **presigned `PUT` (direct caller↔S3)** with an explicit hands-off/**commit** signal so the guard closes the reservation and no second writer can overwrite the object before commit (prevents double-write); keep the reserve→commit control flow, only the byte transfer moves off the service. Not gRPC — the lever is removing the proxy hop, not changing the control RPC. | Phase 2 |
 
-Security review additions (2026-09-26; **open, not risk acceptance**). Detail and
-closure tests: [B-018 report](../security/B018_REVIEW.md).
+Security review status (2026-09-27, checkpoint `acc445e`; **no risk acceptance**).
+Baseline findings: [B-018 report](../security/B018_REVIEW.md). Completed controls
+and remaining acceptance tests: [security checkpoint](../security/B018_CLOSEOUT.md).
 
 | ID | Risk | Priority | Status / required action |
 |---|---|---|---|
-| R-014 | Unauthenticated control-plane writes/resolve, forged metadata and actors (SEC-01) | P0 | Open: authorize every route and verify commits against stored bytes |
+| R-014 | Unauthenticated control-plane writes/resolve, forged metadata and actors (SEC-01) | P0 | Closed for the reviewed bypass: service authentication, bucket/owner checks and backend-verified commits implemented and tested (`acc445e`). Upstream tenant policy remains R-012 |
 | R-015 | Shared Postgres transaction can roll back another acknowledged request (SEC-02) | P0 | Open: isolate request connections/transactions |
-| R-016 | Predictable dev credentials and unenforced TLS/secrets posture (SEC-03) | P0 before exposure | Open: fail-closed deployment mode; explicit local dev opt-in |
-| R-017 | Unauthenticated fetcher deputy and incomplete SSRF boundary (SEC-04/05) | P0 before exposure | Open: caller/destination authorization and connected-address/egress policy |
-| R-018 | Failed-upload bytes and unbounded body/token resources (SEC-06) | P1 | Open: admission limits, cleanup and token retirement |
-| R-019 | Live bearer in audit; old signed URLs survive admin expiry (SEC-07/08) | P1 | Open: separate audit identifier and specify revocation semantics |
-| R-020 | Vulnerable dependency lock, unscanned/non-locked images and process-local capability state (SEC-09/10) | P1 | Open: dependency update/scanning and capability concurrency/replica contract |
+| R-016 | Predictable dev credentials and unenforced TLS/secrets posture (SEC-03) | P0 before exposure | Partial: fail-closed credentials and explicit dev opt-in implemented; TLS, secret rotation and deployment posture remain open |
+| R-017 | Unauthenticated fetcher deputy and incomplete SSRF boundary (SEC-04/05) | P0 before exposure | Partial: dispatcher authentication, non-global IP rejection and environment-proxy disabling implemented; tenant destination policy and connected-address/egress enforcement remain open |
+| R-018 | Failed-upload bytes and unbounded body/token resources (SEC-06) | P1 | Partial: per-request proxy body cap implemented; aggregate admission limits, failed-write cleanup and token retirement remain open |
+| R-019 | Live bearer in audit; old signed URLs survive admin expiry (SEC-07/08) | P1 | Partial: new audit fingerprints and bearer-free errors implemented; historical audit cleanup and strict revocation contract remain open; signed-URL behavior documented |
+| R-020 | Vulnerable dependency lock, unscanned/non-locked images and process-local capability state (SEC-09/10) | P1 | Partial: patched runtime lock, locked image installation and CI runtime scan implemented; image/OS scanning and capability concurrency/replica contract remain open |
 
 ## Implementation Backlog (Prototype)
 
@@ -123,7 +124,7 @@ Coarse-grained backlog. Refined into engineering tickets at Phase 1 kick-off. Or
 | B-015 | Load tests for S-2 / S-3 (locust or k6) | Test | P1 | B-011, B-012 | Numbers attached to NFR-002/003/004 acceptance |
 | B-016 | Chaos suite: kill-one of each service and one object-store node | Test | P2 | B-015 | Service replicas survive; failure modes match `03_ARCHITECTURE.md` |
 | B-017 | Backup hook to a second S3 target | Feature | P2 | B-009 | Documented and tested; FR-061 acceptance |
-| B-018 | **Review performed (2026-09-26); remediation/sign-off open.** [STRIDE, probes and dependency findings](../security/B018_REVIEW.md); go-live checklist sweep | Doc | P1 | B-010, B-013 | Findings logged; checklist boxes ticked or risks accepted |
+| B-018 | **Review and bounded fixes complete (2026-09-27, ADR-022, `acc445e`); complex remediation/sign-off open.** [Checkpoint and follow-ups](../security/B018_CLOSEOUT.md); next: SEC-02 / R-015 transaction isolation | Doc | P1 | B-010, B-013 | Findings logged; checklist boxes ticked or risks accepted |
 | B-019 | Pilot plan + rollback rehearsal | Doc | P2 | B-015, B-018 | Plan reviewed; rehearsal report attached |
 | B-021 | Decide whether `iiif-image-mirror` is needed and scope it: end-user auth model, IIIF Image API compliance level, derivative generation decision ([`Q-026`](05_BACKLOG_AND_OPEN_QUESTIONS.md)) | Doc | P3 | B-010 | Decision recorded; if yes, `iiif-image-mirror` service identity provisioned in storage-guard |
 | B-022 | Quota reconciliation job: periodically scan `available` assets per `(space, partition_id)`, recompute `PartitionQuota.used_bytes` and `BucketQuota.used_bytes` from live asset rows, emit `quota_drift_detected{space,partition_id}` when drift exceeds configurable tolerance. Mitigates crash-between-commit-and-SQL-update divergence. | Feature | P2 | B-009 | Reconciliation job runs against a live registry without errors; `quota_drift_detected` fires correctly when drift is artificially injected above the tolerance threshold |

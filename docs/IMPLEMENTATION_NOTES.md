@@ -7,7 +7,7 @@ How the **current code** relates to the spec, and deliberate shortcuts for the p
 [Bounded fixes and remaining work](security/B018_CLOSEOUT.md): authenticated raw
 registry routes and verified commits, explicit development credentials, fetcher
 ingress authentication, non-public IP rejection, bounded upload bodies, bearer
-redaction and patched locked dependencies are implemented (ADR-022). Shared
+redaction and patched locked dependencies are implemented (ADR-022, commit `acc445e`). Shared
 Postgres transactions, DNS pinning and resource/capability concurrency remain
 open. This is a stable prototype checkpoint, not release approval.
 
@@ -170,7 +170,7 @@ The phased order below was followed; the guard is no longer deferred.
 2. **Thin guard facade** (`guard.py`) composing `service_policy` + capability checks + registry/object-store. **Done.**
 3. **HTTP server** exposing the registry ops, capability mint, and a capability-guarded data plane. **Done.**
 
-FR-010–FR-015 remain the production contract; auth lives in one place (`StorageGuard`) rather than spread across callers. Capabilities are still **unsigned** in this slice — minted ids act as opaque bearer tokens held in an in-process store (ADR-003 proxy mode). A **presigned mode** is also available for reads: `GET /objects/{alias}?mode=presign` returns a short-lived S3 presigned GET URL instead of proxying bytes (see below). Signed capability tokens remain deferred.
+FR-010–FR-015 remain the production contract; capability checks live in `StorageGuard`, while raw registry routes enforce service identity, bucket permissions and commit ownership (ADR-022). Capabilities are still **unsigned** in this slice — minted ids act as opaque bearer tokens held in an in-process store (ADR-003 proxy mode). A **presigned mode** is also available for reads: `GET /objects/{alias}?mode=presign` returns a short-lived S3 presigned GET URL instead of proxying bytes (see below). Signed capability tokens remain deferred.
 
 ### Presigned reads (B-010, ADR-003 presigned mode)
 

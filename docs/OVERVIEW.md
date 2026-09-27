@@ -1,6 +1,6 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-09-27 · B-013 implemented · B-018 bounded fixes complete · Next: SEC-02 isolation**
+> **Checkpoint: 2026-09-27 · B-013 implemented · B-018 fixes committed (`acc445e`) · Next: SEC-02 / R-015 isolation**
 >
 > Working prototype. **Security review found exposure blockers; remediation remains open.**
 

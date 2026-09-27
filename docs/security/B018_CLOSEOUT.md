@@ -1,6 +1,6 @@
 # B-018 security checkpoint — 2026-09-27
 
-The review and bounded remediation are complete for this checkpoint. **Security
+The review and bounded remediation are committed in `acc445e`. **Security
 release approval remains open.** The original [review](B018_REVIEW.md) and
 [evidence](B018_EVIDENCE.json) describe baseline `9640116`; they are retained as
 historical evidence. No outstanding risk has been accepted on the owner's behalf.
@@ -51,14 +51,14 @@ needed. New fingerprints change the capability audit JSON field from
 
 | Priority / finding | Required follow-up and acceptance evidence |
 |---|---|
-| P1 · SEC-02 / R-014 | Isolate Postgres connections/transactions per request or unit of work. Concurrent HTTP regression must prove one rollback cannot erase another acknowledged mutation. This is the next implementation target. |
-| P1 · SEC-05 / R-017 | Bind validated DNS results to actual connections and every redirect, or enforce an equivalent egress boundary. Test DNS rebinding, mixed address answers and metadata/private-network targets. |
+| P0 · SEC-02 / R-015 | Isolate Postgres connections/transactions per request or unit of work. Concurrent HTTP regression must prove one rollback cannot erase another acknowledged mutation. This is the next implementation target. |
+| P0 before exposure · SEC-05 / R-017 | Bind validated DNS results to actual connections and every redirect, or enforce an equivalent egress boundary. Test DNS rebinding, mixed address answers and metadata/private-network targets. |
 | P1 · SEC-06 / R-018 | Fence and reclaim failed uploads, reserve capacity before writes, bound aggregate concurrency and issuance. Test quota rejection, interrupted writes and cleanup races without deleting successful payloads. |
-| P1 · SEC-03/04 / R-012, R-015, R-016 | Define trusted user-to-prefix authorization, deployment TLS, secret rotation and ingress limits; demonstrate unauthorized tenant destinations are rejected at the responsible upstream boundary. |
+| P0 before exposure · SEC-03/04 / R-012, R-016, R-017 | Define trusted user-to-prefix authorization, deployment TLS, secret rotation and ingress limits; demonstrate unauthorized tenant destinations are rejected at the responsible upstream boundary. |
 | P2 · SEC-10 / R-020 | Define restart/replica semantics, atomic single-use consumption and token retirement. Concurrent replay must permit at most one successful use; expired state must remain bounded. |
-| P2 · SEC-07 | Decide retention and cleanup of historical audit rows/exports containing bearer values, preserving audit integrity. Verify new exports contain no usable credentials. |
+| P2 · SEC-07 / R-019 | Decide retention and cleanup of historical audit rows/exports containing bearer values, preserving audit integrity. Verify new exports contain no usable credentials. |
 | P2 · SEC-08 / R-019 | Choose signed-URL lifetime versus strict proxy revocation contract, then test expiry/deletion with previously issued URLs. Current behavior is documented, not changed. |
-| P2 · SEC-09 | Add image/OS scanning and broader interpreter/platform dependency coverage; retain dated reports and remediate findings. Runtime Python scanning is not image certification. |
+| P2 · SEC-09 / R-020 | Add image/OS scanning and broader interpreter/platform dependency coverage; retain dated reports and remediate findings. Runtime Python scanning is not image certification. |
 
 Browser acceptance for B-013, load/SLO certification, Swarm deployment and
 operational readiness remain separate open tasks.
