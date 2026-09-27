@@ -1,6 +1,6 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-09-26 · B-013 committed (`8d88b94`) · B-018 reviewed · Next: SEC-01 remediation**
+> **Checkpoint: 2026-09-27 · B-013 implemented · B-018 bounded fixes complete · Next: SEC-02 isolation**
 >
 > Working prototype. **Security review found exposure blockers; remediation remains open.**
 
@@ -80,7 +80,7 @@ Future IIIF server / image-mirror consumers sit outside this module and are not 
 | **Admin path** · B-013 | 🟢 Implemented; visual QA pending | Console, authenticated admin API, cursor listing, inspect/audit, TTL restoration, aliases, quotas, bounded bulk expiry → browser acceptance check |
 | **Observability + CI** · B-003/004 | 🟡 Partial | Metrics, JSON logs, correlation IDs, sample lifecycle alerts; lint/types/tests CI → tracing, dashboards, alert wiring, image build/scan |
 | **Deployment + recovery** · B-016/017/019 | 🟡 Partial | Local Compose and Dockerfile → Swarm, chaos tests, backup/restore drill, pilot/rollback |
-| **Security + scale** · B-018/015 | 🟡 Reviewed; remediation open | [B-018 findings](security/B018_REVIEW.md): anonymous registry writes, shared transactions, fetcher/deployment/resource risks → fixes and measured load/SLO certification |
+| **Security + scale** · B-018/015 | 🟡 Reviewed; remediation open | [B-018 checkpoint](security/B018_CLOSEOUT.md): authenticated control plane and bounded hardening complete; shared transactions, DNS/egress and resource cleanup remain |
 
 **Test substitutes:** `InMemoryAssetRegistry` and `LocalObjectStore` replace Postgres
 and S3 for infrastructure-free tests; `LocalObjectStore` is an in-memory dictionary.
@@ -106,7 +106,7 @@ flowchart LR
     core["DELIVERED<br/>Ingest and retrieve<br/>Fetcher + worker-sim"]
     lifecycle["DELIVERED · B-014<br/>Lifecycle cleanup"]
     admin["LATEST · B-013<br/>Admin console + API"]
-    security["NEXT · B-018 remediation<br/>SEC-01 authorization<br/>SEC-02 transaction isolation"]
+    security["NEXT · B-018 remediation<br/>SEC-02 transaction isolation<br/>DNS/egress + resource cleanup"]
     readiness["REMAINING<br/>Load + operations<br/>Recovery + pilot"]
     core --> lifecycle --> admin --> security --> readiness
     style core fill:#dcfce7,stroke:#15803d,color:#14532d

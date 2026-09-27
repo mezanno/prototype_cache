@@ -39,7 +39,11 @@ class AssetStoreClient:
     def resolve(self, *, space: str, alias: str) -> dict[str, Any] | None:
         """Resolve a qualified alias; return the asset JSON, or ``None`` if absent."""
 
-        response = self._http.get("/resolve", params={"space": space, "alias": alias})
+        response = self._http.get(
+            "/resolve",
+            params={"space": space, "alias": alias},
+            headers={"Authorization": f"Service {self._service_id}:{self._service_secret}"},
+        )
         if response.status_code == 200:
             result: dict[str, Any] = response.json()
             return result

@@ -45,7 +45,7 @@ No persistent browser sessions, SSO, asynchronous bulk job engine, per-partition
 tmp default-TTL overrides, batch eviction-policy reset or per-human attribution.
 The tmp override needs a separate policy configuration contract; it is not an
 implicit change to partition quota settings. General deployment/security review,
-including legacy reserve/commit authorization, remains B-018.
+remains B-018; see the [security checkpoint](../security/B018_CLOSEOUT.md).
 
 ## Run and verify
 
@@ -53,10 +53,10 @@ Use the existing [Compose setup](../../deploy/compose/README.md), or run an
 in-memory development instance:
 
 ```bash
-uv run uvicorn asset_store_core.api:create_app_from_env --factory --host 127.0.0.1 --port 8000
+ASSET_STORE_DEV_MODE=1 uv run uvicorn asset_store_core.api:create_app_from_env --factory --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/admin`. When `ASSET_STORE_SERVICE_CREDENTIALS` is unset,
+Open `http://127.0.0.1:8000/admin`. When `ASSET_STORE_DEV_MODE=1` and `ASSET_STORE_SERVICE_CREDENTIALS` is unset,
 the development admin secret is `dev-secret:admin`. Configured environments must
 include an `admin` entry alongside their existing service credentials.
 The static page is public; every data read and mutation requires authentication.

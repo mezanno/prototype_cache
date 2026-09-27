@@ -323,3 +323,41 @@ def test_uncommitted_orphan_cannot_be_restored(registry: AssetRegistry, client: 
     assert orphan.state is AssetState.EXPIRED
     assert action(client, orphan, "ttl", ttl_seconds=3600).status_code == 409
     assert registry.get_partition_quota(space="cache", partition_id="demo").used_asset_count == 0
+
+
+def test_raw_commit_verifies_payload_and_owner(registry: AssetRegistry, client: TestClient) -> None:
+    from http_fixtures import stage_payload
+
+    owner = {"Authorization": "Service fetcher:dev-secret:fetcher"}
+    reservation = client.post(
+        "/assets",
+        headers=owner,
+        json={
+            "space": "cache",
+            "partition_id": "review",
+            "aliases": [{"name": "raw"}],
+            "owner_service_id": "fetcher",
+        },
+    )
+    assert reservation.status_code == 201
+    asset_id = reservation.json()["asset_id"]
+    body = {"size_bytes": 3, "checksum": "fake", "caller_service_id": "fetcher"}
+    url = f"/assets/{asset_id}/commit"
+    assert client.post(url, headers=owner, json=body).status_code == 404
+    assert registry.get_asset(asset_id).state is AssetState.PENDING
+    checksum = stage_payload(client, asset_id, 3)
+    assert client.post(url, headers=owner, json=body).status_code == 409
+    body["checksum"] = checksum
+    body["caller_service_id"] = "bulk-loader"
+    assert (
+        client.post(
+            url, headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"}, json=body
+        ).status_code
+        == 403
+    )
+    body["caller_service_id"] = "admin"
+    assert client.post(url, headers=owner, json=body).status_code == 403
+    body["caller_service_id"] = "fetcher"
+    assert client.post(url, headers=owner, json=body).status_code == 200
+    assert registry.get_partition_quota(space="cache", partition_id="review").used_bytes == 3
+    assert registry.audit_events[-1].caller_service_id == "fetcher"

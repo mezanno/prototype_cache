@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from fastapi.testclient import TestClient
+from http_fixtures import stage_payload
 
 from asset_store_core.api import create_app
 
@@ -16,6 +17,7 @@ class AuditEndpointTest(unittest.TestCase):
     def _reserve(self, alias_name: str) -> str:
         response = self.client.post(
             "/assets",
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
             json={
                 "space": "cache",
                 "partition_id": "gallica",
@@ -37,7 +39,12 @@ class AuditEndpointTest(unittest.TestCase):
         asset_id = self._reserve("img.png")
         self.client.post(
             f"/assets/{asset_id}/commit",
-            json={"size_bytes": 3, "checksum": "sha256:abc", "caller_service_id": "bulk-loader"},
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
+            json={
+                "size_bytes": 3,
+                "checksum": stage_payload(self.client, asset_id, 3),
+                "caller_service_id": "bulk-loader",
+            },
         )
 
         events = self.client.get(

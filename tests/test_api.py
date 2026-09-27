@@ -6,6 +6,7 @@ import unittest
 from typing import Any
 
 from fastapi.testclient import TestClient
+from http_fixtures import stage_payload
 
 from asset_store_core.api import create_app
 from asset_store_core.service_identity import dev_secret
@@ -30,7 +31,11 @@ class ApiContractTest(unittest.TestCase):
             "mime": "image/png",
         }
         body.update(overrides)
-        response = self.client.post("/assets", json=body)
+        response = self.client.post(
+            "/assets",
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
+            json=body,
+        )
         self.assertEqual(201, response.status_code)
         data: dict[str, Any] = response.json()
         return data
@@ -46,19 +51,30 @@ class ApiContractTest(unittest.TestCase):
 
         commit = self.client.post(
             f"/assets/{reserved['asset_id']}/commit",
-            json={"size_bytes": 3, "checksum": "sha256:abc", "caller_service_id": "bulk-loader"},
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
+            json={
+                "size_bytes": 3,
+                "checksum": stage_payload(self.client, reserved["asset_id"], 3),
+                "caller_service_id": "bulk-loader",
+            },
         )
         self.assertEqual(200, commit.status_code)
         self.assertEqual("available", commit.json()["state"])
 
         resolved = self.client.get(
-            "/resolve", params={"space": "cache", "alias": "gallica/img.png"}
+            "/resolve",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "alias": "gallica/img.png"},
         )
         self.assertEqual(200, resolved.status_code)
         self.assertEqual(reserved["asset_id"], resolved.json()["asset_id"])
 
     def test_resolve_unknown_alias_returns_problem_404(self) -> None:
-        response = self.client.get("/resolve", params={"space": "cache", "alias": "nope/x"})
+        response = self.client.get(
+            "/resolve",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "alias": "nope/x"},
+        )
         self.assertEqual(404, response.status_code)
         self.assertTrue(response.headers["content-type"].startswith(PROBLEM))
         body = response.json()
@@ -70,6 +86,7 @@ class ApiContractTest(unittest.TestCase):
         self._reserve()
         response = self.client.post(
             "/assets",
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
             json={
                 "space": "cache",
                 "partition_id": "gallica",
@@ -84,9 +101,10 @@ class ApiContractTest(unittest.TestCase):
         reserved = self._reserve()
         response = self.client.post(
             f"/assets/{reserved['asset_id']}/commit",
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
             json={
                 "size_bytes": 3,
-                "checksum": "sha256:server",
+                "checksum": stage_payload(self.client, reserved["asset_id"], 3),
                 "caller_service_id": "bulk-loader",
                 "expected_checksum": "sha256:client",
             },
@@ -186,7 +204,7 @@ class ApiContractTest(unittest.TestCase):
         granted = next(e for e in events if e["outcome"] == "granted")
         self.assertEqual("users/42/uploads", granted["target"])
         self.assertEqual("write", granted["after"]["operation"])
-        self.assertIn("capability_id", granted["after"])
+        self.assertIn("capability_fingerprint", granted["after"])
 
 
 if __name__ == "__main__":

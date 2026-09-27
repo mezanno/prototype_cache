@@ -88,7 +88,9 @@ class BulkLoaderGarageEndToEndTest(unittest.TestCase):
         """
 
         resolved = self.client.get(
-            "/resolve", params={"space": "cache", "alias": f"{self.mirror_id}/{alias}"}
+            "/resolve",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "alias": f"{self.mirror_id}/{alias}"},
         )
         if resolved.status_code != 200:
             return None

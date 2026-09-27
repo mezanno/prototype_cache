@@ -17,6 +17,7 @@ from asset_store_core.object_store import LocalObjectStore
 from asset_store_core.s3_object_store import S3ObjectStore
 
 _S3_ENV = {
+    "ASSET_STORE_DEV_MODE": "1",
     "ASSET_STORE_S3_ENDPOINT": "http://garage:3900",
     "ASSET_STORE_S3_REGION": "garage",
     "ASSET_STORE_S3_ACCESS_KEY": "GKtest",
@@ -26,7 +27,7 @@ _S3_ENV = {
 
 class CreateAppFromEnvTest(unittest.TestCase):
     def test_defaults_to_in_memory_store(self) -> None:
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {"ASSET_STORE_DEV_MODE": "1"}, clear=True):
             app = create_app_from_env()
         self.assertIsInstance(app.state.store, LocalObjectStore)
 

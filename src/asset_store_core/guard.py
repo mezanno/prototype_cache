@@ -168,6 +168,15 @@ class StorageGuard:
             expires_at=utcnow() + timedelta(seconds=ttl),
         )
 
+    def authorize_write(self, *, capability: Capability, alias: str) -> None:
+        """Validate a write grant before buffering any HTTP body (FR-012, B-018)."""
+        parsed = _parse_alias(alias)
+        capability.require(operation=Operation.WRITE, qualified_alias=parsed.qualified)
+        self._ledger.assert_unused(capability)
+        assert_service_bucket_allowed(
+            capability.caller_service_id, parsed.space, operation=Operation.WRITE
+        )
+
     def write_object(
         self,
         *,

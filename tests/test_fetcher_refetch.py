@@ -36,7 +36,10 @@ def test_refetch_preserves_asset_and_reports_mismatch(
     )
     with TestClient(store) as storage:
         client = AssetStoreClient(storage, service_secret="dev-secret:fetcher")
-        with TestClient(create_app(asset_store_client=client, rules=rules, fetcher=origin)) as api:
+        with TestClient(
+            create_app(asset_store_client=client, rules=rules, fetcher=origin),
+            headers={"Authorization": "Service task-api:dev-secret:task-api"},
+        ) as api:
             body = {"url": "https://example.org/image?secret=hidden", "tmp_id": "test"}
             first = api.post("/v1/ensure-url", json=body)
             assert first.status_code == 200
@@ -75,7 +78,10 @@ def test_failed_refetch_preserves_existing_asset(error: Exception, status: int) 
     origin = MutableOrigin()
     with TestClient(store) as storage:
         client = AssetStoreClient(storage, service_secret="dev-secret:fetcher")
-        with TestClient(create_app(asset_store_client=client, fetcher=origin)) as api:
+        with TestClient(
+            create_app(asset_store_client=client, fetcher=origin),
+            headers={"Authorization": "Service task-api:dev-secret:task-api"},
+        ) as api:
             body = {"url": "https://example.org/image", "tmp_id": "test", "no_cache": True}
             first = api.post("/v1/ensure-url", json=body)
             assert first.status_code == 200  # forced fetch of an absent alias ingests

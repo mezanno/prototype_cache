@@ -1,4 +1,8 @@
-"""Disposable B-018 probes; synthetic bytes, isolated database schema."""
+"""Historical B-018 probes for checkout 14b1f59, not the hardened tree.
+
+Synthetic bytes and isolated database schema. Current regression coverage lives
+in tests/test_security_hardening.py and tests/test_admin.py.
+"""
 
 import ipaddress
 import json

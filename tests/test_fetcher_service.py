@@ -428,7 +428,9 @@ def test_ensure_url_propagates_upstream_error() -> None:
 def test_app_ensure_url_endpoint_happy_path() -> None:
     store_client, _ = _asset_store_client()
     app = create_fetcher_app(asset_store_client=store_client, fetcher=SyntheticFetcher())
-    fetcher_client = TestClient(app)
+    fetcher_client = TestClient(
+        app, headers={"Authorization": "Service task-api:dev-secret:task-api"}
+    )
 
     resp = fetcher_client.post(
         "/v1/ensure-url",
@@ -444,7 +446,9 @@ def test_app_ensure_url_endpoint_happy_path() -> None:
 def test_app_ensure_url_invalid_url_returns_400() -> None:
     store_client, _ = _asset_store_client()
     app = create_fetcher_app(asset_store_client=store_client)
-    fetcher_client = TestClient(app)
+    fetcher_client = TestClient(
+        app, headers={"Authorization": "Service task-api:dev-secret:task-api"}
+    )
 
     resp = fetcher_client.post("/v1/ensure-url", json={"url": "ftp://x/y"})
     assert resp.status_code == 400
@@ -454,7 +458,9 @@ def test_app_ensure_url_invalid_url_returns_400() -> None:
 def test_app_healthz() -> None:
     store_client, _ = _asset_store_client()
     app = create_fetcher_app(asset_store_client=store_client)
-    fetcher_client = TestClient(app)
+    fetcher_client = TestClient(
+        app, headers={"Authorization": "Service task-api:dev-secret:task-api"}
+    )
     assert fetcher_client.get("/healthz").json() == {"status": "ok"}
 
 
@@ -464,7 +470,9 @@ def test_app_upstream_error_returns_502() -> None:
         asset_store_client=store_client,
         fetcher=_FailingFetcher(UpstreamError("origin 500")),
     )
-    fetcher_client = TestClient(app)
+    fetcher_client = TestClient(
+        app, headers={"Authorization": "Service task-api:dev-secret:task-api"}
+    )
     resp = fetcher_client.post(
         "/v1/ensure-url",
         json={"url": "https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg"},
@@ -479,7 +487,9 @@ def test_app_upstream_timeout_returns_504() -> None:
         asset_store_client=store_client,
         fetcher=_FailingFetcher(UpstreamTimeoutError("origin timed out")),
     )
-    fetcher_client = TestClient(app)
+    fetcher_client = TestClient(
+        app, headers={"Authorization": "Service task-api:dev-secret:task-api"}
+    )
     resp = fetcher_client.post(
         "/v1/ensure-url",
         json={"url": "https://gallica.bnf.fr/iiif/ark:/x/full/full/0/default.jpg"},

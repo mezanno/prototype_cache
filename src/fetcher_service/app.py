@@ -11,12 +11,15 @@ import logging
 import os
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, generate_latest
 from pydantic import BaseModel, Field
 
+from asset_store_core.api.errors import register_exception_handlers
 from asset_store_core.api.observability import JsonLogFormatter
+from asset_store_core.errors import CapabilityDeniedError, ServiceAuthError
+from asset_store_core.service_identity import ServiceCredentialStore
 from fetcher_service.client import AssetStoreClient, AssetStoreError
 from fetcher_service.config import rule_set_from_env
 from fetcher_service.errors import ContentMismatchError
@@ -81,18 +84,47 @@ def create_app(
     asset_store_client: AssetStoreClient | None = None,
     rules: RuleSet | None = None,
     fetcher: UrlFetcher | None = None,
+    credentials: ServiceCredentialStore | None = None,
 ) -> FastAPI:
     """Build the fetcher FastAPI app, optionally injecting dependencies for tests."""
 
+    credentials = credentials if credentials is not None else ServiceCredentialStore.from_env()
     rules = rules if rules is not None else _rules_from_env()
     fetcher = fetcher if fetcher is not None else _fetcher_from_env()
     client = asset_store_client if asset_store_client is not None else _client_from_env()
 
     app = FastAPI(title="fetcher-service", version="0.1.0")
+    register_exception_handlers(app)
+
+    def require_dispatcher(request: Request) -> str:
+        try:
+            scheme, _, token = request.headers.get("authorization", "").partition(" ")
+            identity, sep, secret = token.partition(":")
+            if scheme.lower() != "service" or not sep:
+                raise ServiceAuthError("missing service credential")
+            caller = credentials.authenticate(identity, secret)
+            if caller not in {"task-api", "admin"}:
+                raise CapabilityDeniedError("fetcher requires task-api or admin identity")
+        except (ServiceAuthError, CapabilityDeniedError):
+            ingress_auth.labels("denied").inc()
+            logger.warning(
+                "fetch.ingress_auth denied",
+                extra={"event": "fetch.ingress_auth", "outcome": "denied"},
+            )
+            raise
+        ingress_auth.labels("granted").inc()
+        return caller
+
     app.state.asset_store_client = client
     app.state.rules = rules
     app.state.fetcher = fetcher
     metrics = CollectorRegistry()
+    ingress_auth = Counter(
+        "fetcher_ingress_auth_total",
+        "Fetcher dispatcher authentication outcomes.",
+        ["outcome"],
+        registry=metrics,
+    )
     refetch_checks = Counter(
         "fetcher_refetch_checks_total",
         "Forced refetch checksum comparisons (R-011).",
@@ -136,7 +168,11 @@ def create_app(
     def readyz() -> dict[str, str]:
         return {"status": "ready"}
 
-    @app.post("/v1/ensure-url", response_model=EnsureUrlResponse)
+    @app.post(
+        "/v1/ensure-url",
+        response_model=EnsureUrlResponse,
+        dependencies=[Depends(require_dispatcher)],
+    )
     def ensure_url_endpoint(body: EnsureUrlRequest) -> EnsureUrlResponse:
         result = ensure_url(
             client,
@@ -159,7 +195,11 @@ def _client_from_env() -> AssetStoreClient:
     """Build an :class:`AssetStoreClient` from environment variables."""
 
     base_url = os.environ.get("ASSET_STORE_BASE_URL", DEFAULT_ASSET_STORE_BASE_URL)
-    secret = os.environ.get("FETCHER_SERVICE_SECRET", DEFAULT_FETCHER_SECRET)
+    secret = os.environ.get("FETCHER_SERVICE_SECRET")
+    if not secret:
+        if os.environ.get("ASSET_STORE_DEV_MODE", "").lower() not in {"1", "true", "yes"}:
+            raise RuntimeError("FETCHER_SERVICE_SECRET is required outside explicit dev mode")
+        secret = DEFAULT_FETCHER_SECRET
     service_id = os.environ.get("FETCHER_SERVICE_ID", "fetcher")
     http = httpx.Client(base_url=base_url, timeout=30.0)
     return AssetStoreClient(http, service_id=service_id, service_secret=secret)

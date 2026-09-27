@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from fastapi.testclient import TestClient
+from http_fixtures import stage_payload
 from httpx import Response
 
 from asset_store_core.api import create_app
@@ -23,14 +24,23 @@ class QuotaEndpointTest(unittest.TestCase):
         }
         if eviction_policy is not None:
             body["eviction_policy"] = eviction_policy
-        response = self.client.post("/assets", json=body)
+        response = self.client.post(
+            "/assets",
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
+            json=body,
+        )
         self.assertEqual(201, response.status_code)
         return str(response.json()["asset_id"])
 
     def _commit(self, asset_id: str, size: int) -> Response:
         response: Response = self.client.post(
             f"/assets/{asset_id}/commit",
-            json={"size_bytes": size, "checksum": "sha256:abc", "caller_service_id": "bulk-loader"},
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
+            json={
+                "size_bytes": size,
+                "checksum": stage_payload(self.client, asset_id, size),
+                "caller_service_id": "bulk-loader",
+            },
         )
         return response
 

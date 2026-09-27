@@ -54,8 +54,8 @@ class ServiceCredentialStoreTest(unittest.TestCase):
         self.assertEqual("svc-a", store.authenticate("svc-a", "secret-a"))
         self.assertEqual("svc-b", store.authenticate("svc-b", "secret-b"))
 
-    def test_from_env_falls_back_to_dev_default_when_unset(self) -> None:
-        store = ServiceCredentialStore.from_env({})
+    def test_from_env_explicit_dev_default(self) -> None:
+        store = ServiceCredentialStore.from_env({"ASSET_STORE_DEV_MODE": "1"})
         self.assertEqual("worker", store.authenticate("worker", dev_secret("worker")))
 
     def test_from_env_rejects_malformed_entry(self) -> None:

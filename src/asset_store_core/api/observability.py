@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from contextvars import ContextVar
@@ -124,8 +125,10 @@ class ObservabilityMiddleware:
     def _inbound_correlation_id(scope: Scope) -> str | None:
         for name, value in scope.get("headers", []):
             if name == CORRELATION_ID_HEADER and value:
-                decoded: str = value.decode()
-                return decoded
+                if re.fullmatch(rb"[A-Za-z0-9._-]{1,128}", value):
+                    decoded: str = value.decode("ascii")
+                    return decoded
+                return None
         return None
 
     @staticmethod

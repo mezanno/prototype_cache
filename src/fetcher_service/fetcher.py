@@ -80,14 +80,7 @@ _DEFAULT_MIME = "application/octet-stream"
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True if ``ip`` is in a range an outbound fetch must never reach (SSRF)."""
 
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return not ip.is_global or ip.is_multicast
 
 
 def _assert_host_allowed(host: str, *, allow_private_hosts: bool) -> None:
@@ -143,7 +136,9 @@ class HttpFetcher:
             pool=connect_timeout,
         )
         # follow_redirects stays False: we validate each hop's host ourselves.
-        self._client = client or httpx.Client(timeout=timeout, follow_redirects=False)
+        self._client = client or httpx.Client(
+            timeout=timeout, follow_redirects=False, trust_env=False
+        )
 
     def fetch(self, url: str) -> FetchedContent:
         current = url

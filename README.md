@@ -23,11 +23,13 @@ Run the tests and the API locally (uv-managed env):
 
 ```bash
 uv run pytest -q
-uv run uvicorn asset_store_core.api:create_app --factory --reload
+ASSET_STORE_DEV_MODE=1 uv run uvicorn asset_store_core.api:create_app --factory --reload
 ```
 
 The app is exposed as a factory at `asset_store_core.api:create_app`; the in-memory
-backend means it starts with no external dependencies.
+backend means it starts with no external dependencies. Development credentials
+require the explicit opt-in above. For configured credentials, API authentication
+and upload limits, see the [security checkpoint](docs/security/B018_CLOSEOUT.md).
 
 ## Running the full test suite
 

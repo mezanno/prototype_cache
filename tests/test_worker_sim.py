@@ -291,7 +291,11 @@ def test_read_scope_denied(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
 
 def test_expired_input(client: TestClient) -> None:
     checksum = seed(client)
-    asset = client.get("/resolve", params={"space": "cache", "alias": "demo/input.bin"}).json()
+    asset = client.get(
+        "/resolve",
+        headers={"Authorization": "Service admin:dev-secret:admin"},
+        params={"space": "cache", "alias": "demo/input.bin"},
+    ).json()
     response = client.post(
         f"/assets/{asset['asset_id']}/expire",
         headers={"Authorization": "Service admin:dev-secret:admin"},

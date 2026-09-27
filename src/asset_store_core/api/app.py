@@ -42,8 +42,15 @@ from asset_store_core.api.schemas import (
     PresignedUrlOut,
     ReserveRequest,
 )
-from asset_store_core.capabilities import Capability
-from asset_store_core.errors import CapabilityDeniedError, ServiceAuthError, ValidationError
+from asset_store_core.capabilities import Capability, Operation
+from asset_store_core.errors import (
+    CapabilityDeniedError,
+    ChecksumMismatchError,
+    ObjectNotFoundError,
+    ServiceAuthError,
+    UploadTooLargeError,
+    ValidationError,
+)
 from asset_store_core.guard import DEFAULT_PRESIGN_TTL_SECONDS, StorageGuard
 from asset_store_core.models import utcnow
 from asset_store_core.object_store import LocalObjectStore, ObjectStoreBackend
@@ -52,6 +59,7 @@ from asset_store_core.registry import InMemoryAssetRegistry
 from asset_store_core.registry_base import AssetRegistry
 from asset_store_core.service_identity import ServiceCredentialStore
 from asset_store_core.service_policy import assert_service_bucket_allowed
+from asset_store_core.storage import ObjectStoreLocation
 
 CAPABILITY_SCHEME = "capability"
 SERVICE_SCHEME = "service"
@@ -67,7 +75,10 @@ def create_app(
 
     registry = registry if registry is not None else InMemoryAssetRegistry()
     store = store if store is not None else LocalObjectStore()
-    credentials = credentials if credentials is not None else ServiceCredentialStore.dev_default()
+    credentials = credentials if credentials is not None else ServiceCredentialStore.from_env()
+    max_upload_bytes = int(os.environ.get("ASSET_STORE_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+    if max_upload_bytes <= 0:
+        raise ValidationError("ASSET_STORE_MAX_UPLOAD_BYTES must be positive")
     guard = StorageGuard(registry, store)
     capabilities: dict[str, Capability] = {}
     metrics = build_metrics()
@@ -155,7 +166,10 @@ def create_app(
         return Response(generate_latest(metrics.registry), media_type=CONTENT_TYPE_LATEST)
 
     @app.post("/assets", status_code=201, response_model=AssetOut)
-    def reserve(body: ReserveRequest) -> AssetOut:
+    def reserve(body: ReserveRequest, caller: str = Depends(require_service_identity)) -> AssetOut:
+        if body.owner_service_id != caller:
+            raise CapabilityDeniedError("owner must match authenticated service")
+        assert_service_bucket_allowed(caller, body.space, operation=Operation.WRITE)
         asset = registry.reserve_asset(
             space=body.space,
             partition_id=body.partition_id,
@@ -169,20 +183,39 @@ def create_app(
         return AssetOut.from_asset(asset)
 
     @app.post("/assets/{asset_id}/commit", response_model=AssetOut)
-    def commit(asset_id: str, body: CommitRequest) -> AssetOut:
-        asset = registry.commit_asset(
-            asset_id=asset_id,
-            size_bytes=body.size_bytes,
-            checksum=body.checksum,
-            caller_service_id=body.caller_service_id,
-            mime=body.mime,
-            expected_checksum=body.expected_checksum,
-        )
+    def commit(
+        asset_id: str, body: CommitRequest, caller: str = Depends(require_service_identity)
+    ) -> AssetOut:
+        if body.caller_service_id != caller:
+            raise CapabilityDeniedError("caller must match authenticated service")
+        with registry.asset_lock(asset_id) as pending:
+            assert_service_bucket_allowed(caller, pending.space, operation=Operation.WRITE)
+            if pending.owner_service_id != caller and caller != "admin":
+                raise CapabilityDeniedError("commit requires reservation owner or admin")
+            location = ObjectStoreLocation.for_asset(
+                space=pending.space, partition_id=pending.partition_id, asset_id=pending.asset_id
+            )
+            stat = store.stat_object(location)
+            if stat is None:
+                raise ObjectNotFoundError("reserved payload does not exist")
+            if body.size_bytes != stat.size_bytes or body.checksum != stat.checksum:
+                raise ChecksumMismatchError("commit metadata differs from stored payload")
+            asset = registry.commit_asset(
+                asset_id=asset_id,
+                size_bytes=stat.size_bytes,
+                checksum=stat.checksum,
+                caller_service_id=caller,
+                mime=body.mime,
+                expected_checksum=body.expected_checksum,
+            )
         observe_bucket_fill(asset.space)
         return AssetOut.from_asset(asset)
 
     @app.get("/resolve", response_model=AssetOut)
-    def resolve(space: str, alias: str) -> AssetOut:
+    def resolve(
+        space: str, alias: str, caller: str = Depends(require_service_identity)
+    ) -> AssetOut:
+        assert_service_bucket_allowed(caller, space, operation=Operation.READ)
         return AssetOut.from_asset(registry.resolve_alias(space=space, alias=alias))
 
     @app.patch(
@@ -383,12 +416,27 @@ def create_app(
         expected_checksum: str | None = None,
         ttl_seconds: int | None = Query(default=None, gt=0),
     ) -> AssetOut:
-        data = await request.body()
+        guard.authorize_write(capability=capability, alias=alias)
+        declared_size = request.headers.get("content-length")
+        if declared_size is not None:
+            try:
+                size = int(declared_size)
+            except ValueError as exc:
+                raise ValidationError("invalid Content-Length") from exc
+            if size < 0:
+                raise ValidationError("invalid Content-Length")
+            if size > max_upload_bytes:
+                raise UploadTooLargeError("proxy upload exceeds configured byte limit")
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > max_upload_bytes:
+                raise UploadTooLargeError("proxy upload exceeds configured byte limit")
+            data.extend(chunk)
         mime = request.headers.get("content-type")
         asset = guard.write_object(
             capability=capability,
             alias=alias,
-            data=data,
+            data=bytes(data),
             mutable=mutable,
             mime=mime,
             expected_checksum=expected_checksum,

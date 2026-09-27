@@ -94,6 +94,13 @@ The real outbound client is `HttpFetcher` (delivered 2026-07-09; the no-network 
 
 ### `POST /v1/ensure-url`
 
+Requires `Authorization: Service <id>:<secret>` for `task-api` or `admin`.
+Configure inbound identities through `ASSET_STORE_SERVICE_CREDENTIALS`; configure
+the outbound asset-store credential with `FETCHER_SERVICE_SECRET`. Both services
+require configured credentials unless `ASSET_STORE_DEV_MODE=1` explicitly enables
+local development defaults. Trusted dispatchers remain responsible for authorizing
+the end user and destination namespace (R-012).
+
 **Request (JSON)**
 
 | Field | Required | Description |

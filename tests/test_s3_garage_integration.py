@@ -189,7 +189,11 @@ class GarageDataPlaneEndToEndTest(unittest.TestCase):
         """Resolve a written alias and register its object for teardown deletion."""
 
         space, rest = alias.split("/", 1)
-        resolved = self.client.get("/resolve", params={"space": space, "alias": rest})
+        resolved = self.client.get(
+            "/resolve",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": space, "alias": rest},
+        )
         if resolved.status_code == 200:
             body = resolved.json()
             self._written.append(ObjectStoreLocation(bucket=body["space"], key=body["storage_key"]))

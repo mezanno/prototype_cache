@@ -2,7 +2,16 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
-## Security review (B-018, 2026-09-26)
+## Security checkpoint (B-018, 2026-09-27)
+
+[Bounded fixes and remaining work](security/B018_CLOSEOUT.md): authenticated raw
+registry routes and verified commits, explicit development credentials, fetcher
+ingress authentication, non-public IP rejection, bounded upload bodies, bearer
+redaction and patched locked dependencies are implemented (ADR-022). Shared
+Postgres transactions, DNS pinning and resource/capability concurrency remain
+open. This is a stable prototype checkpoint, not release approval.
+
+### Historical review (2026-09-26)
 
 [Review and remediation plan](security/B018_REVIEW.md) against `9640116`:
 STRIDE, code/configuration review, 3,600 generated scope/path checks, isolated
@@ -17,7 +26,8 @@ The dependency audit reports three advisories for AnyIO 4.14.1 (patched in
 4.14.2); vulnerable API use was not demonstrated in this application. No code or
 dependency fix was made during the review. Operator documentation now qualifies
 presigned-URL revocation. Review performed does **not** mean security-ready:
-SEC-01..10 remain open, linked to R-014..020; no risk acceptance was granted.
+At that baseline SEC-01..10 were open; the checkpoint above supersedes their
+status. No risk acceptance was granted.
 
 ## Admin milestone (B-013, 2026-09-26)
 
@@ -31,9 +41,8 @@ configuration emits before/after audit. PostgreSQL filters/paginates in SQL.
 Legacy administrative routes now also require the admin service credential and
 reject spoofed body caller identities. Credentials stay in page memory, rendering
 uses text nodes (no HTML injection), and the page has a restrictive CSP. This does
-not complete B-018: existing reserve/commit/resolve authorization, dev-default
-credentials, user→prefix trust, per-human attribution and deployment posture still
-need review. The registry adapters' existing single-instance concurrency limits
+not complete B-018: user→prefix trust, per-human attribution and deployment
+posture remain open after the subsequent control-plane hardening. The registry adapters' existing single-instance concurrency limits
 remain; no production scale claim is made.
 
 New critical paths emit admin action counters and structured action/outcome logs.
@@ -195,8 +204,9 @@ capability is minted (ADR-016):
   (RFC 7807). Secret comparison is constant-time (`hmac.compare_digest`).
 - **Credential store:** `service_identity.ServiceCredentialStore` holds the id→secret
   map. It is seeded from `ASSET_STORE_SERVICE_CREDENTIALS` (`id1:secret1,id2:secret2`);
-  when the env var is unset a **dev-default** store maps every known service id to
-  `dev-secret:<id>` (`dev_secret(id)`), so the compose stack and tests run zero-config.
+  when the env var is unset, explicit `ASSET_STORE_DEV_MODE=1` enables a
+  **dev-default** store mapping known ids to `dev-secret:<id>` (`dev_secret(id)`).
+  Compose and tests enable this mode; other unconfigured startup fails.
   `create_app(credentials=…)` injects a custom store in tests.
 - **Identity is derived, not declared:** the authenticated `service_id` becomes the
   capability's `caller_service_id`. The request body no longer carries

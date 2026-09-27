@@ -28,7 +28,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --group dev --python ${{ matrix.python-version }}
+        run: uv sync --locked --group dev --python ${{ matrix.python-version }}
 
       - name: Ruff lint
         run: uv run ruff check .
@@ -41,3 +41,8 @@ jobs:
 
       - name: Tests
         run: uv run pytest -q
+
+      - name: Audit locked runtime dependencies
+        run: |
+          uv export --locked --no-dev --extra s3 --extra pg --no-emit-project --no-hashes --format requirements-txt --output-file /tmp/runtime-requirements.txt
+          uvx pip-audit --disable-pip --no-deps -r /tmp/runtime-requirements.txt

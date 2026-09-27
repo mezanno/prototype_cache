@@ -12,6 +12,7 @@ default ``uv run pytest`` run skips this module, staying Docker-free.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import unittest
 import uuid
@@ -121,7 +122,9 @@ class PostgresRegistryTest(unittest.TestCase):
         self.assertEqual("users/42/uploads", granted.target)
         self.assertEqual("write", granted.after["operation"])
         self.assertEqual("300", granted.after["ttl_seconds"])
-        self.assertEqual("cap-abc", granted.after["capability_id"])
+        self.assertEqual(
+            hashlib.sha256(b"cap-abc").hexdigest(), granted.after["capability_fingerprint"]
+        )
         self.assertNotIn("capability_id", by_outcome["denied"].after)
 
     def test_resolve_pending_asset_is_rejected(self) -> None:

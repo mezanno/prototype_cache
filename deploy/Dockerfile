@@ -6,7 +6,9 @@
 #
 # Build context is the repository root:
 #   docker build -f deploy/Dockerfile -t asset-store:dev .
+FROM ghcr.io/astral-sh/uv:0.12.19 AS uv
 FROM python:3.12-slim AS base
+COPY --from=uv /uv /usr/local/bin/uv
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -18,9 +20,10 @@ WORKDIR /app
 # Install dependencies first for better layer caching. The [s3,pg] extras pull in
 # boto3, psycopg, and alembic so the durable S3/Postgres backends and the schema
 # migrations are available.
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN pip install ".[s3,pg]"
+RUN uv sync --locked --no-dev --extra s3 --extra pg
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Ship the Alembic migration history so the container can own the schema in
 # production via `alembic upgrade head` (ADR-015).

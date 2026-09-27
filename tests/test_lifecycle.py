@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from fastapi.testclient import TestClient
+from http_fixtures import stage_payload
 
 from asset_store_core.api import create_app
 
@@ -16,6 +17,7 @@ class LifecycleEndpointTest(unittest.TestCase):
     def _reserve(self, alias_name: str, *, mutable: bool = False) -> str:
         response = self.client.post(
             "/assets",
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
             json={
                 "space": "cache",
                 "partition_id": "gallica",
@@ -29,9 +31,10 @@ class LifecycleEndpointTest(unittest.TestCase):
     def _commit(self, asset_id: str) -> None:
         response = self.client.post(
             f"/assets/{asset_id}/commit",
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
             json={
                 "size_bytes": 3,
-                "checksum": "sha256:abc",
+                "checksum": stage_payload(self.client, asset_id, 3),
                 "caller_service_id": "bulk-loader",
             },
         )
@@ -108,7 +111,9 @@ class LifecycleEndpointTest(unittest.TestCase):
 
         self.assertEqual(204, response.status_code)
         resolved = self.client.get(
-            "/resolve", params={"space": "cache", "alias": "gallica/img.png"}
+            "/resolve",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "alias": "gallica/img.png"},
         )
         self.assertEqual(404, resolved.status_code)
         actions = [
@@ -145,7 +150,9 @@ class LifecycleEndpointTest(unittest.TestCase):
         self.assertEqual(new_asset_id, rebound.json()["asset_id"])
 
         resolved = self.client.get(
-            "/resolve", params={"space": "cache", "alias": "gallica/ver.png"}
+            "/resolve",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "alias": "gallica/ver.png"},
         )
         self.assertEqual(200, resolved.status_code)
         self.assertEqual(new_asset_id, resolved.json()["asset_id"])

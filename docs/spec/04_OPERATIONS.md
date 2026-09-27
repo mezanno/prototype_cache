@@ -102,7 +102,8 @@ Error budget for the read availability SLO: 0.1% of 30 days = ~43 minutes per 30
 ## Go-Live Checklist
 
 - [x] Prototype security review performed — [B-018 findings](../security/B018_REVIEW.md).
-  **Remediation and security release sign-off remain open.**
+  [Bounded fixes completed](../security/B018_CLOSEOUT.md); complex remediation
+  and security release sign-off remain open.
 - [x] Threat model documented — [STRIDE map](../security/B018_REVIEW.md#stride-map-and-controls-that-held).
 - [ ] Runbooks written for: capability issuance failures, object-store node loss, Postgres failover, audit log overflow, garbage collection misfire.
 - [ ] Dashboards and alerts live in the chosen observability backend; on-call ownership defined.

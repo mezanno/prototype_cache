@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from fastapi.testclient import TestClient
+from http_fixtures import stage_payload
 
 from asset_store_core.api import create_app
 
@@ -28,6 +29,7 @@ class BucketFillMetricTest(unittest.TestCase):
     def _commit(self, alias_name: str, size: int) -> None:
         reserve = self.client.post(
             "/assets",
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
             json={
                 "space": "cache",
                 "partition_id": "gallica",
@@ -39,7 +41,12 @@ class BucketFillMetricTest(unittest.TestCase):
         asset_id = reserve.json()["asset_id"]
         commit = self.client.post(
             f"/assets/{asset_id}/commit",
-            json={"size_bytes": size, "checksum": "sha256:abc", "caller_service_id": "bulk-loader"},
+            headers={"Authorization": "Service bulk-loader:dev-secret:bulk-loader"},
+            json={
+                "size_bytes": size,
+                "checksum": stage_payload(self.client, asset_id, size),
+                "caller_service_id": "bulk-loader",
+            },
         )
         self.assertEqual(200, commit.status_code, commit.text)
 

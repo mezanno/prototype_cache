@@ -95,3 +95,7 @@ class QuotaExceededError(AssetStoreError):
     def __init__(self, message: str, *, scope: str) -> None:
         super().__init__(message)
         self.scope = scope
+
+
+class UploadTooLargeError(AssetStoreError):
+    """Proxy upload exceeds the configured bounded body size (B-018)."""

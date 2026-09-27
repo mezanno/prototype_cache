@@ -30,6 +30,7 @@ from asset_store_core.errors import (
     PresignNotSupportedError,
     QuotaExceededError,
     ServiceAuthError,
+    UploadTooLargeError,
     ValidationError,
 )
 
@@ -37,6 +38,7 @@ PROBLEM_CONTENT_TYPE = "application/problem+json"
 
 _STATUS_BY_ERROR: dict[type[AssetStoreError], int] = {
     ValidationError: 400,
+    UploadTooLargeError: 413,
     ServiceAuthError: 401,
     CapabilityDeniedError: 403,
     CapabilityAlreadyConsumedError: 403,

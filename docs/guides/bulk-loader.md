@@ -83,8 +83,8 @@ What this means operationally today:
   with **no extra per-mirror configuration** — the per-mirror scoping happens
   automatically at capability-mint time, per run.
 - You only need to configure the **service credential** (the `id:secret` pair):
-  - default (dev): every known service id maps to `dev-secret:<id>` (zero-config
-    for the compose stack and tests);
+  - explicit dev mode (`ASSET_STORE_DEV_MODE=1`): every known service id maps
+    to `dev-secret:<id>` (enabled by the development compose stack and tests);
   - production: set `ASSET_STORE_SERVICE_CREDENTIALS="bulk-loader:<secret>,..."`
     on the asset-store service, and pass the matching `--service-secret` (via
     `BULK_LOADER_SERVICE_SECRET`) to the loader.

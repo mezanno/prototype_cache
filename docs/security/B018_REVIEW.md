@@ -1,5 +1,8 @@
 # B-018 — prototype security review
 
+> Historical baseline at `9640116`. For fixes and remaining work as of
+> 2026-09-27, see [the closeout checkpoint](B018_CLOSEOUT.md).
+
 **Reviewed:** `9640116` (2026-09-26), including B-013 (`8d88b94`).
 **Verdict:** suitable only for isolated development with trusted operators;
 **not ready for wider exposure**. The review is performed; remediation and release
@@ -230,7 +233,9 @@ owner acceptance are recorded, B-018's **readiness exit criterion is open**.
 
 ## Reproduction
 
-With local test backends and their development credentials configured:
+These vulnerability probes target the historical baseline, not the hardened tree.
+Run them from a separate checkout of `14b1f59` (which includes the probe artifacts),
+with local test backends and their development credentials configured:
 
 ```bash
 set -a
@@ -243,8 +248,8 @@ PYTHONPATH=src uv run --locked python tools/security-review/reproduce_b018.py
 The probe refuses non-loopback endpoints, does not send an origin request, prints
 no credentials/signed URLs, and cleans its isolated backend fixtures in `finally`.
 Its temporary fixed credentials exist only in injected in-memory app instances.
-After remediation, observations should change; convert each into an assertion of
-the secure behavior in the normal test suite.
+The hardened-tree regression assertions live in `tests/test_security_hardening.py`
+and `tests/test_admin.py`; use the normal test suite for current validation.
 
 Dependency scan used:
 

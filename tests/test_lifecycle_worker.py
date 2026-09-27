@@ -17,6 +17,7 @@ from pathlib import Path
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from http_fixtures import stage_payload
 from prometheus_client import generate_latest
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
@@ -331,7 +332,11 @@ def test_http_ttl_and_expired_status(
         assert response.json()["expires_at"] is not None
         clock.now += timedelta(seconds=61)
         assert (
-            api.get("/resolve", params={"space": "results", "alias": "42/task/out"}).status_code
+            api.get(
+                "/resolve",
+                headers={"Authorization": "Service admin:dev-secret:admin"},
+                params={"space": "results", "alias": "42/task/out"},
+            ).status_code
             == 410
         )
         assert (
@@ -427,6 +432,7 @@ def test_capacity_http_retry_after(
     with TestClient(create_app(registry=registry, store=store)) as api:
         pending = api.post(
             "/assets",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
             json={
                 "space": "cache",
                 "partition_id": "test",
@@ -437,7 +443,12 @@ def test_capacity_http_retry_after(
         assert pending.status_code == 201
         response = api.post(
             f"/assets/{pending.json()['asset_id']}/commit",
-            json={"size_bytes": 10, "checksum": "sha256:x", "caller_service_id": "admin"},
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            json={
+                "size_bytes": 10,
+                "checksum": stage_payload(api, pending.json()["asset_id"], 10),
+                "caller_service_id": "admin",
+            },
         )
         assert response.status_code == 503
         assert response.headers["Retry-After"] == "60"

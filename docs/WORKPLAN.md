@@ -30,8 +30,9 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 - B-013: admin console and authenticated API are implemented (ADR-021);
   browser visual/interaction acceptance remains pending. See [admin contract](services/admin-ui.md).
 - B-018: [security review performed](security/B018_REVIEW.md); confirmed blockers
-  and remediation tracked as SEC-01..10 / R-014..020. No risk acceptance or release sign-off.
-- **Next: close SEC-01 control-plane authorization and commit verification.** Swarm,
+  and [bounded fixes completed](security/B018_CLOSEOUT.md), with remaining work
+  tracked as SEC-02..10 / R-012, R-014..020. No risk acceptance or release sign-off.
+- **Next: SEC-02 Postgres transaction isolation.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ## Engineering quality bar
@@ -125,8 +126,9 @@ prototype:
   registry adapters are covered. See [admin contract](services/admin-ui.md), ADR-021.
 - B-018 - **Review performed (2026-09-26), remediation open:** STRIDE, isolated
   exploit probes, 3,600 generated capability/path checks and runtime dependency audit.
-  Start with SEC-01 (unauthenticated registry routes), then SEC-02 (transaction
-  isolation). See the [report](security/B018_REVIEW.md); readiness exit criteria remain open.
+  SEC-01 and bounded hardening are complete (2026-09-27); next is SEC-02
+  transaction isolation. See [closeout and follow-ups](security/B018_CLOSEOUT.md);
+  readiness exit criteria remain open.
 - Lifecycle hardening: rate limits on capability issuance per service identity; idempotency-key replay protection across services.
 - Backup hook for Postgres + a second S3 target (B-017) - design and basic implementation.
 - Resolve Q-003, Q-005, Q-006, Q-010, Q-014, Q-017 (the Phase 2/3 batch of open questions).
@@ -176,13 +178,13 @@ prototype:
 - Twice-weekly delivery sync: backlog progress, blockers, risks.
 - Single source of truth: `docs/spec/` and the ADR table.
 
-## Immediate next actions (2026-09-26)
+## Immediate next actions (2026-09-27)
 
 1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
    automated HTTP contracts and static JavaScript syntax checks pass.
-2. **B-018 remediation:** close SEC-01 authorization/server-verified commits,
-   then SEC-02 shared-connection transaction isolation; follow the report for
-   deployment, fetcher, resource, credential and dependency fixes.
+2. **B-018 remediation:** SEC-02 shared-connection transaction isolation; follow
+   the [closeout backlog](security/B018_CLOSEOUT.md) for deployment, DNS/egress,
+   resource cleanup and capability concurrency work.
 3. Operational deployment, alert wiring and B-015 performance certification remain;
    completed prototype milestones do not imply production readiness.
 

@@ -25,6 +25,7 @@ the guard adapter exists.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace as dc_replace
@@ -129,7 +130,7 @@ class InMemoryAssetRegistry:
 
         after: dict[str, str] = {"operation": operation, "ttl_seconds": str(ttl_seconds)}
         if capability_id is not None:
-            after["capability_id"] = capability_id
+            after["capability_fingerprint"] = hashlib.sha256(capability_id.encode()).hexdigest()
         self._audit(
             action="capability.issue",
             target=scope_prefix,

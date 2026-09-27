@@ -101,7 +101,9 @@ class BulkLoadRunTest(unittest.TestCase):
         self.assertEqual(7, report.total_bytes)
 
         resolved = self.client.get(
-            "/resolve", params={"space": "cache", "alias": "gallica/img/a.png"}
+            "/resolve",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "alias": "gallica/img/a.png"},
         )
         self.assertEqual(200, resolved.status_code)
         self.assertEqual("available", resolved.json()["state"])
@@ -120,7 +122,9 @@ class BulkLoadRunTest(unittest.TestCase):
         self.assertEqual("img/missing.png", report.failed[0].row.alias)
         # The good row is still resolvable despite the sibling failure.
         resolved = self.client.get(
-            "/resolve", params={"space": "cache", "alias": "gallica/img/good.png"}
+            "/resolve",
+            headers={"Authorization": "Service admin:dev-secret:admin"},
+            params={"space": "cache", "alias": "gallica/img/good.png"},
         )
         self.assertEqual(200, resolved.status_code)
 

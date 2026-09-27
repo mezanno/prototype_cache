@@ -86,7 +86,9 @@ def test_remote_fetch_cache_refetch_and_restart() -> None:
                         rules=rules,
                         fetcher=HttpFetcher(allow_private_hosts=True),
                     )
-                    with TestClient(app) as api:
+                    with TestClient(
+                        app, headers={"Authorization": "Service task-api:dev-secret:task-api"}
+                    ) as api:
                         body = {"url": f"http://127.0.0.1:{server.server_port}/image.jpg"}
                         first = api.post("/v1/ensure-url", json=body)
                         # Register any committed bytes before assertions, even on failure.

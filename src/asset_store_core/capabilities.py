@@ -80,8 +80,7 @@ class Capability:
 
         if not self.allows(operation=operation, qualified_alias=qualified_alias):
             raise CapabilityDeniedError(
-                f"capability {self.capability_id!r} does not authorize "
-                f"{operation.value} on {qualified_alias!r}"
+                f"capability does not authorize {operation.value} on {qualified_alias!r}"
             )
 
     @staticmethod
@@ -113,14 +112,14 @@ class SingleUseLedger:
         if not cap.single_use:
             return
         if cap.capability_id in self._consumed:
-            raise CapabilityAlreadyConsumedError(cap.capability_id)
+            raise CapabilityAlreadyConsumedError("single-use capability already consumed")
         self._consumed.add(cap.capability_id)
 
     def assert_unused(self, cap: Capability) -> None:
         """Raise if a single-use capability was already consumed."""
 
         if cap.single_use and cap.capability_id in self._consumed:
-            raise CapabilityAlreadyConsumedError(cap.capability_id)
+            raise CapabilityAlreadyConsumedError("single-use capability already consumed")
 
 
 def _is_same_path_or_child(candidate: str, prefix: str) -> bool:

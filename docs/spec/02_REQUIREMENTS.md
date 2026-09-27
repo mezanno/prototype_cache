@@ -224,3 +224,19 @@ and stale-candidate skip reporting. Set-TTL counts from now, applies bucket boun
 and restores expired assets only while their payload exists and quota permits.
 Delete immediately denies access; the B-014 worker removes the payload later.
 Per-partition tmp default-TTL overrides require a separate policy contract (Q-036).
+
+### Security close-out slice (B-018, ADR-022)
+
+Reserve/commit/resolve authenticate the calling service. Reserve requires the
+service's write-bucket permission and a matching owner identity; commit requires
+the reservation owner (or admin), a matching authenticated actor, and size/checksum
+verified against backend metadata. Resolve checks the read-bucket permission.
+Cross-user scope delegation remains upstream (R-012), not silently implemented as ACLs.
+Fetcher ingress permits authenticated `task-api` and `admin` callers only.
+
+All app factories require configured credentials or explicit `ASSET_STORE_DEV_MODE=1`.
+Proxy uploads check the grant before reading and enforce `ASSET_STORE_MAX_UPLOAD_BYTES`
+(default 50 MiB); native 5 GB/resumable ingestion remains a future data-plane target.
+Capability audit stores a SHA-256 fingerprint, never a reusable bearer; historical
+records need separate cleanup. Registry connection isolation and shared capability
+state remain open security work, not implied by these changes.
