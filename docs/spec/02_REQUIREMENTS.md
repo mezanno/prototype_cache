@@ -240,3 +240,13 @@ Proxy uploads check the grant before reading and enforce `ASSET_STORE_MAX_UPLOAD
 Capability audit stores a SHA-256 fingerprint, never a reusable bearer; historical
 records need separate cleanup. Registry connection isolation and shared capability
 state remain open security work, not implied by these changes.
+
+### Transaction isolation checkpoint (SEC-02, ADR-023)
+
+For FR-022, FR-050..052 and FR-066..068, concurrent registry units of work
+must use independent Postgres transactions. A failed request must not roll back
+another acknowledged request’s asset, audit or quota changes. Nested calls within
+an asset lock share its transaction. Pool checkout and waiting queues are bounded;
+exhaustion returns a retryable 503 without exposing connection details. Concurrent
+HTTP tests must reproduce the former failure ordering and verify durable results
+from a separate registry connection. In-memory adapters remain development-only.

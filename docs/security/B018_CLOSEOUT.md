@@ -8,6 +8,13 @@ historical evidence. No outstanding risk has been accepted on the owner's behalf
 Requirements: FR-010..015 (authorization), FR-022 (verified checksum),
 FR-050..052 (audit), NFR-008 (scoping). Decision: ADR-022.
 
+## Subsequent remediation — 2026-09-28
+
+**SEC-02 / R-015 is closed:** [pooled transaction isolation and acceptance
+evidence](SEC02_TRANSACTION_ISOLATION.md), ADR-023. Next target is SEC-05 / R-017
+DNS-to-connection enforcement. The original checkpoint validation below remains
+historical; the isolation milestone passes 354 tests.
+
 ## Implemented
 
 | Finding | Result at this checkpoint |
@@ -51,7 +58,6 @@ needed. New fingerprints change the capability audit JSON field from
 
 | Priority / finding | Required follow-up and acceptance evidence |
 |---|---|
-| P0 · SEC-02 / R-015 | Isolate Postgres connections/transactions per request or unit of work. Concurrent HTTP regression must prove one rollback cannot erase another acknowledged mutation. This is the next implementation target. |
 | P0 before exposure · SEC-05 / R-017 | Bind validated DNS results to actual connections and every redirect, or enforce an equivalent egress boundary. Test DNS rebinding, mixed address answers and metadata/private-network targets. |
 | P1 · SEC-06 / R-018 | Fence and reclaim failed uploads, reserve capacity before writes, bound aggregate concurrency and issuance. Test quota rejection, interrupted writes and cleanup races without deleting successful payloads. |
 | P0 before exposure · SEC-03/04 / R-012, R-016, R-017 | Define trusted user-to-prefix authorization, deployment TLS, secret rotation and ingress limits; demonstrate unauthorized tenant destinations are rejected at the responsible upstream boundary. |

@@ -83,7 +83,9 @@ def backend(request: pytest.FixtureRequest) -> Iterator[tuple[AssetRegistry, Obj
                 try:
                     yield registry, store
                 finally:
-                    for row in registry._conn.execute("SELECT space, storage_key FROM assets"):
+                    with registry.unit_of_work() as conn:
+                        rows = conn.execute("SELECT space, storage_key FROM assets").fetchall()
+                    for row in rows:
                         store.delete_object(
                             ObjectStoreLocation(bucket=row["space"], key=row["storage_key"])
                         )
@@ -401,7 +403,8 @@ def test_postgres_lock_serializes_late_commit(
         return result
 
     monkeypatch.setattr("asset_store_core.lifecycle.plan_sweep", notify_plan)
-    row = registry._conn.execute("SELECT current_schema() AS name").fetchone()
+    with registry.unit_of_work() as conn:
+        row = conn.execute("SELECT current_schema() AS name").fetchone()
     assert row is not None
     dsn = make_conninfo(os.environ["ASSET_STORE_PG_DSN"], options=f"-c search_path={row['name']}")
     with PostgresAssetRegistry.connect(dsn, bootstrap_schema=False) as other:
@@ -509,7 +512,8 @@ def test_cli_defaults_to_dry_run_then_applies(
     assert isinstance(registry, PostgresAssetRegistry)
     clock.now -= timedelta(days=2)
     asset = seed(backend, pending=True)
-    row = registry._conn.execute("SELECT current_schema() AS name").fetchone()
+    with registry.unit_of_work() as conn:
+        row = conn.execute("SELECT current_schema() AS name").fetchone()
     assert row is not None
     env = {
         **os.environ,

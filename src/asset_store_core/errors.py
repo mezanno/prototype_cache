@@ -99,3 +99,7 @@ class QuotaExceededError(AssetStoreError):
 
 class UploadTooLargeError(AssetStoreError):
     """Proxy upload exceeds the configured bounded body size (B-018)."""
+
+
+class RegistryUnavailableError(AssetStoreError):
+    """Registry connection checkout is temporarily unavailable."""

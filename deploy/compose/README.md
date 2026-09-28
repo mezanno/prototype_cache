@@ -34,8 +34,8 @@ curl -s http://127.0.0.1:8000/metrics | head
 docker compose down
 ```
 
-The registry is in-memory in this slice; `ASSET_STORE_PG_DSN` is plumbed into the
-service for the durable Postgres-backed registry tracked as B-009. The Garage S3
+The service uses the durable Postgres registry selected by `ASSET_STORE_PG_DSN`,
+with a bounded connection pool (ADR-023). See [pool configuration and metrics](../../docs/security/SEC02_TRANSACTION_ISOLATION.md#configuration-and-operations). The Garage S3
 key/secret in [`docker-compose.yml`](docker-compose.yml) are the same fixed
 **DEV-ONLY** values `garage-init.sh` imports.
 

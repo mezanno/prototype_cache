@@ -65,7 +65,9 @@ def client(request: pytest.FixtureRequest) -> Iterator[TestClient]:
                         yield http
                 finally:
                     # Only objects registered in this test's isolated schema.
-                    for row in registry._conn.execute("SELECT space, storage_key FROM assets"):
+                    with registry.unit_of_work() as conn:
+                        rows = conn.execute("SELECT space, storage_key FROM assets").fetchall()
+                    for row in rows:
                         store.delete_object(
                             ObjectStoreLocation(bucket=row["space"], key=row["storage_key"])
                         )

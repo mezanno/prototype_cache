@@ -2,14 +2,22 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Postgres transaction isolation (SEC-02, 2026-09-28)
+
+[Design, configuration and acceptance evidence](security/SEC02_TRANSACTION_ISOLATION.md):
+bounded psycopg pool, synchronous units of work, reentrant asset locks, retryable
+checkout overload, transaction metrics and app-owned shutdown (ADR-023). Concurrent
+HTTP rollback isolation is verified for durable asset, quota and audit state.
+Full suite: **354 passed** with Garage/Postgres; lint, types, locked image build
+and runtime vulnerability scan pass. Next security target: SEC-05 DNS/egress.
+
 ## Security checkpoint (B-018, 2026-09-27)
 
 [Bounded fixes and remaining work](security/B018_CLOSEOUT.md): authenticated raw
 registry routes and verified commits, explicit development credentials, fetcher
 ingress authentication, non-public IP rejection, bounded upload bodies, bearer
-redaction and patched locked dependencies are implemented (ADR-022, commit `acc445e`). Shared
-Postgres transactions, DNS pinning and resource/capability concurrency remain
-open. This is a stable prototype checkpoint, not release approval.
+redaction and patched locked dependencies are implemented (ADR-022, commit `acc445e`). The subsequent ADR-023 change closes shared Postgres transactions; DNS
+pinning and resource/capability concurrency remain open. This is a stable prototype checkpoint, not release approval.
 
 ### Historical review (2026-09-26)
 
@@ -42,8 +50,8 @@ Legacy administrative routes now also require the admin service credential and
 reject spoofed body caller identities. Credentials stay in page memory, rendering
 uses text nodes (no HTML injection), and the page has a restrictive CSP. This does
 not complete B-018: user→prefix trust, per-human attribution and deployment
-posture remain open after the subsequent control-plane hardening. The registry adapters' existing single-instance concurrency limits
-remain; no production scale claim is made.
+posture remain open after the subsequent control-plane hardening. The in-memory adapter and process-local capability concurrency limits
+remain; Postgres transactions are isolated by ADR-023. No production scale claim is made.
 
 New critical paths emit admin action counters and structured action/outcome logs.
 Mutations use registry transactions and existing asset row locks. Alias changes

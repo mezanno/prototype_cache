@@ -53,7 +53,7 @@ class PostgresRegistryTest(unittest.TestCase):
     def setUp(self) -> None:
         assert _DSN is not None
         self.registry = PostgresAssetRegistry.connect(_DSN)
-        with self.registry._conn.transaction():
+        with self.registry.unit_of_work():
             self.registry._conn.execute(
                 "TRUNCATE assets, aliases, audit_events, alias_tombstones, "
                 "partition_quotas, bucket_quotas RESTART IDENTITY CASCADE"
@@ -199,7 +199,7 @@ class PostgresRegistryLifecycleTest(unittest.TestCase):
     def setUp(self) -> None:
         assert _DSN is not None
         self.registry = PostgresAssetRegistry.connect(_DSN)
-        with self.registry._conn.transaction():
+        with self.registry.unit_of_work():
             self.registry._conn.execute(
                 "TRUNCATE assets, aliases, audit_events, alias_tombstones, "
                 "partition_quotas, bucket_quotas RESTART IDENTITY CASCADE"

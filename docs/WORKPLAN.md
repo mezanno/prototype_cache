@@ -8,7 +8,7 @@ The plan below is aligned with `ADR-001 = OVH S3 (hosted) + Garage (self-hosted)
 
 Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`spec/01_SCOPE.md`](spec/01_SCOPE.md) and [`spec/02_REQUIREMENTS.md`](spec/02_REQUIREMENTS.md). Backlog IDs (`B-*`) come from [`spec/05_BACKLOG_AND_OPEN_QUESTIONS.md`](spec/05_BACKLOG_AND_OPEN_QUESTIONS.md).
 
-## Current state (2026-09-27 · checkpoint `acc445e`)
+## Current state (2026-09-28)
 
 - B-009/B-010: durable Postgres registry, migrations, authenticated capabilities,
   guarded uploads and presigned reads are implemented, with Garage/S3 storage.
@@ -31,8 +31,12 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
   browser visual/interaction acceptance remains pending. See [admin contract](services/admin-ui.md).
 - B-018: [security review performed](security/B018_REVIEW.md); confirmed blockers
   and [bounded fixes completed](security/B018_CLOSEOUT.md), with remaining work
-  tracked as SEC-02..10 / R-012, R-015..020. R-014 is closed for the reviewed bypass. No risk acceptance or release sign-off.
-- **Next: SEC-02 / R-015 Postgres transaction isolation.** Swarm,
+  tracked in the closeout backlog. SEC-01 / R-014 and SEC-02 / R-015 are closed
+  for the reviewed defects. No risk acceptance or release sign-off.
+- SEC-02: [pooled transaction isolation](security/SEC02_TRANSACTION_ISOLATION.md)
+  implemented (ADR-023); 354 tests pass with Garage/Postgres, including concurrent
+  HTTP rollback, quota, saturation and shutdown tests.
+- **Next: SEC-05 / R-017 DNS-to-connection enforcement for fetcher.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ## Engineering quality bar
@@ -126,8 +130,8 @@ prototype:
   registry adapters are covered. See [admin contract](services/admin-ui.md), ADR-021.
 - B-018 - **Review performed (2026-09-26), remediation open:** STRIDE, isolated
   exploit probes, 3,600 generated capability/path checks and runtime dependency audit.
-  SEC-01 and bounded hardening are complete (2026-09-27); next is SEC-02
-  transaction isolation. See [closeout and follow-ups](security/B018_CLOSEOUT.md);
+  SEC-01 and bounded hardening are complete (2026-09-27); SEC-02 pooled
+  transaction isolation is complete (2026-09-28, ADR-023). See [closeout and follow-ups](security/B018_CLOSEOUT.md);
   readiness exit criteria remain open.
 - Lifecycle hardening: rate limits on capability issuance per service identity; idempotency-key replay protection across services.
 - Backup hook for Postgres + a second S3 target (B-017) - design and basic implementation.
@@ -178,11 +182,11 @@ prototype:
 - Twice-weekly delivery sync: backlog progress, blockers, risks.
 - Single source of truth: `docs/spec/` and the ADR table.
 
-## Immediate next actions (2026-09-27)
+## Immediate next actions (2026-09-28)
 
 1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
    automated HTTP contracts and static JavaScript syntax checks pass.
-2. **B-018 remediation:** SEC-02 shared-connection transaction isolation; follow
+2. **B-018 remediation:** SEC-05 DNS-to-connection/egress enforcement; follow
    the [closeout backlog](security/B018_CLOSEOUT.md) for deployment, DNS/egress,
    resource cleanup and capability concurrency work.
 3. Operational deployment, alert wiring and B-015 performance certification remain;

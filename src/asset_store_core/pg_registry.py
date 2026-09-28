@@ -18,19 +18,27 @@ registry can also bootstrap the same tables with ``CREATE TABLE IF NOT EXISTS``
 on connect (``bootstrap_schema=True``, the default) — handy for tests and local
 dev; production should provision via migrations and pass ``bootstrap_schema=False``.
 ``psycopg`` (v3) and ``alembic`` are optional dependencies; install the ``pg``
-extra (``pip install asset-store-prototype[pg]``). Like the in-memory registry,
-an instance is **not** thread-safe: it holds a single connection and serialises
-operations per transaction.
+extra (``pip install asset-store-prototype[pg]``). Concurrent synchronous callers
+use independent pooled connections. Nested operations share the current unit of
+work; units must never span an await or cross threads (ADR-023).
 """
 
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Iterator, Mapping
+import logging
+import math
+import os
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from functools import wraps
+from threading import local
+from time import monotonic
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, TypeVar
+
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 from asset_store_core.admin_query import AssetQuery
 from asset_store_core.errors import (
@@ -41,6 +49,7 @@ from asset_store_core.errors import (
     ChecksumMismatchError,
     InvalidStateTransitionError,
     QuotaExceededError,
+    RegistryUnavailableError,
     ValidationError,
 )
 from asset_store_core.ids import new_asset_id
@@ -73,6 +82,7 @@ try:
     import psycopg
     from psycopg.rows import dict_row
     from psycopg.types.json import Jsonb
+    from psycopg_pool import ConnectionPool, PoolClosed, PoolTimeout, TooManyRequests
 except ImportError as exc:  # pragma: no cover - exercised only without the pg extra
     raise ImportError(
         "PostgresAssetRegistry requires psycopg; install the 'pg' extra: pip install "
@@ -165,24 +175,63 @@ CREATE TABLE IF NOT EXISTS audit_events (
 """
 
 
-class PostgresAssetRegistry:
-    """Durable, full-surface asset registry over Postgres (B-009)."""
+P = ParamSpec("P")
+R = TypeVar("R")
+_LOG = logging.getLogger("asset_store.registry")
 
-    __slots__ = ("_alias_grace", "_conn")
+
+class _ConnectionState(local):
+    connection: Connection[Any] | None = None
+
+
+def _transactional(
+    method: Callable[Concatenate[PostgresAssetRegistry, P], R],
+) -> Callable[Concatenate[PostgresAssetRegistry, P], R]:
+    @wraps(method)
+    def wrapped(self: PostgresAssetRegistry, /, *args: P.args, **kwargs: P.kwargs) -> R:
+        with self.unit_of_work():
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
+class PostgresAssetRegistry:
+    """Durable registry; synchronous units of work own pooled transactions."""
 
     def __init__(
         self,
-        connection: Connection[Any],
+        pool: ConnectionPool[Connection[Any]],
         *,
         bootstrap_schema: bool = True,
         alias_name_grace_period: timedelta | None = None,
     ) -> None:
-        self._conn = connection
-        # Autocommit + explicit ``transaction()`` blocks is the recommended psycopg-3
-        # pattern: standalone reads commit immediately, so each multi-statement op
-        # below opens a real top-level transaction rather than a savepoint nested in
-        # a stray read transaction.
-        self._conn.autocommit = True
+        self._pool = pool
+        self._local = _ConnectionState()
+        self._transactions = Counter(
+            "asset_store_registry_transactions_total",
+            "Registry unit-of-work outcomes.",
+            ["outcome"],
+            registry=None,
+        )
+        self._checkout = Histogram(
+            "asset_store_registry_checkout_seconds",
+            "Pool checkout latency.",
+            registry=None,
+        )
+        self._unavailable = Counter(
+            "asset_store_registry_unavailable_total",
+            "Pool acquisition failures.",
+            registry=None,
+        )
+        self._pool_gauges = []
+        for key in ("pool_size", "pool_available", "requests_waiting"):
+            gauge = Gauge("asset_store_registry_" + key, "Psycopg pool " + key, registry=None)
+
+            def value(key: str = key) -> float:
+                return float(self._pool.get_stats().get(key, 0))
+
+            gauge.set_function(value)
+            self._pool_gauges.append(gauge)
         if alias_name_grace_period is None:
             self._alias_grace = timedelta(days=7)
         elif alias_name_grace_period < timedelta(0):
@@ -190,7 +239,7 @@ class PostgresAssetRegistry:
         else:
             self._alias_grace = alias_name_grace_period
         if bootstrap_schema:
-            with self._conn.transaction():
+            with self.unit_of_work():
                 self._conn.execute(_SCHEMA)
 
     @classmethod
@@ -200,18 +249,116 @@ class PostgresAssetRegistry:
         *,
         bootstrap_schema: bool = True,
         alias_name_grace_period: timedelta | None = None,
+        pool_min_size: int | None = None,
+        pool_max_size: int | None = None,
+        pool_timeout: float | None = None,
+        pool_max_waiting: int | None = None,
     ) -> PostgresAssetRegistry:
-        """Open a new connection from ``dsn`` and return a registry."""
-
-        connection = psycopg.connect(dsn, row_factory=dict_row)
-        return cls(
-            connection,
-            bootstrap_schema=bootstrap_schema,
-            alias_name_grace_period=alias_name_grace_period,
+        """Open and validate a bounded pool; environment supplies omitted limits."""
+        try:
+            minimum = (
+                int(os.getenv("ASSET_STORE_PG_POOL_MIN", "1"))
+                if pool_min_size is None
+                else pool_min_size
+            )
+            maximum = (
+                int(os.getenv("ASSET_STORE_PG_POOL_MAX", "8"))
+                if pool_max_size is None
+                else pool_max_size
+            )
+            timeout = (
+                float(os.getenv("ASSET_STORE_PG_POOL_TIMEOUT", "5"))
+                if pool_timeout is None
+                else pool_timeout
+            )
+            waiting = (
+                int(os.getenv("ASSET_STORE_PG_POOL_MAX_WAITING", "32"))
+                if pool_max_waiting is None
+                else pool_max_waiting
+            )
+        except ValueError as exc:
+            raise ValidationError("invalid Postgres pool configuration") from exc
+        if (
+            minimum < 1
+            or maximum < minimum
+            or waiting < 1
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValidationError("invalid Postgres pool bounds")
+        pool: ConnectionPool[Connection[Any]] = ConnectionPool(
+            dsn,
+            kwargs={"row_factory": dict_row, "autocommit": True},
+            min_size=minimum,
+            max_size=maximum,
+            timeout=timeout,
+            max_waiting=waiting,
+            open=False,
+            name="asset-store",
+            check=ConnectionPool.check_connection,
         )
+        try:
+            pool.open(wait=True, timeout=timeout)
+            return cls(
+                pool,
+                bootstrap_schema=bootstrap_schema,
+                alias_name_grace_period=alias_name_grace_period,
+            )
+        except BaseException:
+            pool.close()
+            raise
+
+    @property
+    def _conn(self) -> Connection[Any]:
+        connection = self._local.connection
+        if connection is None:
+            raise RuntimeError("registry SQL requires a synchronous unit_of_work")
+        return connection
+
+    @contextmanager
+    def unit_of_work(self) -> Iterator[Connection[Any]]:
+        """Pin one connection until commit/rollback; nested calls reuse it.
+
+        This synchronous context must not span await points or move threads.
+        SQL is private; external callers should use the registry operations.
+        """
+        if self._local.connection is not None:
+            yield self._local.connection
+            return
+        started = monotonic()
+        try:
+            connection = self._pool.getconn()
+        except (PoolTimeout, TooManyRequests, PoolClosed) as exc:
+            self._unavailable.inc()
+            _LOG.warning("registry pool unavailable", extra={"event": "registry.pool_unavailable"})
+            raise RegistryUnavailableError("registry temporarily unavailable") from exc
+        finally:
+            self._checkout.observe(monotonic() - started)
+        self._local.connection = connection
+        try:
+            with connection.transaction():
+                yield connection
+        except BaseException:
+            self._transactions.labels("rolled_back").inc()
+            _LOG.info("registry transaction rolled back", extra={"event": "registry.rollback"})
+            raise
+        else:
+            self._transactions.labels("committed").inc()
+        finally:
+            self._local.connection = None
+            self._pool.putconn(connection)
+
+    def register_metrics(self, registry: CollectorRegistry) -> None:
+        for collector in (
+            self._transactions,
+            self._checkout,
+            self._unavailable,
+            *self._pool_gauges,
+        ):
+            registry.register(collector)
 
     def close(self) -> None:
-        self._conn.close()
+        self._pool.close()
 
     def __enter__(self) -> PostgresAssetRegistry:
         return self
@@ -221,6 +368,7 @@ class PostgresAssetRegistry:
 
     # ------------------------------------------------------------------ writes
 
+    @_transactional
     def reserve_asset(
         self,
         *,
@@ -293,6 +441,7 @@ class PostgresAssetRegistry:
 
         return self._load_asset(asset_id)
 
+    @_transactional
     def commit_asset(
         self,
         *,
@@ -361,6 +510,7 @@ class PostgresAssetRegistry:
 
         return self._load_asset(asset_id)
 
+    @_transactional
     def update_annotations(
         self,
         *,
@@ -400,6 +550,7 @@ class PostgresAssetRegistry:
 
         return self._load_asset(asset_id)
 
+    @_transactional
     def expire_asset(self, *, asset_id: str, caller_service_id: str) -> Asset:
         """Transition ``available`` → ``expired`` (FR-006)."""
 
@@ -412,6 +563,7 @@ class PostgresAssetRegistry:
             verb="expire",
         )
 
+    @_transactional
     def delete_asset(self, *, asset_id: str, caller_service_id: str) -> Asset:
         """Transition to ``deleted`` from ``available`` or ``expired`` (FR-007)."""
 
@@ -424,6 +576,7 @@ class PostgresAssetRegistry:
             verb="delete",
         )
 
+    @_transactional
     def set_eviction_policy(
         self,
         *,
@@ -462,6 +615,7 @@ class PostgresAssetRegistry:
 
     # ----------------------------------------------------------------- aliases
 
+    @_transactional
     def detach_alias(self, *, space: str, alias: str, caller_service_id: str) -> None:
         """Detach an **immutable** alias with tombstone grace (FR-003)."""
 
@@ -501,6 +655,7 @@ class PostgresAssetRegistry:
             )
             self._mark_for_gc_if_orphaned(asset_id, caller_service_id)
 
+    @_transactional
     def detach_mutable_alias(
         self, *, space: str, alias: str, caller_service_id: str
     ) -> AliasBinding:
@@ -543,6 +698,7 @@ class PostgresAssetRegistry:
 
         return self._load_binding(norm_space, norm_alias)
 
+    @_transactional
     def rebind_alias(
         self, *, space: str, alias: str, new_asset_id: str, caller_service_id: str
     ) -> AliasBinding:
@@ -593,6 +749,7 @@ class PostgresAssetRegistry:
 
         return self._load_binding(norm_space, norm_alias)
 
+    @_transactional
     def resolve_alias(self, *, space: str, alias: str) -> Asset:
         """Resolve an alias to an ``available`` asset (FR-002)."""
 
@@ -619,6 +776,7 @@ class PostgresAssetRegistry:
 
     # ------------------------------------------------------------------ quotas
 
+    @_transactional
     def set_partition_quota(
         self,
         *,
@@ -683,6 +841,7 @@ class PostgresAssetRegistry:
             )
         return self.get_partition_quota(space=norm_space, partition_id=norm_partition)
 
+    @_transactional
     def set_bucket_quota(
         self,
         *,
@@ -713,11 +872,13 @@ class PostgresAssetRegistry:
             )
         return self.get_bucket_quota(space=norm_space)
 
+    @_transactional
     def get_partition_quota(self, *, space: str, partition_id: str) -> PartitionQuota:
         """Return the (possibly default) partition quota counters."""
 
         return self._partition_quota(normalize_space(space), normalize_partition_id(partition_id))
 
+    @_transactional
     def get_bucket_quota(self, *, space: str) -> BucketQuota:
         """Return the (possibly default) bucket quota counters."""
 
@@ -726,6 +887,7 @@ class PostgresAssetRegistry:
     # -------------------------------------------------------------------- audit
 
     @property
+    @_transactional
     def audit_events(self) -> tuple[AuditEvent, ...]:
         """Recorded audit events in insertion order (FR-008/FR-016)."""
 
@@ -749,6 +911,7 @@ class PostgresAssetRegistry:
             for row in rows
         )
 
+    @_transactional
     def record_capability_issue(
         self,
         *,
@@ -1054,6 +1217,7 @@ class PostgresAssetRegistry:
             ),
         )
 
+    @_transactional
     def list_assets(self) -> tuple[Asset, ...]:
         """Read unpurged maintenance candidates in one statement (ADR-020)."""
         rows = self._conn.execute(
@@ -1070,12 +1234,13 @@ class PostgresAssetRegistry:
     @contextmanager
     def asset_lock(self, asset_id: str) -> Iterator[Asset]:
         """Serialize upload/commit and maintenance across connections (ADR-020)."""
-        with self._conn.transaction():
+        with self.unit_of_work(), self._conn.transaction():
             self._conn.execute(
                 "SELECT asset_id FROM assets WHERE asset_id = %s FOR UPDATE", (asset_id,)
             ).fetchone()
             yield self._load_asset(asset_id)
 
+    @_transactional
     def record_read(self, asset_id: str) -> None:
         """Atomic access counter, distinct from lifecycle timestamps (FR-053)."""
         self._conn.execute(
@@ -1084,6 +1249,7 @@ class PostgresAssetRegistry:
             (utcnow(), asset_id),
         )
 
+    @_transactional
     def lifecycle_update(
         self,
         asset: Asset,
@@ -1174,6 +1340,7 @@ class PostgresAssetRegistry:
             eviction_policy=EvictionPolicy(asset_row["eviction_policy"]),
         )
 
+    @_transactional
     def recent_audit(
         self, *, asset_id: str | None = None, limit: int = 100
     ) -> tuple[AuditEvent, ...]:
@@ -1202,9 +1369,11 @@ class PostgresAssetRegistry:
             for row in reversed(rows)
         )
 
+    @_transactional
     def get_asset(self, asset_id: str) -> Asset:
         return self._load_asset(asset_id)
 
+    @_transactional
     def query_assets(self, query: AssetQuery) -> tuple[Asset, ...]:
         """Keyset pagination with SQL filters; no full registry snapshot (FR-040)."""
         clauses: list[str] = []
@@ -1247,6 +1416,7 @@ class PostgresAssetRegistry:
             for row in rows
         )
 
+    @_transactional
     def attach_alias(
         self, *, asset_id: str, alias: str, mutable: bool, caller_service_id: str
     ) -> AliasBinding:
@@ -1276,6 +1446,7 @@ class PostgresAssetRegistry:
             )
             return self._load_binding(asset.space, name)
 
+    @_transactional
     def set_asset_ttl(self, *, asset_id: str, ttl_seconds: int, caller_service_id: str) -> Asset:
         """Restore expiry atomically with quota and audit (FR-042)."""
         with self.asset_lock(asset_id) as asset:

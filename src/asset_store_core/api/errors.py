@@ -29,6 +29,7 @@ from asset_store_core.errors import (
     ObjectNotFoundError,
     PresignNotSupportedError,
     QuotaExceededError,
+    RegistryUnavailableError,
     ServiceAuthError,
     UploadTooLargeError,
     ValidationError,
@@ -47,6 +48,7 @@ _STATUS_BY_ERROR: dict[type[AssetStoreError], int] = {
     AssetExpiredError: 410,
     AssetDeletedError: 404,
     CapacityExceededError: 503,
+    RegistryUnavailableError: 503,
     ObjectNotFoundError: 404,
     AliasConflictError: 409,
     AliasImmutableError: 409,
@@ -85,6 +87,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         response = _problem(status=status, title=type(exc).__name__, detail=str(exc), **extra)
         if isinstance(exc, CapacityExceededError):
             response.headers["Retry-After"] = "60"
+        if isinstance(exc, RegistryUnavailableError):
+            response.headers["Retry-After"] = "1"
         return response
 
     async def handle_validation(request: Request, exc: Exception) -> Response:

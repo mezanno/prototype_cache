@@ -254,11 +254,12 @@ def test_mutable_detach_revision_and_bounded_history(
     assert len(registry.recent_audit(asset_id=asset.asset_id, limit=1)) == 1
     event = registry.recent_audit(asset_id=asset.asset_id, limit=1)[0]
     assert event.action == "alias.detach_mutable"
-    if hasattr(registry, "_conn"):
+    if hasattr(registry, "unit_of_work"):
         from asset_store_core.pg_registry import PostgresAssetRegistry
 
         assert isinstance(registry, PostgresAssetRegistry)
-        schema = registry._conn.execute("SELECT current_schema()").fetchone()
+        with registry.unit_of_work() as conn:
+            schema = conn.execute("SELECT current_schema()").fetchone()
         assert schema is not None
         with PostgresAssetRegistry.connect(
             make_conninfo(

@@ -13,6 +13,8 @@ remain available for local development and tests.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from uuid import uuid4
 
@@ -70,6 +72,7 @@ def create_app(
     registry: AssetRegistry | None = None,
     store: ObjectStoreBackend | None = None,
     credentials: ServiceCredentialStore | None = None,
+    close_registry: Callable[[], None] | None = None,
 ) -> FastAPI:
     """Build the FastAPI app, optionally injecting registry/store for tests."""
 
@@ -82,9 +85,20 @@ def create_app(
     guard = StorageGuard(registry, store)
     capabilities: dict[str, Capability] = {}
     metrics = build_metrics()
+    register_metrics = getattr(registry, "register_metrics", None)
+    if register_metrics is not None:
+        register_metrics(metrics.registry)
     logger = configure_logging()
 
-    app = FastAPI(title="asset-store", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            if close_registry is not None:
+                close_registry()
+
+    app = FastAPI(lifespan=lifespan, title="asset-store", version="0.1.0")
     app.state.registry = registry
     app.state.store = store
     app.state.guard = guard
@@ -522,12 +536,21 @@ def create_app_from_env() -> FastAPI:
             secret_key=_require_env("ASSET_STORE_S3_SECRET_KEY"),
         )
 
+    credentials = ServiceCredentialStore.from_env()
     registry: AssetRegistry | None = None
+    close_registry: Callable[[], None] | None = None
     dsn = os.environ.get("ASSET_STORE_PG_DSN")
     if dsn:
         from asset_store_core.pg_registry import PostgresAssetRegistry
 
         registry = PostgresAssetRegistry.connect(dsn)
+        close_registry = registry.close
 
-    credentials = ServiceCredentialStore.from_env()
-    return create_app(registry=registry, store=store, credentials=credentials)
+    try:
+        return create_app(
+            registry=registry, store=store, credentials=credentials, close_registry=close_registry
+        )
+    except BaseException:
+        if close_registry is not None:
+            close_registry()
+        raise

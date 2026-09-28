@@ -133,3 +133,10 @@ semantics and metric export. Sample high-water/exhaustion/error alerts are in
 Alerts are supplied as rules, not automatically installed by the dev stack.
 `gc_evicted_total` counts successful lifecycle actions (expiry and purge separately),
 not unique assets. Ratios/exhaustion describe the pass's planning snapshot.
+
+## Postgres pool operation (ADR-023)
+
+See [transaction isolation](../security/SEC02_TRANSACTION_ISOLATION.md#configuration-and-operations)
+for per-process connection/queue bounds, checkout timeout, 503 retry behavior and
+registry metrics. Monitor queue growth and acquisition failures before increasing
+limits; aggregate pool maxima must fit the database connection budget.
