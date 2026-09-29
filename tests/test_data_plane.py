@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -123,7 +124,11 @@ class DataPlaneTest(unittest.TestCase):
             expires_at=datetime.now(UTC) - timedelta(seconds=1),
             caller_service_id="upload-api",
         )
-        self.app.state.capabilities["cap-expired"] = expired
+        with patch(
+            "asset_store_core.api.app.utcnow",
+            return_value=expired.expires_at - timedelta(seconds=1),
+        ):
+            self.app.state.capabilities.issue(expired, on_grant=lambda: None)
 
         response = self.client.get(
             "/objects/users/42/uploads/a.txt", headers=self._auth("cap-expired")

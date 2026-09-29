@@ -119,6 +119,9 @@ def create_app(
     app.state.rules = rules
     app.state.fetcher = fetcher
     metrics = CollectorRegistry()
+    register_metrics = getattr(fetcher, "register_metrics", None)
+    if register_metrics is not None:
+        register_metrics(metrics)
     ingress_auth = Counter(
         "fetcher_ingress_auth_total",
         "Fetcher dispatcher authentication outcomes.",

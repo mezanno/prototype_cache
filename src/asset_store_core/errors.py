@@ -69,6 +69,10 @@ class CapabilityAlreadyConsumedError(AssetStoreError):
     """Raised when a single-use capability is reused (FR-013)."""
 
 
+class CapabilityCapacityError(AssetStoreError):
+    """Raised when the process cannot admit another live capability (ADR-026)."""
+
+
 class InvalidStateTransitionError(AssetStoreError):
     """Raised when an asset lifecycle transition is not allowed."""
 

@@ -13,15 +13,17 @@ import hashlib
 import ipaddress
 import json
 import os
-import socket
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 from urllib.parse import urljoin, urlsplit
 
+import httpcore
 import httpx
+from prometheus_client import CollectorRegistry
 
 from fetcher_service.errors import UpstreamError, UpstreamTimeoutError
+from fetcher_service.transport import ValidatedTransport, blocked_ip, resolve_allowed
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,26 +82,12 @@ _DEFAULT_MIME = "application/octet-stream"
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True if ``ip`` is in a range an outbound fetch must never reach (SSRF)."""
 
-    return not ip.is_global or ip.is_multicast
+    return blocked_ip(ip)
 
 
 def _assert_host_allowed(host: str, *, allow_private_hosts: bool) -> None:
-    """Resolve ``host`` and reject it if any address is a blocked (SSRF) range."""
-
-    if allow_private_hosts:
-        return
-    try:
-        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise UpstreamError(f"cannot resolve host {host!r}: {exc}") from exc
-    for info in infos:
-        address = info[4][0]
-        try:
-            ip = ipaddress.ip_address(address)
-        except ValueError:  # pragma: no cover - getaddrinfo returns valid IPs
-            continue
-        if _is_blocked_ip(ip):
-            raise UpstreamError(f"host {host!r} resolves to a blocked address ({address})")
+    """Early rejection; the transport independently validates the actual connect."""
+    resolve_allowed(host, 443, allow_private_hosts=allow_private_hosts)
 
 
 class HttpFetcher:
@@ -111,9 +99,9 @@ class HttpFetcher:
     response body is streamed and aborted once it exceeds ``max_bytes``, so an
     oversized origin cannot exhaust memory. Only ``http``/``https`` are allowed.
 
-    Note: the SSRF check resolves the host and inspects its addresses, then lets
-    httpx re-resolve on connect — a DNS-rebinding TOCTOU window remains and is
-    accepted for the prototype (a hardened build would pin the validated IP).
+    The default transport pins connections to validated numeric addresses while
+    retaining hostname-based TLS verification (ADR-025). Injected clients are
+    trusted test seams and must supply an equivalent transport for real networking.
     """
 
     def __init__(
@@ -136,8 +124,14 @@ class HttpFetcher:
             pool=connect_timeout,
         )
         # follow_redirects stays False: we validate each hop's host ourselves.
+        self._transport = (
+            ValidatedTransport(allow_private_hosts=allow_private_hosts) if client is None else None
+        )
         self._client = client or httpx.Client(
-            timeout=timeout, follow_redirects=False, trust_env=False
+            timeout=timeout,
+            follow_redirects=False,
+            trust_env=False,
+            transport=self._transport,
         )
 
     def fetch(self, url: str) -> FetchedContent:
@@ -159,11 +153,15 @@ class HttpFetcher:
                     data = self._read_capped(response)
                     mime = response.headers.get("content-type", _DEFAULT_MIME).split(";", 1)[0]
                     return FetchedContent(data=data, mime=mime.strip() or _DEFAULT_MIME)
-            except httpx.TimeoutException as exc:
+            except (httpx.TimeoutException, httpcore.TimeoutException) as exc:
                 raise UpstreamTimeoutError(f"timeout fetching {current!r}: {exc}") from exc
-            except httpx.HTTPError as exc:
+            except (httpx.HTTPError, httpcore.NetworkError, httpcore.ProtocolError) as exc:
                 raise UpstreamError(f"error fetching {current!r}: {exc}") from exc
         raise UpstreamError(f"too many redirects (>{self._max_redirects}) fetching {url!r}")
+
+    def register_metrics(self, registry: CollectorRegistry) -> None:
+        if self._transport is not None:
+            self._transport.register_metrics(registry)
 
     def _validate(self, url: str) -> None:
         scheme = urlsplit(url).scheme.lower()

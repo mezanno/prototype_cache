@@ -6,12 +6,15 @@ single-use enforcement from ``FR-013`` via :class:`SingleUseLedger`.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from threading import Lock
 
 from asset_store_core.errors import (
     CapabilityAlreadyConsumedError,
+    CapabilityCapacityError,
     CapabilityDeniedError,
     ValidationError,
 )
@@ -101,25 +104,83 @@ class SingleUseLedger:
     3. ``ledger.record_successful_use(cap)`` — mark consumed if ``single_use``.
     """
 
-    __slots__ = ("_consumed",)
+    __slots__ = ("_clock", "_consumed", "_lock")
 
-    def __init__(self) -> None:
-        self._consumed: set[str] = set()
+    def __init__(self, *, clock: Callable[[], datetime] = utcnow) -> None:
+        self._clock = clock
+        self._consumed: dict[str, datetime] = {}
+        self._lock = Lock()
+
+    def prune_expired(self) -> None:
+        """Retire expired consumed identifiers, including during reusable mints."""
+        with self._lock:
+            self._prune_locked(self._clock())
+
+    def _prune_locked(self, now: datetime) -> None:
+        for capability_id, expires_at in tuple(self._consumed.items()):
+            if expires_at <= now:
+                del self._consumed[capability_id]
 
     def record_successful_use(self, cap: Capability) -> None:
         """Record that ``cap`` has been used successfully once."""
 
-        if not cap.single_use:
-            return
-        if cap.capability_id in self._consumed:
-            raise CapabilityAlreadyConsumedError("single-use capability already consumed")
-        self._consumed.add(cap.capability_id)
+        with self._lock:
+            self._prune_locked(self._clock())
+            if not cap.single_use:
+                return
+            if cap.capability_id in self._consumed:
+                raise CapabilityAlreadyConsumedError("single-use capability already consumed")
+            self._consumed[cap.capability_id] = cap.expires_at
 
     def assert_unused(self, cap: Capability) -> None:
         """Raise if a single-use capability was already consumed."""
 
-        if cap.single_use and cap.capability_id in self._consumed:
-            raise CapabilityAlreadyConsumedError("single-use capability already consumed")
+        with self._lock:
+            self._prune_locked(self._clock())
+            if cap.single_use and cap.capability_id in self._consumed:
+                raise CapabilityAlreadyConsumedError("single-use capability already consumed")
+
+
+class CapabilityStore:
+    """Bounded process-local bearer store with atomic audit-before-publication (ADR-026)."""
+
+    __slots__ = ("_capabilities", "_clock", "_lock", "max_capabilities")
+
+    def __init__(self, max_capabilities: int, *, clock: Callable[[], datetime] = utcnow) -> None:
+        if max_capabilities <= 0:
+            raise ValidationError("ASSET_STORE_MAX_CAPABILITIES must be a positive integer")
+        self.max_capabilities = max_capabilities
+        self._clock = clock
+        self._capabilities: dict[str, Capability] = {}
+        self._lock = Lock()
+
+    def _prune_locked(self, now: datetime) -> None:
+        for capability_id, cap in tuple(self._capabilities.items()):
+            if cap.expires_at <= now:
+                del self._capabilities[capability_id]
+
+    def issue(self, cap: Capability, *, on_grant: Callable[[], None]) -> None:
+        """Audit then publish one valid grant while holding the admission lock."""
+        with self._lock:
+            now = self._clock()
+            self._prune_locked(now)
+            if cap.expires_at <= now:
+                raise ValidationError("capability must expire in the future")
+            if len(self._capabilities) >= self.max_capabilities:
+                raise CapabilityCapacityError("capability capacity temporarily unavailable")
+            on_grant()
+            self._capabilities[cap.capability_id] = cap
+
+    def get(self, capability_id: str) -> Capability | None:
+        """Look up a live bearer, retiring expired entries first."""
+        with self._lock:
+            self._prune_locked(self._clock())
+            return self._capabilities.get(capability_id)
+
+    def __len__(self) -> int:
+        with self._lock:
+            self._prune_locked(self._clock())
+            return len(self._capabilities)
 
 
 def _is_same_path_or_child(candidate: str, prefix: str) -> bool:

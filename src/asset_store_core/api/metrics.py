@@ -22,6 +22,7 @@ class Metrics:
     requests_total: Counter
     request_duration_seconds: Histogram
     capability_issued_total: Counter
+    active_capabilities: Gauge
     bucket_fill_ratio: Gauge
 
 
@@ -47,6 +48,11 @@ def build_metrics() -> Metrics:
         ["service", "op", "outcome"],
         registry=registry,
     )
+    active_capabilities = Gauge(
+        "asset_store_active_capabilities",
+        "Current live capability bearers retained by this process (ADR-026).",
+        registry=registry,
+    )
     bucket_fill_ratio = Gauge(
         "asset_store_bucket_fill_ratio",
         "Bucket usage as a fraction of its configured quota_bytes (FR-068, ADR-009).",
@@ -58,5 +64,6 @@ def build_metrics() -> Metrics:
         requests_total=requests_total,
         request_duration_seconds=request_duration_seconds,
         capability_issued_total=capability_issued_total,
+        active_capabilities=active_capabilities,
         bucket_fill_ratio=bucket_fill_ratio,
     )

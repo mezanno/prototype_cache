@@ -17,6 +17,15 @@
 
 ---
 
+## Current delivery milestone — M-001
+
+Deliver a private, single-instance cache pilot on top of asset-store and the
+existing fetcher-service. Scope: trusted testers, public reconstructible content,
+a small approved origin set and one-host Compose deployment. The
+[pilot plan](../milestones/PRIVATE_CACHE_PILOT.md) defines the delivery sequence,
+acceptance checks and explicit deferrals. The wider MVP below remains the target;
+this milestone is not production release approval (ADR-024).
+
 ## Problem Statement
 
 Heritage- and document-processing services need a single durable pivot for all binary content flowing through the platform: images fetched from heritage institutions, end-user uploads, and worker artifacts (intermediate and final). The current ad-hoc storage approach mixes concerns (fetching, caching, processing, serving) and prevents fine-grained access control, audit, and quota management. The `asset-store` module solves this by providing a multi-tenant blob store with logical aliases, lifecycle management, and short-lived prefix-scoped access tokens, so that every other module (upload API, fetcher, workers, future IIIF server, future task API) can rely on a single contract for storing and retrieving content.
@@ -292,6 +301,16 @@ Remote URL flows use **fetcher-service** ([`services/fetcher-service.md`](../ser
 - **Open questions:** Q-030; capability verb granularity (`Q-032`). Cache alias/allowlist resolved by [`ADR-014`](03_ARCHITECTURE.md).
 
 #### SCN-010 - User reads a cached image instead of the authoritative source
+
+**M-001 pilot subset (ADR-024):** the public read URL is
+`https://cache-host/gallica.bnf.fr/<origin-path>`, following the
+[original domain/path sketch](../_archive/NOTES.md#caching-of-distant-iiif-resources).
+The thin facade runs in fetcher-service for the private pilot; it is outside the
+asset-store module. It maps the public URL to ADR-014's internal canonical alias,
+uses guarded proxy reads, and returns **404 on miss without an origin request**.
+Population is a separate preload operation. The broader read-through step 5 below
+is deferred as **B-025**; the separate end-user mirror service remains a later
+architecture. See the [pilot contract](../milestones/PRIVATE_CACHE_PILOT.md).
 
 - **Priority:** P2 (future; the end-user-facing `iiif-image-mirror` module is not in MVP — see [`B-021`](05_BACKLOG_AND_OPEN_QUESTIONS.md). This scenario shows how asset-store is *used* as the mirror's backing cache; the mirror itself is out of asset-store scope.)
 - **Actors:** End-user client, iiif-image-mirror (out of asset-store scope), storage-guard, asset-registry, object-store; fetcher on a miss

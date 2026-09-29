@@ -2,6 +2,31 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Bounded capability state (ADR-026, 2026-09-29)
+
+FR-010..013/FR-050: a locked process-local store admits at most
+`ASSET_STORE_MAX_CAPABILITIES` live tokens (default 10,000). Expired tokens and
+consumed identifiers are retired lazily. A full store returns 503 without
+evicting live grants; an audit failure publishes no bearer or granted metric.
+The active-token gauge and capacity-denial counter expose saturation.
+This bounds retained state, not issuance rate or audit growth. Restart still
+invalidates tokens; atomic single-use check/use and replica support remain open.
+M-001/P2 also still needs failed-write cleanup and aggregate admission limits.
+
+Checkpoint validation: **379 tests passed, none skipped**, with local Postgres
+and Garage; Ruff lint/format, strict mypy (72 files) and whitespace checks pass.
+Two upstream TestClient deprecation warnings remain. The lead reviewed atomic
+capacity admission, no eviction of live grants, expiry denial and audit-failure
+publication safety. No deployment or broader security release approval is claimed.
+
+## Outbound connection validation (SEC-05, 2026-09-29)
+
+[Design and evidence](security/SEC05_OUTBOUND_CONNECTIONS.md): validated numeric
+connections preserve origin Host/TLS identity, reject mixed/private/translation
+answers and revalidate new redirect connections. Baseline full suite: 366 passed;
+three further delegated transport regressions pass. DNS race closed; M-001/P2
+resource bounds and the pilot facade remain outstanding.
+
 ## Postgres transaction isolation (SEC-02, 2026-09-28)
 
 [Design, configuration and acceptance evidence](security/SEC02_TRANSACTION_ISOLATION.md):
@@ -16,8 +41,7 @@ and runtime vulnerability scan pass. Next security target: SEC-05 DNS/egress.
 [Bounded fixes and remaining work](security/B018_CLOSEOUT.md): authenticated raw
 registry routes and verified commits, explicit development credentials, fetcher
 ingress authentication, non-public IP rejection, bounded upload bodies, bearer
-redaction and patched locked dependencies are implemented (ADR-022, commit `acc445e`). The subsequent ADR-023 change closes shared Postgres transactions; DNS
-pinning and resource/capability concurrency remain open. This is a stable prototype checkpoint, not release approval.
+redaction and patched locked dependencies are implemented (ADR-022, commit `acc445e`). The subsequent ADR-023 change closes shared Postgres transactions; ADR-025 closes the DNS race; resource limits and atomic single-use consumption remain open. This is a stable prototype checkpoint, not release approval.
 
 ### Historical review (2026-09-26)
 

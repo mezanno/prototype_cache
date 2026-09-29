@@ -11,9 +11,21 @@ FR-050..052 (audit), NFR-008 (scoping). Decision: ADR-022.
 ## Subsequent remediation — 2026-09-28
 
 **SEC-02 / R-015 is closed:** [pooled transaction isolation and acceptance
-evidence](SEC02_TRANSACTION_ISOLATION.md), ADR-023. Next target is SEC-05 / R-017
-DNS-to-connection enforcement. The original checkpoint validation below remains
+evidence](SEC02_TRANSACTION_ISOLATION.md), ADR-023. The original checkpoint validation below remains
 historical; the isolation milestone passes 354 tests.
+
+## Subsequent remediation — 2026-09-29
+
+**SEC-05 DNS race is closed in the default transport:** [connection-bound validation
+and acceptance evidence](SEC05_OUTBOUND_CONNECTIONS.md), ADR-025. R-017's remaining
+origin/destination-policy and deployment boundaries stay open. Next milestone gate
+is M-001/P2: resource bounds and failed-upload cleanup.
+
+ADR-026 now bounds process-local capability storage (default 10,000 live tokens),
+retires expired bearer/consumed state, and returns retryable 503 on saturation
+without evicting live tokens. Audit failure cannot publish a grant. This is a
+partial SEC-06/SEC-10 remediation: issuance rate, audit growth, atomic single-use
+consumption and replica support remain open.
 
 ## Implemented
 
@@ -22,7 +34,7 @@ historical; the isolation milestone passes 354 tests.
 | SEC-01 | Raw reserve/commit/resolve require service authentication and bucket authorization. Reservation actor must match the caller; commit requires owner/admin and verifies size/checksum against stored bytes. |
 | SEC-03 | Factories fail closed without configured credentials or explicit development opt-in. Unicode secrets reject cleanly; configuration errors do not echo secret values. Deployment TLS/rotation remains open. |
 | SEC-04 | Fetcher ingress requires task-api/admin authentication; its asset-store resolve calls authenticate too. End-user destination policy remains the dispatcher's responsibility (R-012). |
-| SEC-05 | Fetcher rejects non-global/multicast addresses, including CGNAT, and disables environment proxies. DNS-to-connection binding remains open. |
+| SEC-05 | Fetcher rejects non-global/multicast addresses, including CGNAT, and disables environment proxies. Connection-time DNS validation and numeric dialing are now implemented (ADR-025); see the subsequent evidence above. |
 | SEC-06 | Proxy uploads authorize before reading the body and enforce a configurable byte cap for declared and streamed bodies. Failed-write cleanup and aggregate admission limits remain open. |
 | SEC-07 | New audit records contain a SHA-256 capability fingerprint, not the bearer. Capability errors omit bearer values; correlation IDs are bounded and sanitized. Historical audit rows are not rewritten. |
 | SEC-08 | Console and user guide explain that issued signed URLs survive metadata expiry until URL expiry or physical deletion. Strict revocation design remains open. |
@@ -50,6 +62,10 @@ needed. New fingerprints change the capability audit JSON field from
   and returns 413 for oversized proxy uploads. This bounds retained request data,
   but is not a total process-memory or concurrency budget. Multipart/resumable
   large-file support remains future work.
+- `ASSET_STORE_MAX_CAPABILITIES` defaults to 10,000 and must be a positive integer.
+  Saturated issuance returns 503 with `Retry-After: 1`; reuse a live capability
+  or retry with backoff after expiry. `asset_store_active_capabilities` reports
+  retained live tokens; issuance outcome `capacity_denied` counts overload.
 - Restarting invalidates process-local capabilities. Older audit rows/exports may
   contain previously issued bearer values; new redaction does not scrub history.
   Restrict access and define retention/export cleanup before deployment.
@@ -58,10 +74,9 @@ needed. New fingerprints change the capability audit JSON field from
 
 | Priority / finding | Required follow-up and acceptance evidence |
 |---|---|
-| P0 before exposure · SEC-05 / R-017 | Bind validated DNS results to actual connections and every redirect, or enforce an equivalent egress boundary. Test DNS rebinding, mixed address answers and metadata/private-network targets. |
 | P1 · SEC-06 / R-018 | Fence and reclaim failed uploads, reserve capacity before writes, bound aggregate concurrency and issuance. Test quota rejection, interrupted writes and cleanup races without deleting successful payloads. |
 | P0 before exposure · SEC-03/04 / R-012, R-016, R-017 | Define trusted user-to-prefix authorization, deployment TLS, secret rotation and ingress limits; demonstrate unauthorized tenant destinations are rejected at the responsible upstream boundary. |
-| P2 · SEC-10 / R-020 | Define restart/replica semantics, atomic single-use consumption and token retirement. Concurrent replay must permit at most one successful use; expired state must remain bounded. |
+| P2 · SEC-10 / R-020 | Local token bounds/retirement are implemented (ADR-026). Define replica semantics and atomic single-use consumption. Concurrent replay must permit at most one successful use; expired state must remain bounded. |
 | P2 · SEC-07 / R-019 | Decide retention and cleanup of historical audit rows/exports containing bearer values, preserving audit integrity. Verify new exports contain no usable credentials. |
 | P2 · SEC-08 / R-019 | Choose signed-URL lifetime versus strict proxy revocation contract, then test expiry/deletion with previously issued URLs. Current behavior is documented, not changed. |
 | P2 · SEC-09 / R-020 | Add image/OS scanning and broader interpreter/platform dependency coverage; retain dated reports and remediate findings. Runtime Python scanning is not image certification. |

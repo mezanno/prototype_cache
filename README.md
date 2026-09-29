@@ -10,7 +10,9 @@ Define and validate a production-grade design for a deployable, testable, observ
 ## Current implementation slice
 
 Start with the **[visual architecture and progress overview](docs/OVERVIEW.md)**
-for component responsibilities, implementation status and the next milestone.
+for component responsibilities and implementation status. The current milestone is
+a [private, single-instance cache pilot](docs/milestones/PRIVATE_CACHE_PILOT.md)
+on top of asset-store and fetcher-service.
 
 The prototype includes a FastAPI service, durable Postgres registry, Garage/S3
 storage adapter, scoped capabilities, fetcher, bulk-loader, worker simulator and
@@ -34,7 +36,8 @@ and upload limits, see the [security checkpoint](docs/security/B018_CLOSEOUT.md)
 ## Running the full test suite
 
 The default run is **Docker-free**: infrastructure-backed tests skip unless their
-backend is reachable.
+backend is reachable. The local HTTPS transport tests require the `openssl` CLI
+to generate a temporary test certificate.
 
 ```bash
 # Lint, type-check, and the fast (in-memory) suite — what CI runs.

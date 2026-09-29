@@ -8,7 +8,19 @@ The plan below is aligned with `ADR-001 = OVH S3 (hosted) + Garage (self-hosted)
 
 Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`spec/01_SCOPE.md`](spec/01_SCOPE.md) and [`spec/02_REQUIREMENTS.md`](spec/02_REQUIREMENTS.md). Backlog IDs (`B-*`) come from [`spec/05_BACKLOG_AND_OPEN_QUESTIONS.md`](spec/05_BACKLOG_AND_OPEN_QUESTIONS.md).
 
-## Current state (2026-09-28)
+## Current milestone — M-001 private Gallica IIIF cache pilot
+
+The current delivery goal is a **Gallica IIIF image cache on asset-store, deployed privately
+on one host with one process per application service**. Follow the
+[practical pilot plan](milestones/PRIVATE_CACHE_PILOT.md): SEC-05 → resource bounds
+→ preload/read cache API → private Compose deployment → recovery/operations → pilot
+acceptance. Existing core implementations are reused. This sequence takes priority
+over the broad phases below for this milestone; their production requirements
+remain on the backlog. Full Swarm/HA and full-scale load certification are deferred,
+not marked complete. Separate preload/cache-only reads are confirmed; read-through
+on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and reviewed. Next: **P2 resource bounds**.
+
+## Current state (2026-09-29)
 
 - B-009/B-010: durable Postgres registry, migrations, authenticated capabilities,
   guarded uploads and presigned reads are implemented, with Garage/S3 storage.
@@ -36,7 +48,15 @@ Each phase has explicit exit criteria mapped to `FR-*`/`NFR-*`/`S-*` IDs from [`
 - SEC-02: [pooled transaction isolation](security/SEC02_TRANSACTION_ISOLATION.md)
   implemented (ADR-023); 354 tests pass with Garage/Postgres, including concurrent
   HTTP rollback, quota, saturation and shutdown tests.
-- **Next: SEC-05 / R-017 DNS-to-connection enforcement for fetcher.** Swarm,
+- SEC-05: [validated outbound transport](security/SEC05_OUTBOUND_CONNECTIONS.md)
+  implemented (ADR-025); full baseline 366 tests plus three additional focused
+  transport regressions accepted.
+- ADR-026: bounded local capability storage, expiry retirement, retryable overload
+  and audit-before-publication are implemented. Atomic single-use consumption
+  and issuance rate limits remain open.
+- Current combined checkpoint: **379 tests pass**, none skipped, with Garage/Postgres;
+  lint, formatting and strict typing checks pass.
+- **Next: M-001/P2 aggregate resource bounds and failed-upload cleanup.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ## Engineering quality bar
@@ -182,11 +202,11 @@ prototype:
 - Twice-weekly delivery sync: backlog progress, blockers, risks.
 - Single source of truth: `docs/spec/` and the ADR table.
 
-## Immediate next actions (2026-09-28)
+## Immediate next actions (2026-09-29)
 
 1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
    automated HTTP contracts and static JavaScript syntax checks pass.
-2. **B-018 remediation:** SEC-05 DNS-to-connection/egress enforcement; follow
+2. **B-018 / M-001/P2:** resource bounds and failed-upload cleanup; follow
    the [closeout backlog](security/B018_CLOSEOUT.md) for deployment, DNS/egress,
    resource cleanup and capability concurrency work.
 3. Operational deployment, alert wiring and B-015 performance certification remain;

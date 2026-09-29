@@ -1,8 +1,8 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-09-28 · SEC-02 transaction isolation implemented · Next: SEC-05 / R-017 DNS/egress**
+> **Checkpoint: 2026-09-29 · SEC-02/05 implemented · Next: M-001/P2 resource bounds**
 >
-> Working prototype. **Security review found exposure blockers; remediation remains open.**
+> **Current goal: [M-001 private Gallica IIIF cache pilot](milestones/PRIVATE_CACHE_PILOT.md)** — one host, trusted testers, existing fetcher over asset-store. Security gates remain open.
 
 **Purpose:** a shared repository for remote content, user uploads and worker results.
 Callers use stable **aliases**; asset-store owns metadata, access capabilities and
@@ -80,7 +80,13 @@ Future IIIF server / image-mirror consumers sit outside this module and are not 
 | **Admin path** · B-013 | 🟢 Implemented; visual QA pending | Console, authenticated admin API, cursor listing, inspect/audit, TTL restoration, aliases, quotas, bounded bulk expiry → browser acceptance check |
 | **Observability + CI** · B-003/004 | 🟡 Partial | Metrics, JSON logs, correlation IDs, sample lifecycle alerts; lint/types/tests CI → tracing, dashboards, alert wiring, image build/scan |
 | **Deployment + recovery** · B-016/017/019 | 🟡 Partial | Local Compose and Dockerfile → Swarm, chaos tests, backup/restore drill, pilot/rollback |
-| **Security + scale** · B-018/015 | 🟡 Reviewed; remediation open | [B-018 checkpoint](security/B018_CLOSEOUT.md): authenticated control plane, bounded hardening and [pooled transactions](security/SEC02_TRANSACTION_ISOLATION.md) implemented; DNS/egress and resource cleanup remain |
+| **Security + scale** · B-018/015 | 🟡 Reviewed; remediation open | [B-018 checkpoint](security/B018_CLOSEOUT.md): authenticated control plane, bounded hardening and [pooled transactions](security/SEC02_TRANSACTION_ISOLATION.md) implemented; connection-bound DNS validation implemented; resource cleanup and pilot origin policy remain |
+
+**Pilot API:** preload explicitly; read cached images at
+`cache-host/gallica.bnf.fr/<origin-path>` (404 on miss).
+
+**Pilot product debt:** explicit preload + cache-only reads for M-001;
+read-through fetching on a miss is tracked as **B-025**, to revisit after the pilot.
 
 **Test substitutes:** `InMemoryAssetRegistry` and `LocalObjectStore` replace Postgres
 and S3 for infrastructure-free tests; `LocalObjectStore` is an in-memory dictionary.
@@ -106,8 +112,8 @@ flowchart LR
     core["DELIVERED<br/>Ingest and retrieve<br/>Fetcher + worker-sim"]
     lifecycle["DELIVERED · B-014<br/>Lifecycle cleanup"]
     admin["LATEST · B-013<br/>Admin console + API"]
-    security["NEXT · B-018 remediation<br/>SEC-05 DNS/egress<br/>SEC-06 resource cleanup"]
-    readiness["REMAINING<br/>Load + operations<br/>Recovery + pilot"]
+    security["NEXT · B-018 remediation<br/>P2 resource bounds<br/>SEC-06 cleanup + admission limits"]
+    readiness["M-001 · PRIVATE PILOT<br/>Preload/read API + Compose<br/>Recovery + limited workload"]
     core --> lifecycle --> admin --> security --> readiness
     style core fill:#dcfce7,stroke:#15803d,color:#14532d
     style lifecycle fill:#dcfce7,stroke:#15803d,color:#14532d
@@ -116,14 +122,16 @@ flowchart LR
     style readiness fill:#f1f5f9,stroke:#64748b,color:#334155
 ```
 
-**Evidence:** last code validation recorded **326 passing tests**, none skipped,
+**Evidence:** last code validation recorded **366 passing tests**, none skipped,
 with Garage/Postgres enabled; lint, formatting and strict typing passed. Backend
 tests are environment-gated in ordinary runs. Browser visual/interaction QA remains
 pending (no browser available in the implementation session). This is not load or deployment certification.
 
 **Architect attention:** upstream services still own user→prefix authorization
-(R-012); process-local capabilities constrain replica/restart behavior; legacy reserve/commit/resolve authorization
-bypasses and shared-connection rollback were reproduced. Admin routes now require an authenticated admin. Keep these boundaries explicit before wider exposure.
+(R-012); local token storage is bounded (ADR-026), while atomic single-use
+consumption and replica/restart behavior remain constrained; legacy control-plane bypasses and shared-connection rollback are fixed (SEC-01/02).
+SEC-05 is implemented; resource bounds and the Gallica facade origin policy are
+the next pilot gates.
 Per-alias deadlines and content deduplication remain deferred; several foundational
 ADRs/spikes still await formal close-out despite working code.
 

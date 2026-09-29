@@ -98,6 +98,10 @@ class StorageGuard:
         self._store = store
         self._ledger = ledger if ledger is not None else SingleUseLedger()
 
+    def prune_consumed_capabilities(self) -> None:
+        """Retire expired single-use state during capability minting (ADR-026)."""
+        self._ledger.prune_expired()
+
     def resolve_for_read(self, *, capability: Capability, alias: str) -> GuardedRead:
         """Authorize a read and resolve the alias without consuming bytes.
 

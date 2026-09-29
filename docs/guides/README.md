@@ -23,3 +23,11 @@ using the **asset-store** module. For requirements and architecture, see
 - **Capability** — a short-lived, prefix-scoped grant for `read` or `write`,
   presented as `Authorization: Capability <id>`. Its `scope_prefix` must be at
   least `bucket/segment` (a bare bucket is not allowed).
+
+## Capability limits
+
+Reuse a live capability for its permitted scope until it expires. The service
+retains at most `ASSET_STORE_MAX_CAPABILITIES` live tokens (default 10,000).
+Issuance returns 503 with `Retry-After: 1` when full; clients should retry with
+backoff or reuse an existing token. Expired entries are removed automatically.
+Restart invalidates all tokens, so clients must mint replacements.

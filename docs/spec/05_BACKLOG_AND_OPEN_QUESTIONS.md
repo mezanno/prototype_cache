@@ -95,12 +95,17 @@ and remaining acceptance tests: [security checkpoint](../security/B018_CLOSEOUT.
 | R-014 | Unauthenticated control-plane writes/resolve, forged metadata and actors (SEC-01) | P0 | Closed for the reviewed bypass: service authentication, bucket/owner checks and backend-verified commits implemented and tested (`acc445e`). Upstream tenant policy remains R-012 |
 | R-015 | Shared Postgres transaction can roll back another acknowledged request (SEC-02) | P0 | Closed (2026-09-28, ADR-023): pooled units of work; concurrent HTTP rollback isolation and durable asset/quota/audit regression verified. See [SEC-02 evidence](../security/SEC02_TRANSACTION_ISOLATION.md) |
 | R-016 | Predictable dev credentials and unenforced TLS/secrets posture (SEC-03) | P0 before exposure | Partial: fail-closed credentials and explicit dev opt-in implemented; TLS, secret rotation and deployment posture remain open |
-| R-017 | Unauthenticated fetcher deputy and incomplete SSRF boundary (SEC-04/05) | P0 before exposure | Partial: dispatcher authentication, non-global IP rejection and environment-proxy disabling implemented; tenant destination policy and connected-address/egress enforcement remain open |
+| R-017 | Unauthenticated fetcher deputy and incomplete SSRF boundary (SEC-04/05) | P0 before exposure | Partial: dispatcher authentication, connection-bound DNS/IP validation and environment-proxy disabling implemented (ADR-025); tenant/origin destination policy and deployment egress review remain open |
 | R-018 | Failed-upload bytes and unbounded body/token resources (SEC-06) | P1 | Partial: per-request proxy body cap implemented; aggregate admission limits, failed-write cleanup and token retirement remain open |
 | R-019 | Live bearer in audit; old signed URLs survive admin expiry (SEC-07/08) | P1 | Partial: new audit fingerprints and bearer-free errors implemented; historical audit cleanup and strict revocation contract remain open; signed-URL behavior documented |
 | R-020 | Vulnerable dependency lock, unscanned/non-locked images and process-local capability state (SEC-09/10) | P1 | Partial: patched runtime lock, locked image installation and CI runtime scan implemented; image/OS scanning and capability concurrency/replica contract remain open |
 
 ## Implementation Backlog (Prototype)
+
+**Current milestone: [M-001 private Gallica IIIF cache pilot](../milestones/PRIVATE_CACHE_PILOT.md).**
+Its P1–P6 packages select pilot-sized portions of this backlog. B-019 is now the
+active milestone plan; full production load/HA work remains deferred.
+
 
 Coarse-grained backlog. Refined into engineering tickets at Phase 1 kick-off. Ordering reflects dependencies; priority follows MoSCoW from [`02_REQUIREMENTS.md`](02_REQUIREMENTS.md).
 
@@ -124,11 +129,13 @@ Coarse-grained backlog. Refined into engineering tickets at Phase 1 kick-off. Or
 | B-015 | Load tests for S-2 / S-3 (locust or k6) | Test | P1 | B-011, B-012 | Numbers attached to NFR-002/003/004 acceptance |
 | B-016 | Chaos suite: kill-one of each service and one object-store node | Test | P2 | B-015 | Service replicas survive; failure modes match `03_ARCHITECTURE.md` |
 | B-017 | Backup hook to a second S3 target | Feature | P2 | B-009 | Documented and tested; FR-061 acceptance |
-| B-018 | **Review and bounded fixes complete (2026-09-27, ADR-022, `acc445e`); complex remediation/sign-off open.** [Checkpoint and follow-ups](../security/B018_CLOSEOUT.md); SEC-02 / R-015 closed (ADR-023); next: SEC-05 / R-017 DNS-to-connection enforcement | Doc | P1 | B-010, B-013 | Findings logged; checklist boxes ticked or risks accepted |
-| B-019 | Pilot plan + rollback rehearsal | Doc | P2 | B-015, B-018 | Plan reviewed; rehearsal report attached |
-| B-021 | Decide whether `iiif-image-mirror` is needed and scope it: end-user auth model, IIIF Image API compliance level, derivative generation decision ([`Q-026`](05_BACKLOG_AND_OPEN_QUESTIONS.md)) | Doc | P3 | B-010 | Decision recorded; if yes, `iiif-image-mirror` service identity provisioned in storage-guard |
+| B-018 | **Review and bounded fixes complete (2026-09-27, ADR-022, `acc445e`); complex remediation/sign-off open.** [Checkpoint and follow-ups](../security/B018_CLOSEOUT.md); SEC-02 / R-015 closed (ADR-023); SEC-05 DNS race closed (ADR-025); next: M-001/P2 resource bounds | Doc | P1 | B-010, B-013 | Findings logged; checklist boxes ticked or risks accepted |
+| B-019 | **Active milestone:** [M-001 private Gallica IIIF cache pilot](../milestones/PRIVATE_CACHE_PILOT.md), deployment, recovery and go/no-go evidence | Delivery | P1 current | Pilot slices of B-003/004/013/014/015/017/018; B-024 | P1–P6 acceptance checklist completed; restore/rollback evidence and limited pilot decision recorded |
+| B-021 | **M-001 decision made (ADR-024):** host-prefixed cached-image facade in fetcher-service; no derivatives, info.json or manifests. Broader `iiif-image-mirror` scope deferred: end-user auth model, IIIF Image API compliance level, derivative generation decision ([`Q-026`](05_BACKLOG_AND_OPEN_QUESTIONS.md)) | Doc | P3 | B-010 | Decision recorded; if yes, `iiif-image-mirror` service identity provisioned in storage-guard |
 | B-022 | Quota reconciliation job: periodically scan `available` assets per `(space, partition_id)`, recompute `PartitionQuota.used_bytes` and `BucketQuota.used_bytes` from live asset rows, emit `quota_drift_detected{space,partition_id}` when drift exceeds configurable tolerance. Mitigates crash-between-commit-and-SQL-update divergence. | Feature | P2 | B-009 | Reconciliation job runs against a live registry without errors; `quota_drift_detected` fires correctly when drift is artificially injected above the tolerance threshold |
 | B-023 | **Legal hold / retention** (post-MVP): decide whether assets need an admin-settable legal-hold/WORM flag that blocks deletion and GC until cleared, layered on top of TTL expiry. Expiry + grace already cover routine lifecycle (ADR-009); legal hold is an additional protection. If pursued, map to backend WORM (OVH) where available, but keep the registry authoritative (ADR-011). | Doc | P3 | B-009 | Decision recorded; if yes, legal-hold field added to the asset model, honoured by the lifecycle worker, and audited on set/clear |
+| B-024 | M-001 Gallica image cache API: allowlisted URL preload and cached-byte retrieval via asset-store; API-first, preload/cache-only split and `cache-host/gallica.bnf.fr/<path>` reads confirmed | Feature | P1 pilot | B-010, B-020, narrowed B-021 | Preload then cached reads verified without extra origin GET; allowlist, agreed miss response, restart/remint, concurrent preload and failures tested |
+| B-025 | **Explicit M-001 debt — read-through cache API:** optionally fetch/store on an allowlisted read miss. First pilot uses explicit preload and cache-only reads (404 on miss); product owner wants this revisited after pilot feedback | Feature | P2 post-pilot | B-024, SEC-05/06 | Contract defines opt-in/default policy, miss coalescing, latency/timeouts, origin rate limits and retries; tests prove one safe cache population and no fetch for disallowed URLs |
 
 ## Exit Criteria To Start Build Phase
 

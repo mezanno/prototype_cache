@@ -44,8 +44,9 @@ from asset_store_core.api.schemas import (
     PresignedUrlOut,
     ReserveRequest,
 )
-from asset_store_core.capabilities import Capability, Operation
+from asset_store_core.capabilities import Capability, CapabilityStore, Operation
 from asset_store_core.errors import (
+    CapabilityCapacityError,
     CapabilityDeniedError,
     ChecksumMismatchError,
     ObjectNotFoundError,
@@ -83,8 +84,14 @@ def create_app(
     if max_upload_bytes <= 0:
         raise ValidationError("ASSET_STORE_MAX_UPLOAD_BYTES must be positive")
     guard = StorageGuard(registry, store)
-    capabilities: dict[str, Capability] = {}
+    raw_max_capabilities = os.environ.get("ASSET_STORE_MAX_CAPABILITIES", "10000")
+    try:
+        max_capabilities = int(raw_max_capabilities)
+    except ValueError as exc:
+        raise ValidationError("ASSET_STORE_MAX_CAPABILITIES must be a positive integer") from exc
+    capabilities = CapabilityStore(max_capabilities, clock=lambda: utcnow())
     metrics = build_metrics()
+    metrics.active_capabilities.set_function(lambda: len(capabilities))
     register_metrics = getattr(registry, "register_metrics", None)
     if register_metrics is not None:
         register_metrics(metrics.registry)
@@ -402,16 +409,30 @@ def create_app(
             caller_service_id=caller_service_id,
             single_use=body.single_use,
         )
+        guard.prune_consumed_capabilities()
+
+        def audit_grant() -> None:
+            registry.record_capability_issue(
+                caller_service_id=caller_service_id,
+                operation=body.operation.value,
+                scope_prefix=body.scope_prefix,
+                ttl_seconds=body.ttl_seconds,
+                outcome="granted",
+                capability_id=cap.capability_id,
+            )
+
+        try:
+            capabilities.issue(cap, on_grant=audit_grant)
+        except CapabilityCapacityError:
+            metrics.capability_issued_total.labels(
+                SERVICE_NAME, body.operation.value, "capacity_denied"
+            ).inc()
+            logger.warning(
+                "capability capacity reached",
+                extra={"event": "capability.capacity_denied"},
+            )
+            raise
         metrics.capability_issued_total.labels(SERVICE_NAME, body.operation.value, "granted").inc()
-        registry.record_capability_issue(
-            caller_service_id=caller_service_id,
-            operation=body.operation.value,
-            scope_prefix=body.scope_prefix,
-            ttl_seconds=body.ttl_seconds,
-            outcome="granted",
-            capability_id=cap.capability_id,
-        )
-        capabilities[cap.capability_id] = cap
         return CapabilityOut(
             capability_id=cap.capability_id,
             operation=cap.operation.value,

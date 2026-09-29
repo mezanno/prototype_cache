@@ -250,3 +250,14 @@ an asset lock share its transaction. Pool checkout and waiting queues are bounde
 exhaustion returns a retryable 503 without exposing connection details. Concurrent
 HTTP tests must reproduce the former failure ordering and verify durable results
 from a separate registry connection. In-memory adapters remain development-only.
+
+### Pilot capability-state bound (M-001/P2, ADR-026)
+
+FR-010..013 / FR-050: retain at most `ASSET_STORE_MAX_CAPABILITIES` active issued
+capabilities per process (default 10000, positive integer). Admission is atomic
+across concurrent mint requests; exhaustion returns retryable 503 and cannot
+evict another live grant or create a granted audit event. A grant is published
+only after its issuance audit succeeds. Expired issued and consumed identifiers
+are retired lazily on mint/use; no expiry or replay checks are weakened. Metrics
+expose active state and capacity rejections without bearer identifiers. This
+bounds memory, not request/audit rate; single-use operation atomicity remains open.

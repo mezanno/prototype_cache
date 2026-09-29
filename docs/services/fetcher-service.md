@@ -2,6 +2,15 @@
 
 > Terms and acronyms: [`../spec/README.md` glossary](../spec/README.md#glossary-and-acronyms)
 
+## M-001 planned cache facade
+
+The private Gallica pilot adds a cache-only byte endpoint shaped as
+`https://cache-host/gallica.bnf.fr/<origin-path>` and a separate preload API.
+Reads do not fetch on miss (404); read-through is deferred as B-025. Host selection
+is exact-allowlisted, upstream HTTPS only. No image transformation, info.json or
+manifest rewriting is included. This is a planned narrow B-021 interface in the
+existing service, not yet implemented; see the [pilot plan](../milestones/PRIVATE_CACHE_PILOT.md).
+
 ## At a glance
 
 The **fetcher-service** materializes remote URLs into `asset-store`. It performs outbound HTTP, decides **cache hit vs miss**, and writes bytes to the correct object-store bucket (`cache` or `tmp`). **asset-store never fetches remote URLs** ([`../spec/01_SCOPE.md`](../spec/01_SCOPE.md), [`ADR-008`](../spec/03_ARCHITECTURE.md)).
@@ -65,7 +74,7 @@ The real outbound client is `HttpFetcher` (delivered 2026-07-09; the no-network 
 - **Schemes:** only `http`/`https`; anything else is rejected before any connection.
 - **Limits (env-overridable):** connect timeout (`FETCHER_HTTP_CONNECT_TIMEOUT`, 5s), read timeout (`FETCHER_HTTP_READ_TIMEOUT`, 30s), max body (`FETCHER_HTTP_MAX_BYTES`, 50 MiB — streamed and aborted once exceeded), redirect limit (`FETCHER_HTTP_MAX_REDIRECTS`, 5).
 - **Redirects** are followed manually so that **every hop is re-validated** for SSRF, not just the first URL.
-- **SSRF default-deny:** each hostname is resolved and rejected if it maps to a private, loopback, link-local, reserved, multicast, or unspecified address. `FETCHER_ALLOW_PRIVATE_HOSTS=1` disables this for local/dev testing only. **DNS-rebinding** (TOCTOU between validation and connect) is an accepted prototype limitation.
+- **SSRF default-deny:** each hostname is resolved and rejected if it maps to a private, loopback, link-local, reserved, multicast, or unspecified address. `FETCHER_ALLOW_PRIVATE_HOSTS=1` disables this for local/dev testing only. **DNS rebinding protection (ADR-025):** the default transport validates all answers again at connection time and dials only an approved numeric IP, preserving Host/TLS hostname checks. See [SEC-05 evidence and limitations](../security/SEC05_OUTBOUND_CONNECTIONS.md).
 - **Error mapping:** timeouts → `UpstreamTimeoutError` (HTTP 504); all other transport/HTTP failures → `UpstreamError` (HTTP 502); malformed requests → `InvalidRequestError` (HTTP 400).
 
 ---
@@ -280,6 +289,10 @@ The archived discovery docs described an "IIIF proxy" prefetching remote images.
 The IIIF server's goal is to serve content already stored in asset-store in a IIIF Image API-compatible format (other efficient distribution protocols may be studied in the future). It is a **reader** of asset-store, not a fetcher and not a mirror. It owns and manages `iiif_server_cache` independently for derived tile storage; that bucket is not provisioned or written by asset-store.
 
 ### IIIF image mirror
+
+M-001 first delivers a narrow host-prefixed cached-image facade inside fetcher-service
+(ADR-024 / SCN-010 pilot subset), with separate preload and cache-only reads.
+The broader design below remains deferred.
 
 The IIIF image mirror (`iiif-image-mirror`) is a **separate future module** whose goal is reliable, user-accessible caching of heritage images served by national libraries and similar authoritative repositories via the IIIF Image API.
 
