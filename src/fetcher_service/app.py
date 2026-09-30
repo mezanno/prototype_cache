@@ -16,6 +16,11 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, generate_latest
 from pydantic import BaseModel, Field
 
+from asset_store_core.admission import (
+    WorkAdmission,
+    positive_limit_from_env,
+    run_work_until_complete,
+)
 from asset_store_core.api.errors import register_exception_handlers
 from asset_store_core.api.observability import JsonLogFormatter
 from asset_store_core.errors import CapabilityDeniedError, ServiceAuthError
@@ -96,7 +101,7 @@ def create_app(
     app = FastAPI(title="fetcher-service", version="0.1.0")
     register_exception_handlers(app)
 
-    def require_dispatcher(request: Request) -> str:
+    async def require_dispatcher(request: Request) -> str:
         try:
             scheme, _, token = request.headers.get("authorization", "").partition(" ")
             identity, sep, secret = token.partition(":")
@@ -140,6 +145,14 @@ def create_app(
         handler.setFormatter(JsonLogFormatter())
         logger.addHandler(handler)
 
+    jobs = WorkAdmission(
+        limit=positive_limit_from_env("FETCHER_MAX_INFLIGHT_JOBS", 4),
+        name="fetcher_job",
+        metrics=metrics,
+        logger=logger,
+    )
+    app.state.jobs = jobs
+
     def record_refetch(bucket: str, outcome: str) -> None:
         refetch_checks.labels(bucket, outcome).inc()
 
@@ -176,19 +189,21 @@ def create_app(
         response_model=EnsureUrlResponse,
         dependencies=[Depends(require_dispatcher)],
     )
-    def ensure_url_endpoint(body: EnsureUrlRequest) -> EnsureUrlResponse:
-        result = ensure_url(
-            client,
-            rules,
-            fetcher,
-            url=body.url,
-            mirror_id=body.mirror_id,
-            no_cache=body.no_cache,
-            tmp_id=body.tmp_id,
-            preferred_alias_suffix=body.preferred_alias_suffix,
-            capability_ttl_seconds=body.ttl_seconds,
-            record_refetch=record_refetch,
-        )
+    async def ensure_url_endpoint(body: EnsureUrlRequest) -> EnsureUrlResponse:
+        with jobs.lease():
+            result = await run_work_until_complete(
+                ensure_url,
+                client,
+                rules,
+                fetcher,
+                url=body.url,
+                mirror_id=body.mirror_id,
+                no_cache=body.no_cache,
+                tmp_id=body.tmp_id,
+                preferred_alias_suffix=body.preferred_alias_suffix,
+                capability_ttl_seconds=body.ttl_seconds,
+                record_refetch=record_refetch,
+            )
         return EnsureUrlResponse.from_result(result)
 
     return app

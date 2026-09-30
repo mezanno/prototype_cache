@@ -277,3 +277,27 @@ Acceptance covers quota/checksum rejection, interruption after storage PUT,
 committed-fence visibility, failed fence/delete recovery and successful-write
 preservation in memory and Postgres. Emit bounded bucket/outcome cleanup metrics
 and credential-free structured logs.
+
+
+### Pilot aggregate work admission (M-001/P2, ADR-028)
+
+For NFR-004 and SEC-06, each process admits at most
+`ASSET_STORE_MAX_INFLIGHT_UPLOADS` proxy uploads and `FETCHER_MAX_INFLIGHT_JOBS`
+ensure-url jobs (both default 4; positive integers). Upload authorization and
+Content-Length validation precede admission. Admission precedes body consumption
+and holds through storage PUT, commit and failed-write cleanup. Fetcher
+admission follows dispatcher authentication and precedes blocking thread dispatch
+and origin work; cache hits use the same job gate. Saturation returns RFC 7807
+503 with `Retry-After: 1`, immediately without an admission waiting queue.
+Cancellation before worker dispatch releases the slot; cancellation of running
+blocking work retains it until completion. Health/metrics remain responsive.
+
+Existing per-object limits bound accumulated payload data in each admitted job;
+transient copies, server buffers and process RSS require deployment resource
+limits. Slow upload streams occupy slots until exit/disconnect; ingress timeouts
+remain a deployment gate. These gates are local to one process and HTTP path;
+raw registry operations and direct library callers are not upload admission paths.
+Pending-byte/capacity reservations and capability issuance rate limits remain open.
+Acceptance: concurrent bound, unread rejected bodies, no extra origin work,
+credential rejection under saturation, failure/disconnect recovery, cancellation
+with an active worker and concurrent Postgres HTTP responsiveness.

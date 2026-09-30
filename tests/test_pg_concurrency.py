@@ -265,3 +265,53 @@ def test_concurrent_commits_preserve_quota_ceiling(isolated_dsn: str) -> None:
         assert (quota.used_bytes, quota.used_asset_count) == (7, 1)
         assert registry.get_bucket_quota(space="cache").used_bytes == 7
         assert sum(e.action == "asset.commit" for e in registry.audit_events) == 1
+
+
+def test_upload_gate_keeps_other_requests_responsive_during_storage_put(
+    isolated_dsn: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SEC-06: blocking storage PUT runs outside the HTTP event loop."""
+    from asset_store_core.object_store import StoredObjectStat
+
+    class PausingStore(LocalObjectStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = threading.Event()
+            self.release = threading.Event()
+
+        def put_object(self, location: ObjectStoreLocation, data: bytes) -> StoredObjectStat:
+            self.entered.set()
+            assert self.release.wait(5)
+            return super().put_object(location, data)
+
+    monkeypatch.setenv("ASSET_STORE_MAX_INFLIGHT_UPLOADS", "1")
+    store = PausingStore()
+    with PostgresAssetRegistry.connect(isolated_dsn, pool_min_size=2, pool_max_size=2) as registry:
+        app = create_app(registry=registry, store=store)
+        with TestClient(app) as client:
+            minted = client.post(
+                "/capabilities",
+                headers=ADMIN,
+                json={"operation": "write", "scope_prefix": "cache/test", "ttl_seconds": 300},
+            )
+            assert minted.status_code == 201
+            headers = {"Authorization": "Capability " + minted.json()["capability_id"]}
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                upload = executor.submit(
+                    client.put, "/objects/cache/test/a", headers=headers, content=b"bytes"
+                )
+                try:
+                    assert store.entered.wait(5)
+                    assert client.get("/healthz").status_code == 200
+                    denied = client.put("/objects/cache/test/b", headers=headers, content=b"other")
+                    assert denied.status_code == 503
+                    assert denied.headers["Retry-After"] == "1"
+                    assert not upload.done()
+                finally:
+                    store.release.set()
+                assert upload.result(timeout=5).status_code == 201
+            assert registry.get_bucket_quota(space="cache").used_bytes == 5
+            assert app.state.uploads.active() == 0
+            retry = client.put("/objects/cache/test/b", headers=headers, content=b"other")
+            assert retry.status_code == 201
+            assert registry.get_bucket_quota(space="cache").used_bytes == 10

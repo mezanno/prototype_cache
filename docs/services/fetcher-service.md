@@ -72,6 +72,7 @@ If a hot path ever needs throughput, the performance lever is **presigned upload
 The real outbound client is `HttpFetcher` (delivered 2026-07-09; the no-network `SyntheticFetcher` remains available for tests via `FETCHER_SYNTHETIC=1`). It is deliberately conservative:
 
 - **Schemes:** only `http`/`https`; anything else is rejected before any connection.
+- **Aggregate work (ADR-028):** `FETCHER_MAX_INFLIGHT_JOBS` (positive integer, default 4) bounds ensure-url jobs per process, including hits. Authenticated overload returns 503 with `Retry-After: 1` before blocking dispatch/origin work; cancellation retains the slot until the worker exits.
 - **Limits (env-overridable):** connect timeout (`FETCHER_HTTP_CONNECT_TIMEOUT`, 5s), read timeout (`FETCHER_HTTP_READ_TIMEOUT`, 30s), max body (`FETCHER_HTTP_MAX_BYTES`, 50 MiB — streamed and aborted once exceeded), redirect limit (`FETCHER_HTTP_MAX_REDIRECTS`, 5).
 - **Redirects** are followed manually so that **every hop is re-validated** for SSRF, not just the first URL.
 - **SSRF default-deny:** each hostname is resolved and rejected if it maps to a private, loopback, link-local, reserved, multicast, or unspecified address. `FETCHER_ALLOW_PRIVATE_HOSTS=1` disables this for local/dev testing only. **DNS rebinding protection (ADR-025):** the default transport validates all answers again at connection time and dials only an approved numeric IP, preserving Host/TLS hostname checks. See [SEC-05 evidence and limitations](../security/SEC05_OUTBOUND_CONNECTIONS.md).

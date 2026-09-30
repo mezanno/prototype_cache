@@ -32,8 +32,9 @@ ASSET_STORE_BASE_URL=http://localhost:8080 \
 | `FETCHER_SYNTHETIC` | `0` | when truthy (`1`/`true`/`yes`), use the no-network `SyntheticFetcher` instead of real HTTP |
 | `FETCHER_HTTP_CONNECT_TIMEOUT` | `5.0` | outbound connect timeout (seconds) |
 | `FETCHER_HTTP_READ_TIMEOUT` | `30.0` | outbound read timeout (seconds) |
+| `FETCHER_MAX_INFLIGHT_JOBS` | `4` | positive per-process bound on ensure-url work, including cache hits; overload returns `503` / `Retry-After: 1` before origin work |
 | `FETCHER_HTTP_MAX_BYTES` | `52428800` (50 MiB) | maximum response body accepted before aborting |
 | `FETCHER_HTTP_MAX_REDIRECTS` | `5` | maximum redirects followed (each hop re-validated for SSRF) |
 | `FETCHER_ALLOW_PRIVATE_HOSTS` | `0` | when truthy, permits fetching private/loopback addresses (tests only) |
 
-The `HttpFetcher` blocks requests to private, loopback, link-local, reserved, multicast, and unspecified addresses by default (SSRF protection), resolving each hostname and re-validating after every redirect. DNS-rebinding (TOCTOU between validation and connect) is an accepted prototype limitation.
+The `HttpFetcher` blocks requests to private, loopback, link-local, reserved, multicast, and unspecified addresses by default (SSRF protection), resolving each hostname and re-validating after every redirect. Connection-time DNS validation binds approved addresses to the actual connection (ADR-025). Jobs run in worker threads; cancellation keeps admission occupied until the worker finishes (ADR-028).

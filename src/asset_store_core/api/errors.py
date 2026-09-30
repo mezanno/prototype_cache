@@ -34,6 +34,7 @@ from asset_store_core.errors import (
     ServiceAuthError,
     UploadTooLargeError,
     ValidationError,
+    WorkCapacityError,
 )
 
 PROBLEM_CONTENT_TYPE = "application/problem+json"
@@ -45,6 +46,7 @@ _STATUS_BY_ERROR: dict[type[AssetStoreError], int] = {
     CapabilityDeniedError: 403,
     CapabilityAlreadyConsumedError: 403,
     CapabilityCapacityError: 503,
+    WorkCapacityError: 503,
     AliasNotFoundError: 404,
     AssetNotFoundError: 404,
     AssetExpiredError: 410,
@@ -89,7 +91,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         response = _problem(status=status, title=type(exc).__name__, detail=str(exc), **extra)
         if isinstance(exc, CapacityExceededError):
             response.headers["Retry-After"] = "60"
-        if isinstance(exc, (RegistryUnavailableError, CapabilityCapacityError)):
+        if isinstance(exc, (RegistryUnavailableError, CapabilityCapacityError, WorkCapacityError)):
             response.headers["Retry-After"] = "1"
         return response
 

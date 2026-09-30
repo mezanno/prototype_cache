@@ -21,6 +21,11 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Query, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 
+from asset_store_core.admission import (
+    WorkAdmission,
+    positive_limit_from_env,
+    run_work_until_complete,
+)
 from asset_store_core.api.admin import install_admin
 from asset_store_core.api.errors import register_exception_handlers
 from asset_store_core.api.metrics import SERVICE_NAME, build_metrics
@@ -96,6 +101,12 @@ def create_app(
     if register_metrics is not None:
         register_metrics(metrics.registry)
     logger = configure_logging()
+    uploads = WorkAdmission(
+        limit=positive_limit_from_env("ASSET_STORE_MAX_INFLIGHT_UPLOADS", 4),
+        name="asset_store_upload",
+        metrics=metrics.registry,
+        logger=logger,
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -108,6 +119,7 @@ def create_app(
     app = FastAPI(lifespan=lifespan, title="asset-store", version="0.1.0")
     app.state.registry = registry
     app.state.store = store
+    app.state.uploads = uploads
     app.state.guard = guard
     app.state.capabilities = capabilities
     app.state.metrics = metrics
@@ -462,22 +474,24 @@ def create_app(
                 raise ValidationError("invalid Content-Length")
             if size > max_upload_bytes:
                 raise UploadTooLargeError("proxy upload exceeds configured byte limit")
-        data = bytearray()
-        async for chunk in request.stream():
-            if len(data) + len(chunk) > max_upload_bytes:
-                raise UploadTooLargeError("proxy upload exceeds configured byte limit")
-            data.extend(chunk)
-        mime = request.headers.get("content-type")
-        asset = guard.write_object(
-            capability=capability,
-            alias=alias,
-            data=bytes(data),
-            mutable=mutable,
-            mime=mime,
-            expected_checksum=expected_checksum,
-            ttl_seconds=ttl_seconds,
-        )
-        observe_bucket_fill(asset.space)
+        with uploads.lease():
+            data = bytearray()
+            async for chunk in request.stream():
+                if len(data) + len(chunk) > max_upload_bytes:
+                    raise UploadTooLargeError("proxy upload exceeds configured byte limit")
+                data.extend(chunk)
+            mime = request.headers.get("content-type")
+            asset = await run_work_until_complete(
+                guard.write_object,
+                capability=capability,
+                alias=alias,
+                data=bytes(data),
+                mutable=mutable,
+                mime=mime,
+                expected_checksum=expected_checksum,
+                ttl_seconds=ttl_seconds,
+            )
+            observe_bucket_fill(asset.space)
         return AssetOut.from_asset(asset)
 
     @app.get("/objects/{alias:path}", response_model=None)

@@ -2,6 +2,26 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Aggregate work admission (ADR-028, 2026-09-30)
+
+M-001/P2 / SEC-06 / NFR-004: per-process no-wait upload and ensure-url gates
+(default 4 each), configurable with `ASSET_STORE_MAX_INFLIGHT_UPLOADS` and
+`FETCHER_MAX_INFLIGHT_JOBS`. Saturation returns 503 / `Retry-After: 1` before
+upload body buffering or origin work. Upload slots cover body reads through
+commit/cleanup; fetcher slots cover the entire ensure-url job, including hits.
+Blocking work runs in threads; cancelled requests retain their lease until the
+worker exits. Authentication remains before admission. Inflight gauges,
+admission outcome counters and structured overload logs expose pressure.
+
+No migration. Bounds multiply across processes; use one process per service for
+M-001. Existing per-body limits apply, but copied payloads/server buffers are not
+a process RSS guarantee. Ingress timeouts remain P4 deployment work. Durable
+pending-byte accounting and capability issuance rate remain the next P2 slice.
+
+Validation: **409 tests passed, none skipped**, with Garage/Postgres enabled.
+Ruff lint/format, strict mypy (75 files) and whitespace checks pass. Two existing
+upstream deprecation warnings remain; this is not load/deployment certification.
+
 ## Failed proxy-upload cleanup (ADR-027, 2026-09-30)
 
 M-001/P2 / SEC-06, FR-022/050..052/060: failed PUT/commit now triggers immediate

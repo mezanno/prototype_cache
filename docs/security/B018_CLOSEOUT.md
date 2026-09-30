@@ -31,8 +31,9 @@ consumption and replica support remain open.
 
 ADR-027 implements immediate best-effort failed proxy-upload cleanup with
 committed deletion fencing, successful-asset preservation, lifecycle retry and
-cleanup metrics/logs. SEC-06 remains partial: aggregate admission and pending-byte
-accounting are still open. Process termination relies on pending-orphan sweeps.
+cleanup metrics/logs. ADR-028 adds no-wait aggregate upload/fetch admission and cancellation-safe
+thread completion. SEC-06 remains partial: pending-byte accounting and issuance
+rate limits are still open. Process termination relies on pending-orphan sweeps.
 
 ## Implemented
 
@@ -42,7 +43,7 @@ accounting are still open. Process termination relies on pending-orphan sweeps.
 | SEC-03 | Factories fail closed without configured credentials or explicit development opt-in. Unicode secrets reject cleanly; configuration errors do not echo secret values. Deployment TLS/rotation remains open. |
 | SEC-04 | Fetcher ingress requires task-api/admin authentication; its asset-store resolve calls authenticate too. End-user destination policy remains the dispatcher's responsibility (R-012). |
 | SEC-05 | Fetcher rejects non-global/multicast addresses, including CGNAT, and disables environment proxies. Connection-time DNS validation and numeric dialing are now implemented (ADR-025); see the subsequent evidence above. |
-| SEC-06 | Proxy uploads authorize before reading the body and enforce a configurable byte cap for declared and streamed bodies. Failed-write cleanup is implemented (ADR-027); aggregate admission and pending-byte accounting remain open. |
+| SEC-06 | Proxy uploads authorize before reading the body and enforce a configurable byte cap for declared and streamed bodies. Failed-write cleanup is implemented (ADR-027); aggregate admission is implemented (ADR-028); pending-byte accounting and issuance rate limits remain open. |
 | SEC-07 | New audit records contain a SHA-256 capability fingerprint, not the bearer. Capability errors omit bearer values; correlation IDs are bounded and sanitized. Historical audit rows are not rewritten. |
 | SEC-08 | Console and user guide explain that issued signed URLs survive metadata expiry until URL expiry or physical deletion. Strict revocation design remains open. |
 | SEC-09 | AnyIO updated to 4.15.1 (minimum 4.14.2); typing-extensions updated where required. Docker installs locked runtime extras using pinned uv 0.12.19. CI checks lock consistency and scans runtime dependencies. Image/OS scanning remains open. |

@@ -54,17 +54,19 @@ on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and re
 - ADR-026: bounded local capability storage, expiry retirement, retryable overload
   and audit-before-publication are implemented. Atomic single-use consumption
   and issuance rate limits remain open.
-- Current combined checkpoint: **379 tests pass**, none skipped, with Garage/Postgres;
+- Current combined checkpoint: **409 tests pass**, none skipped, with Garage/Postgres;
   lint, formatting and strict typing checks pass.
-- **Next: M-001/P2 aggregate resource bounds and pending-byte accounting.** Swarm,
+- **Next: M-001/P2 pending-byte accounting and capability issuance rate bounds.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ### P2 incremental checkpoint (2026-09-30)
 
 Failed proxy-upload cleanup is implemented (ADR-027): commit a deletion fence
 before reclaiming bytes, preserve successful assets, and retry cleanup failures
-through the existing lifecycle worker. Aggregate admission, pending-byte
-accounting and capability issuance rate bounds remain open.
+through the existing lifecycle worker. Aggregate upload/fetch job admission is
+implemented (ADR-028), with no-wait overload responses and cancellation-safe
+worker completion. Pending-byte accounting and capability issuance rate bounds
+remain open.
 
 ## Engineering quality bar
 
@@ -213,7 +215,7 @@ prototype:
 
 1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
    automated HTTP contracts and static JavaScript syntax checks pass.
-2. **B-018 / M-001/P2:** aggregate admission, pending-byte accounting and issuance bounds; follow
+2. **B-018 / M-001/P2:** pending-byte accounting and issuance rate bounds; follow
    the [closeout backlog](security/B018_CLOSEOUT.md) for deployment, DNS/egress,
    resource cleanup and capability concurrency work.
 3. Operational deployment, alert wiring and B-015 performance certification remain;

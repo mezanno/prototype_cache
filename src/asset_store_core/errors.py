@@ -107,3 +107,7 @@ class UploadTooLargeError(AssetStoreError):
 
 class RegistryUnavailableError(AssetStoreError):
     """Registry connection checkout is temporarily unavailable."""
+
+
+class WorkCapacityError(AssetStoreError):
+    """Aggregate process work admission is saturated (M-001/P2, HTTP 503)."""
