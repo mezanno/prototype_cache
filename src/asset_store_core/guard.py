@@ -88,7 +88,7 @@ class PresignedRead:
 class StorageGuard:
     """Authorization facade over the registry and an object-store backend."""
 
-    __slots__ = ("_ledger", "_registry", "_store", "_cleanup_total")
+    __slots__ = ("_ledger", "_registry", "_store", "_cleanup_total", "_reservation_total")
 
     def __init__(
         self,
@@ -101,6 +101,12 @@ class StorageGuard:
         self._cleanup_total = Counter(
             "asset_store_failed_upload_cleanup_total",
             "Failed upload cleanup attempts by bucket and outcome (SEC-06).",
+            ["space", "outcome"],
+            registry=metrics_registry or CollectorRegistry(),
+        )
+        self._reservation_total = Counter(
+            "asset_store_upload_reservations_total",
+            "Exact-size upload reservation outcomes.",
             ["space", "outcome"],
             registry=metrics_registry or CollectorRegistry(),
         )
@@ -214,14 +220,24 @@ class StorageGuard:
             capability.caller_service_id, parsed.space, operation=Operation.WRITE
         )
 
-        pending = self._registry.reserve_asset(
-            space=parsed.space,
-            partition_id=parsed.partition_id,
-            aliases={parsed.alias_in_partition: mutable},
-            owner_service_id=capability.caller_service_id,
-            mime=mime,
-            ttl_seconds=ttl_seconds,
-        )
+        try:
+            pending = self._registry.reserve_asset(
+                space=parsed.space,
+                partition_id=parsed.partition_id,
+                aliases={parsed.alias_in_partition: mutable},
+                owner_service_id=capability.caller_service_id,
+                mime=mime,
+                ttl_seconds=ttl_seconds,
+                reserved_bytes=len(data),
+            )
+        except Exception:
+            self._reservation_total.labels(parsed.space, "denied").inc()
+            logging.getLogger("asset_store").warning(
+                "Upload reservation denied",
+                extra={"event": "upload.reserve_denied", "space": parsed.space},
+            )
+            raise
+        self._reservation_total.labels(parsed.space, "granted").inc()
         location = ObjectStoreLocation.for_asset(
             space=pending.space, partition_id=pending.partition_id, asset_id=pending.asset_id
         )

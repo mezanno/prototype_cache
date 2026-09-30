@@ -2,6 +2,39 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Durable upload byte reservations (ADR-029, 2026-10-01)
+
+M-001/P2 / SEC-06 / FR-022/064/066/068: guarded writes persist exact-size
+`reserved_bytes` before PUT. Pending reservations participate in logical byte and
+asset-count admission; unpurged estimates also participate in physical capacity,
+including failed/deleted uploads. Commit excludes its own estimate, requires
+matching size, clears the estimate and acquires available usage once. Failed
+cleanup keeps its physical estimate until purge. Lifecycle physical occupancy
+includes retained estimates. Quota rejection before PUT creates no alias/payload.
+
+**Upgrade:** run `alembic upgrade head` (migration `0003_upload_reservations`)
+before starting updated durable services. Historical reservations remain NULL:
+unknown-size orphan payloads need the existing sweep; configure
+`ASSET_STORE_CAPACITY_BYTES` for bounded pilot storage. Raw metadata reservations
+keep legacy unknown-size behavior. Downgrade removes estimates and requires
+quiescing/reclaiming pending uploads first; it is not an online application rollback.
+
+Postgres uses partition then bucket admission locks, creating quota rows when
+absent. TTL restoration uses the same order and excludes already stored bytes
+from prospective capacity. `asset.upload_reserve` audits record the owner and
+size. `asset_store_upload_reservations_total{space,outcome}` and
+`upload.reserve_denied` logs cover admission; `asset_store_reserved_upload_bytes`
+shows unpurged estimates, including failed writes. Postgres metric checkout is
+bounded to 10ms per bucket and returns NaN when unavailable without incrementing
+registry overload counters or failing the entire metrics response.
+
+Validation (2026-10-01): **432 tests passed, none skipped**, with Garage/Postgres;
+Ruff lint/format, strict mypy (76 files), and whitespace checks pass. The focused
+reservation/cleanup/concurrency/migration suite passes 58 tests. Two existing
+upstream deprecation warnings remain.
+
+Next P2 item: capability issuance rate limits.
+
 ## Aggregate work admission (ADR-028, 2026-09-30)
 
 M-001/P2 / SEC-06 / NFR-004: per-process no-wait upload and ensure-url gates

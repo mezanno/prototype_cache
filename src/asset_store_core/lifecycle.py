@@ -181,9 +181,17 @@ def plan_sweep(
 
     for space, capacity in sorted(policy.capacity_bytes.items()):
         group = by_space[space]
-        physical = sum(a.size_bytes or 0 for a in group if a.payload_deleted_at is None)
+        physical = sum(
+            a.size_bytes if a.size_bytes is not None else a.reserved_bytes or 0
+            for a in group
+            if a.payload_deleted_at is None
+        )
         ratios[space] = physical / capacity
-        projected_physical = sum(a.size_bytes or 0 for a in group if a.asset_id not in purged)
+        projected_physical = sum(
+            a.size_bytes if a.size_bytes is not None else a.reserved_bytes or 0
+            for a in group
+            if a.asset_id not in purged
+        )
         if space in {"cache", "tmp"} and projected_physical >= capacity * policy.pressure_trigger:
             evict(group, capacity * policy.pressure_target, "pressure_lfu", space)
     return actions, exhausted, ratios

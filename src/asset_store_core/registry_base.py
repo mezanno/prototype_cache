@@ -61,6 +61,7 @@ class AssetRegistry(Protocol):
         annotations: Mapping[str, str] | None = ...,
         eviction_policy: EvictionPolicy = ...,
         ttl_seconds: int | None = ...,
+        reserved_bytes: int | None = ...,
     ) -> Asset: ...
 
     def commit_asset(
@@ -126,6 +127,9 @@ class AssetRegistry(Protocol):
     ) -> BucketQuota: ...
 
     def get_bucket_quota(self, *, space: str) -> BucketQuota: ...
+
+    def reserved_upload_bytes(self, space: str) -> int:
+        """Unpurged exact-size upload estimates, including failed uploads."""
 
     def list_assets(self) -> tuple[Asset, ...]:
         """Snapshot for maintenance; includes unpurged deleted assets."""

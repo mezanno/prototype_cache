@@ -99,17 +99,30 @@ def test_failure_reclaims_bytes_and_preserves_error(registry: AssetRegistry, fai
         guard.write_object(
             capability=capability(), alias="cache/gallica/a", data=b"bytes", **kwargs
         )
-    # get_asset also sees purged assets, while list_assets omits them.
-    events = registry.audit_events
-    asset_id = next(e.target for e in events if e.action == "asset.delete")
-    asset = registry.get_asset(asset_id)
-    assert asset.state is AssetState.DELETED
-    assert asset.payload_deleted_at is not None
-    assert store.stat_object(ObjectStoreLocation(bucket=asset.space, key=asset.storage_key)) is None
-    assert registry.get_bucket_quota(space="cache").used_bytes == 0
-    assert registry.get_partition_quota(space="cache", partition_id="gallica").used_asset_count == 0
-    assert any(e.action == "asset.payload_delete" and e.target == asset_id for e in events)
-    assert 'outcome="reclaimed",space="cache"} 1.0' in generate_latest(metrics).decode()
+    if failure == "quota":
+        # Exact-size reservation rejects before creating aliases or storing bytes.
+        assert registry.list_assets() == ()
+        assert not any(e.action == "alias.create" for e in registry.audit_events)
+        assert store._objects == {}
+        assert 'outcome="denied",space="cache"} 1.0' in generate_latest(metrics).decode()
+    else:
+        # get_asset also sees purged assets, while list_assets omits them.
+        events = registry.audit_events
+        asset_id = next(e.target for e in events if e.action == "asset.delete")
+        asset = registry.get_asset(asset_id)
+        assert asset.state is AssetState.DELETED
+        assert asset.payload_deleted_at is not None
+        assert (
+            store.stat_object(ObjectStoreLocation(bucket=asset.space, key=asset.storage_key))
+            is None
+        )
+        assert registry.get_bucket_quota(space="cache").used_bytes == 0
+        assert (
+            registry.get_partition_quota(space="cache", partition_id="gallica").used_asset_count
+            == 0
+        )
+        assert any(e.action == "asset.payload_delete" and e.target == asset_id for e in events)
+        assert 'outcome="reclaimed",space="cache"} 1.0' in generate_latest(metrics).decode()
     # Failed use did not consume the single-use token.
     store.fail_put = False
     registry.set_partition_quota(space="cache", partition_id="gallica", quota_bytes=100)
@@ -278,3 +291,34 @@ def test_http_failure_keeps_problem_response_and_exports_cleanup_metric(
         assert response.json()["title"] == "ChecksumMismatchError"
         assert registry.list_assets() == ()
         assert 'outcome="reclaimed",space="cache"} 1.0' in client.get("/metrics").text
+
+
+def test_failed_delete_retains_physical_budget_until_sweep(
+    registry: AssetRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from asset_store_core.errors import CapacityExceededError
+
+    monkeypatch.setenv("ASSET_STORE_CAPACITY_BYTES", '{"cache": 10}')
+    store = FaultStore()
+    store.fail_delete = True
+    guard = StorageGuard(registry, store)
+    with pytest.raises(ChecksumMismatchError):
+        guard.write_object(
+            capability=capability(),
+            alias="cache/gallica/a",
+            data=b"123456",
+            expected_checksum="sha256:wrong",
+        )
+    assert registry.reserved_upload_bytes("cache") == 6
+    assert registry.get_bucket_quota(space="cache").used_bytes == 0
+    with pytest.raises(CapacityExceededError):
+        guard.write_object(capability=capability(), alias="cache/gallica/b", data=b"1234")
+    assert len(registry.list_assets()) == 1
+    store.fail_delete = False
+    report = run_sweep(registry, store, dry_run=False)
+    assert report.applied == 1 and report.errors == 0
+    assert registry.reserved_upload_bytes("cache") == 0
+    assert (
+        guard.write_object(capability=capability(), alias="cache/gallica/b", data=b"1234").state
+        is AssetState.AVAILABLE
+    )

@@ -33,6 +33,8 @@
 
 Per-service (`asset-registry`, `storage-guard`, and later `fetcher`) Prometheus-style metrics. Labels: `service`, `endpoint`, `space` (bucket), `partition_id` where applicable, `result_class` (`2xx`/`4xx`/`5xx`).
 
+- **`asset_store_reserved_upload_bytes{space}`** (gauge, ADR-029) - unpurged exact-size upload estimates, including failed/deleted writes. Scrape returns NaN if the Postgres pool cannot supply a connection within 10ms per bucket; other metrics remain available.
+- **`asset_store_upload_reservations_total{space,outcome}`** (counter, ADR-029) - pre-PUT reservation `granted`/`denied`; `upload.reserve_denied` warning logs omit request/body/credential values. Successful reservations emit `asset.upload_reserve` audit events.
 - **`asset_store_upload_inflight`** / **`fetcher_job_inflight`** (gauges, implemented ADR-028) - admitted upload/ensure-url work per process.
 - **`asset_store_upload_admission_total{outcome}`** / **`fetcher_job_admission_total{outcome}`** (counters, implemented ADR-028) - `granted` and `denied` admission; credential-free `asset_store_upload.overload` / `fetcher_job.overload` warning logs accompany saturation.
 - **`asset_store_failed_upload_cleanup_total{space,outcome}`** (counter, implemented ADR-027) - failed proxy-upload cleanup: `reclaimed`, `deferred` (inspect registry/storage health and lifecycle sweeps), or `preserved` (available/expired state was retained). Structured `upload.cleanup` logs identify the asset and outcome without credentials.

@@ -16,10 +16,11 @@ import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from functools import partial
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Query, Request, Response
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
 from asset_store_core.admission import (
     WorkAdmission,
@@ -62,7 +63,7 @@ from asset_store_core.errors import (
 from asset_store_core.guard import DEFAULT_PRESIGN_TTL_SECONDS, StorageGuard
 from asset_store_core.models import utcnow
 from asset_store_core.object_store import LocalObjectStore, ObjectStoreBackend
-from asset_store_core.paths import normalize_space
+from asset_store_core.paths import STORAGE_BUCKETS, normalize_space
 from asset_store_core.registry import InMemoryAssetRegistry
 from asset_store_core.registry_base import AssetRegistry
 from asset_store_core.service_identity import ServiceCredentialStore
@@ -96,6 +97,17 @@ def create_app(
     capabilities = CapabilityStore(max_capabilities, clock=lambda: utcnow())
     metrics = build_metrics()
     guard = StorageGuard(registry, store, metrics_registry=metrics.registry)
+    reserved_upload_bytes = Gauge(
+        "asset_store_reserved_upload_bytes",
+        "Unpurged exact-size upload estimates (ADR-029).",
+        ["space"],
+        registry=metrics.registry,
+    )
+    reserved_bytes_snapshot = getattr(
+        registry, "metric_reserved_upload_bytes", registry.reserved_upload_bytes
+    )
+    for space in STORAGE_BUCKETS:
+        reserved_upload_bytes.labels(space).set_function(partial(reserved_bytes_snapshot, space))
     metrics.active_capabilities.set_function(lambda: len(capabilities))
     register_metrics = getattr(registry, "register_metrics", None)
     if register_metrics is not None:

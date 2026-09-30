@@ -79,6 +79,7 @@ class Asset:
     aliases: frozenset[str]
     mime: str | None = None
     size_bytes: int | None = None
+    reserved_bytes: int | None = None
     checksum_algo: str = "sha256"
     checksum: str | None = None
     annotations: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))

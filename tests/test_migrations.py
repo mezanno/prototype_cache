@@ -173,6 +173,43 @@ class MigrationTest(unittest.TestCase):
         with psycopg.connect(_DSN) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM assets").fetchone(), (4,))
 
+    def test_upload_reservation_upgrade_preserves_legacy_metadata(self) -> None:
+        """ADR-029 adds nullable estimates without guessing historical byte sizes."""
+        import psycopg
+        from alembic import command
+
+        assert _DSN is not None
+        config = _alembic_config()
+        command.upgrade(config, "0002_lifecycle")
+        now = datetime.now(UTC)
+        with psycopg.connect(_DSN) as conn:
+            conn.execute(
+                "INSERT INTO assets (asset_id, space, partition_id, storage_key, state, "
+                "size_bytes, created_at, updated_at) "
+                "VALUES ('legacy', 'cache', 'test', 'test/legacy', 'pending', NULL, %s, %s)",
+                (now, now),
+            )
+        command.upgrade(config, "head")
+        with PostgresAssetRegistry.connect(_DSN, bootstrap_schema=False) as registry:
+            asset = registry.get_asset("legacy")
+            self.assertIsNone(asset.reserved_bytes)
+            self.assertEqual(asset.created_at, now)
+            known = registry.reserve_asset(
+                space="cache",
+                partition_id="test",
+                aliases=["known"],
+                owner_service_id="bulk-loader",
+                reserved_bytes=60,
+            )
+            self.assertEqual(registry.reserved_upload_bytes("cache"), 60)
+            self.assertEqual(registry.get_asset(known.asset_id).reserved_bytes, 60)
+        with psycopg.connect(_DSN) as conn:
+            with self.assertRaises(psycopg.errors.CheckViolation), conn.transaction():
+                conn.execute("UPDATE assets SET reserved_bytes = -1 WHERE asset_id='legacy'")
+        command.downgrade(config, "0002_lifecycle")
+        with psycopg.connect(_DSN) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM assets").fetchone(), (2,))
+
     def test_downgrade_base_is_reversible(self) -> None:
         from alembic import command
 

@@ -150,6 +150,7 @@ class InMemoryAssetRegistry:
         annotations: Mapping[str, str] | None = None,
         eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT,
         ttl_seconds: int | None = None,
+        reserved_bytes: int | None = None,
     ) -> Asset:
         """Reserve aliases and create a pending asset shell (FR-004)."""
 
@@ -161,6 +162,12 @@ class InMemoryAssetRegistry:
             scoped = _alias_under_partition(norm_partition, alias)
             self._require_alias_name_available(norm_space, scoped)
 
+        if reserved_bytes is not None:
+            if type(reserved_bytes) is not int or reserved_bytes < 0:
+                raise ValidationError("reserved_bytes must be a nonnegative integer")
+            self._enforce_quota(
+                space=norm_space, partition_id=norm_partition, new_bytes=reserved_bytes
+            )
         asset_id = new_asset_id()
         now = utcnow()
         qualified_aliases = frozenset(
@@ -173,6 +180,7 @@ class InMemoryAssetRegistry:
             partition_id=norm_partition,
             storage_key=build_storage_key(partition_id=norm_partition, asset_id=asset_id),
             state=AssetState.PENDING,
+            reserved_bytes=reserved_bytes,
             aliases=qualified_aliases,
             mime=mime,
             annotations=MappingProxyType(dict(annotations or {})),
@@ -205,6 +213,14 @@ class InMemoryAssetRegistry:
                 after={"asset_id": asset_id, "mutable": str(mutable).lower()},
             )
 
+        if reserved_bytes is not None:
+            self._audit(
+                action="asset.upload_reserve",
+                target=asset_id,
+                caller_service_id=owner_service_id,
+                outcome="success",
+                after={"reserved_bytes": str(reserved_bytes)},
+            )
         return asset
 
     def attach_alias(
@@ -277,14 +293,20 @@ class InMemoryAssetRegistry:
                 f"asset {asset_id!r} cannot be committed from state {asset.state.value!r}"
             )
 
+        if asset.reserved_bytes is not None and asset.reserved_bytes != size_bytes:
+            raise ValidationError("committed size must match upload reservation")
         self._enforce_quota(
-            space=asset.space, partition_id=asset.partition_id, new_bytes=size_bytes
+            space=asset.space,
+            partition_id=asset.partition_id,
+            new_bytes=size_bytes,
+            exclude_asset_id=asset_id,
         )
 
         updated = dc_replace(
             asset,
             state=AssetState.AVAILABLE,
             size_bytes=size_bytes,
+            reserved_bytes=None,
             checksum=server_checksum,
             mime=mime or asset.mime,
             updated_at=utcnow(),
@@ -655,18 +677,38 @@ class InMemoryAssetRegistry:
             return existing
         return BucketQuota(space=norm_space)
 
-    def _enforce_quota(self, *, space: str, partition_id: str, new_bytes: int) -> None:
+    def _enforce_quota(
+        self,
+        *,
+        space: str,
+        partition_id: str,
+        new_bytes: int,
+        exclude_asset_id: str | None = None,
+    ) -> None:
         """Reject a prospective commit that would breach a partition or bucket ceiling."""
 
+        pending = [
+            a
+            for a in self._assets.values()
+            if a.space == space
+            and a.state is AssetState.PENDING
+            and a.reserved_bytes is not None
+            and a.asset_id != exclude_asset_id
+        ]
+        partition_pending = [a for a in pending if a.partition_id == partition_id]
+        pending_bytes = sum(a.reserved_bytes or 0 for a in partition_pending)
         pq = self._partition_quota(space, partition_id)
         if pq.quota_bytes is not None and (
-            pq.used_bytes + new_bytes >= pq.quota_bytes * _PARTITION_HARD_RATIO
+            pq.used_bytes + pending_bytes + new_bytes >= pq.quota_bytes * _PARTITION_HARD_RATIO
         ):
             raise QuotaExceededError(
                 f"partition quota exceeded for {pq.space}/{pq.partition_id}",
                 scope="partition",
             )
-        if pq.quota_asset_count is not None and pq.used_asset_count + 1 > pq.quota_asset_count:
+        if (
+            pq.quota_asset_count is not None
+            and pq.used_asset_count + len(partition_pending) + 1 > pq.quota_asset_count
+        ):
             raise QuotaExceededError(
                 f"partition asset-count quota exceeded for {pq.space}/{pq.partition_id}",
                 scope="partition",
@@ -674,14 +716,17 @@ class InMemoryAssetRegistry:
 
         if space in capacity_limits():
             physical = sum(
-                a.size_bytes or 0
+                a.size_bytes if a.size_bytes is not None else a.reserved_bytes or 0
                 for a in self._assets.values()
-                if a.space == space and a.payload_deleted_at is None
+                if a.space == space
+                and a.payload_deleted_at is None
+                and a.asset_id != exclude_asset_id
             )
             enforce_capacity(space, physical + new_bytes)
         bq = self._bucket_quota(space)
         if bq.quota_bytes is not None and (
-            bq.used_bytes + new_bytes >= bq.quota_bytes * bq.hard_ceiling
+            bq.used_bytes + sum(a.reserved_bytes or 0 for a in pending) + new_bytes
+            >= bq.quota_bytes * bq.hard_ceiling
         ):
             raise QuotaExceededError(f"bucket quota exceeded for {bq.space}", scope="bucket")
 
@@ -711,6 +756,14 @@ class InMemoryAssetRegistry:
         )
         bq = self._bucket_quota(asset.space)
         self._bucket_quotas[bq.space] = dc_replace(bq, used_bytes=max(0, bq.used_bytes - nbytes))
+
+    def reserved_upload_bytes(self, space: str) -> int:
+        """Retained upload estimates survive failed cleanup (ADR-029)."""
+        return sum(
+            a.reserved_bytes or 0
+            for a in self._assets.values()
+            if a.space == normalize_space(space) and a.payload_deleted_at is None
+        )
 
     def list_assets(self) -> tuple[Asset, ...]:
         """Maintenance snapshot (ADR-020)."""
@@ -898,7 +951,10 @@ class InMemoryAssetRegistry:
         deadline = expiry_for(asset.space, ttl_seconds, now)
         if asset.state is AssetState.EXPIRED:
             self._enforce_quota(
-                space=asset.space, partition_id=asset.partition_id, new_bytes=asset.size_bytes or 0
+                space=asset.space,
+                partition_id=asset.partition_id,
+                new_bytes=asset.size_bytes or 0,
+                exclude_asset_id=asset.asset_id,
             )
             self._acquire_quota(
                 space=asset.space, partition_id=asset.partition_id, nbytes=asset.size_bytes or 0

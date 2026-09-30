@@ -20,3 +20,11 @@ storage commit/failed-upload cleanup. Saturation returns `503` with
 `ASSET_STORE_MAX_UPLOAD_BYTES` body cap also applies. See ADR-028 and the
 [implementation notes](../../docs/IMPLEMENTATION_NOTES.md) for memory/cancellation
 limits and remaining pending-byte accounting.
+
+
+Guarded uploads reserve exact byte sizes before PUT (ADR-029). Run
+`alembic upgrade head` before starting the updated Postgres-backed service
+(migration 0003). Configure `ASSET_STORE_CAPACITY_BYTES` for the pilot's physical
+budgets. Pending uploads count in quota/capacity admission; failed cleanup keeps
+its physical estimate until lifecycle purge. Available quota counters keep their
+existing meaning. `asset_store_reserved_upload_bytes` exposes retained estimates.

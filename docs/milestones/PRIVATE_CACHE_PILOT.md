@@ -146,8 +146,10 @@ as part of preparing this plan.
 capability storage is bounded and expired token state is retired (ADR-026).
 Failed-upload cleanup is implemented (ADR-027), with immediate fencing/reclamation
 and lifecycle retries. Aggregate upload/fetch job admission is implemented
-(ADR-028), with no-wait overload and cancellation-safe completion. Pending-byte
-accounting and capability issuance rate bounds remain open.
+(ADR-028), with no-wait overload and cancellation-safe completion. Durable
+exact-size upload reservations are implemented (ADR-029, migration 0003); failed
+cleanup retains physical estimates until purge. Capability issuance rate bounds
+remain open.
 See [connection validation evidence](../security/SEC05_OUTBOUND_CONNECTIONS.md).
 SEC-01 and SEC-02 are complete;
 do not reopen them as prerequisites unless a regression is found.

@@ -301,3 +301,20 @@ Pending-byte/capacity reservations and capability issuance rate limits remain op
 Acceptance: concurrent bound, unread rejected bodies, no extra origin work,
 credential rejection under saturation, failure/disconnect recovery, cancellation
 with an active worker and concurrent Postgres HTTP responsiveness.
+
+
+### Durable proxy-upload byte reservations (M-001/P2, ADR-029)
+
+FR-022/064/066/068: before PUT, guarded proxy uploads reserve their exact buffered
+size in the registry. Pending known-size reservations count toward logical byte
+and asset-count admission alongside available quota usage. Unpurged pending or
+failed/deleted reservations count toward physical capacity until byte deletion
+is recorded. Commit checks actual size equals the reservation and excludes its
+own estimate from prospective sums; available usage counters still count only
+available assets. Quota/capacity rejection before PUT creates no alias or payload.
+Raw size-unknown metadata reservations remain accepted (FR-064); these legacy
+paths are outside the pilot proxy-write contract. Existing unknown-size orphan
+payloads cannot be backfilled without object-store inspection. Configure physical
+budgets and run orphan sweeps for the pilot. Reservations persist across restart;
+Postgres admission is serialized even for initially absent quota rows. Migration
+0003 adds the nullable estimate without inventing sizes for historical assets.

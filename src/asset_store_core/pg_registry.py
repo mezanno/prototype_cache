@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS assets (
     state             text NOT NULL,
     mime              text,
     size_bytes        bigint,
+    reserved_bytes    bigint CHECK (reserved_bytes >= 0),
     checksum_algo     text NOT NULL DEFAULT 'sha256',
     checksum          text,
     annotations       jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -121,6 +122,8 @@ CREATE TABLE IF NOT EXISTS assets (
     read_count        bigint NOT NULL DEFAULT 0,
     payload_deleted_at timestamptz
 );
+
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS reserved_bytes bigint CHECK (reserved_bytes >= 0);
 
 CREATE TABLE IF NOT EXISTS aliases (
     space                 text NOT NULL,
@@ -380,9 +383,12 @@ class PostgresAssetRegistry:
         annotations: Mapping[str, str] | None = None,
         eviction_policy: EvictionPolicy = EvictionPolicy.INHERIT,
         ttl_seconds: int | None = None,
+        reserved_bytes: int | None = None,
     ) -> Asset:
         """Reserve aliases and create a pending asset shell (FR-001/FR-004)."""
 
+        if reserved_bytes is not None and (type(reserved_bytes) is not int or reserved_bytes < 0):
+            raise ValidationError("reserved_bytes must be a nonnegative integer")
         norm_space = normalize_space(space)
         norm_partition = normalize_partition_id(partition_id)
         specs = _normalize_alias_specs(aliases)
@@ -397,13 +403,17 @@ class PostgresAssetRegistry:
             for scoped_alias in scoped.values():
                 self._require_alias_name_available(norm_space, scoped_alias)
 
+            if reserved_bytes is not None:
+                self._enforce_quota(
+                    space=norm_space, partition_id=norm_partition, new_bytes=reserved_bytes
+                )
             self._conn.execute(
                 """
                 INSERT INTO assets (
                     asset_id, space, partition_id, storage_key, state, mime,
                     annotations, eviction_policy, owner_service_id,
-                    created_at, updated_at, expires_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    created_at, updated_at, expires_at, reserved_bytes
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     asset_id,
@@ -418,6 +428,7 @@ class PostgresAssetRegistry:
                     now,
                     now,
                     expiry_for(norm_space, ttl_seconds, now),
+                    reserved_bytes,
                 ),
             )
 
@@ -439,6 +450,13 @@ class PostgresAssetRegistry:
                     after={"asset_id": asset_id, "mutable": str(mutable).lower()},
                 )
 
+            if reserved_bytes is not None:
+                self._write_audit(
+                    action="asset.upload_reserve",
+                    target=asset_id,
+                    caller_service_id=owner_service_id,
+                    after={"reserved_bytes": str(reserved_bytes)},
+                )
         return self._load_asset(asset_id)
 
     @_transactional
@@ -467,7 +485,7 @@ class PostgresAssetRegistry:
         now = utcnow()
         with self._conn.transaction():
             row = self._conn.execute(
-                "SELECT state, mime, space, partition_id FROM assets "
+                "SELECT state, mime, space, partition_id, reserved_bytes FROM assets "
                 "WHERE asset_id = %s FOR UPDATE",
                 (asset_id,),
             ).fetchone()
@@ -478,14 +496,20 @@ class PostgresAssetRegistry:
                     f"asset {asset_id!r} cannot be committed from state {row['state']!r}"
                 )
 
+            if row["reserved_bytes"] is not None and row["reserved_bytes"] != size_bytes:
+                raise ValidationError("committed size must match upload reservation")
             self._enforce_quota(
-                space=row["space"], partition_id=row["partition_id"], new_bytes=size_bytes
+                space=row["space"],
+                partition_id=row["partition_id"],
+                new_bytes=size_bytes,
+                exclude_asset_id=asset_id,
             )
 
             self._conn.execute(
                 """
                 UPDATE assets
-                   SET state = %s, size_bytes = %s, checksum = %s, mime = %s, updated_at = %s
+                   SET state = %s, size_bytes = %s, checksum = %s, mime = %s, updated_at = %s,
+                       reserved_bytes = NULL
                  WHERE asset_id = %s
                 """,
                 (
@@ -1050,33 +1074,55 @@ class PostgresAssetRegistry:
             f"alias {norm_space}/{alias_name!r} already exists or is within grace period"
         )
 
-    def _enforce_quota(self, *, space: str, partition_id: str, new_bytes: int) -> None:
+    def _enforce_quota(
+        self,
+        *,
+        space: str,
+        partition_id: str,
+        new_bytes: int,
+        exclude_asset_id: str | None = None,
+    ) -> None:
         """Reject a commit that would breach a partition or bucket ceiling (FR-066/FR-068)."""
 
         pq = self._partition_quota(space, partition_id, for_update=True)
+        bq = self._bucket_quota(space, for_update=True)
+        pending = self._conn.execute(
+            "SELECT COALESCE(SUM(reserved_bytes), 0) AS bytes, "
+            "COALESCE(SUM(reserved_bytes) FILTER (WHERE partition_id = %s), 0) AS partition_bytes, "
+            "COUNT(*) FILTER (WHERE partition_id = %s) AS count "
+            "FROM assets WHERE space = %s AND state = 'pending' AND reserved_bytes IS NOT NULL "
+            "AND asset_id IS DISTINCT FROM %s",
+            (partition_id, partition_id, space, exclude_asset_id),
+        ).fetchone()
+        assert pending is not None
         if pq.quota_bytes is not None and (
-            pq.used_bytes + new_bytes >= pq.quota_bytes * _PARTITION_HARD_RATIO
+            pq.used_bytes + int(pending["partition_bytes"]) + new_bytes
+            >= pq.quota_bytes * _PARTITION_HARD_RATIO
         ):
             raise QuotaExceededError(
                 f"partition quota exceeded for {pq.space}/{pq.partition_id}", scope="partition"
             )
-        if pq.quota_asset_count is not None and pq.used_asset_count + 1 > pq.quota_asset_count:
+        if (
+            pq.quota_asset_count is not None
+            and pq.used_asset_count + int(pending["count"]) + 1 > pq.quota_asset_count
+        ):
             raise QuotaExceededError(
                 f"partition asset-count quota exceeded for {pq.space}/{pq.partition_id}",
                 scope="partition",
             )
 
-        bq = self._bucket_quota(space, for_update=True)
         if space in capacity_limits():
             usage = self._conn.execute(
-                "SELECT COALESCE(SUM(size_bytes), 0) AS bytes FROM assets "
-                "WHERE space = %s AND payload_deleted_at IS NULL",
-                (space,),
+                "SELECT COALESCE(SUM(COALESCE(size_bytes, reserved_bytes)), 0) AS bytes "
+                "FROM assets "
+                "WHERE space = %s AND payload_deleted_at IS NULL "
+                "AND asset_id IS DISTINCT FROM %s",
+                (space, exclude_asset_id),
             ).fetchone()
             assert usage is not None
             enforce_capacity(space, int(usage["bytes"]) + new_bytes)
         if bq.quota_bytes is not None and (
-            bq.used_bytes + new_bytes >= bq.quota_bytes * bq.hard_ceiling
+            bq.used_bytes + int(pending["bytes"]) + new_bytes >= bq.quota_bytes * bq.hard_ceiling
         ):
             raise QuotaExceededError(f"bucket quota exceeded for {bq.space}", scope="bucket")
 
@@ -1123,6 +1169,12 @@ class PostgresAssetRegistry:
     def _partition_quota(
         self, norm_space: str, norm_partition: str, *, for_update: bool = False
     ) -> PartitionQuota:
+        if for_update:
+            self._conn.execute(
+                "INSERT INTO partition_quotas (space, partition_id, eviction_sweep_enabled) "
+                "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                (norm_space, norm_partition, norm_space in _SWEEP_DEFAULT_SPACES),
+            )
         sql = (
             "SELECT quota_bytes, quota_asset_count, used_bytes, used_asset_count, "
             "eviction_sweep_enabled FROM partition_quotas WHERE space = %s AND partition_id = %s"
@@ -1217,6 +1269,31 @@ class PostgresAssetRegistry:
             ),
         )
 
+    def metric_reserved_upload_bytes(self, space: str) -> float:
+        """Best-effort scrape: at most 10ms checkout per bucket; no overload counter."""
+        try:
+            with self._pool.connection(timeout=0.01) as connection:
+                row = connection.execute(
+                    "SELECT COALESCE(SUM(reserved_bytes), 0) AS bytes FROM assets "
+                    "WHERE space = %s AND payload_deleted_at IS NULL",
+                    (normalize_space(space),),
+                ).fetchone()
+                assert row is not None
+                return float(row["bytes"])
+        except (PoolTimeout, TooManyRequests, PoolClosed):
+            return float("nan")
+
+    @_transactional
+    def reserved_upload_bytes(self, space: str) -> int:
+        """Aggregate retained estimates, including failed/deleted uploads (ADR-029)."""
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(reserved_bytes), 0) AS bytes FROM assets "
+            "WHERE space = %s AND payload_deleted_at IS NULL",
+            (normalize_space(space),),
+        ).fetchone()
+        assert row is not None
+        return int(row["bytes"])
+
     @_transactional
     def list_assets(self) -> tuple[Asset, ...]:
         """Read unpurged maintenance candidates in one statement (ADR-020)."""
@@ -1299,7 +1376,7 @@ class PostgresAssetRegistry:
             SELECT asset_id, space, partition_id, storage_key, state, mime, size_bytes,
                    checksum_algo, checksum, annotations, eviction_policy, owner_service_id,
                    created_at, updated_at, expires_at, expired_at, last_read_at,
-                   read_count, payload_deleted_at
+                   read_count, payload_deleted_at, reserved_bytes
               FROM assets WHERE asset_id = %s
             """,
             (asset_id,),
@@ -1326,6 +1403,7 @@ class PostgresAssetRegistry:
             aliases=aliases,
             mime=asset_row["mime"],
             size_bytes=asset_row["size_bytes"],
+            reserved_bytes=asset_row["reserved_bytes"],
             checksum_algo=asset_row["checksum_algo"],
             checksum=asset_row["checksum"],
             annotations=MappingProxyType(dict(asset_row["annotations"])),
@@ -1457,15 +1535,11 @@ class PostgresAssetRegistry:
             now = utcnow()
             deadline = expiry_for(asset.space, ttl_seconds, now)
             if asset.state is AssetState.EXPIRED:
-                self._conn.execute(
-                    "INSERT INTO bucket_quotas (space) VALUES (%s) ON CONFLICT DO NOTHING",
-                    (asset.space,),
-                )
-                self._bucket_quota(asset.space, for_update=True)
                 self._enforce_quota(
                     space=asset.space,
                     partition_id=asset.partition_id,
                     new_bytes=asset.size_bytes or 0,
+                    exclude_asset_id=asset.asset_id,
                 )
                 self._acquire_quota(
                     space=asset.space, partition_id=asset.partition_id, nbytes=asset.size_bytes or 0

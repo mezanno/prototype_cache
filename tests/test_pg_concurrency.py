@@ -315,3 +315,57 @@ def test_upload_gate_keeps_other_requests_responsive_during_storage_put(
             retry = client.put("/objects/cache/test/b", headers=headers, content=b"other")
             assert retry.status_code == 201
             assert registry.get_bucket_quota(space="cache").used_bytes == 10
+
+
+@pytest.mark.parametrize("budget", ["bucket", "physical", "partition", "count"])
+def test_concurrent_pending_reservations_cannot_overbook(
+    isolated_dsn: str, monkeypatch: pytest.MonkeyPatch, budget: str
+) -> None:
+    from asset_store_core.errors import CapacityExceededError, QuotaExceededError
+
+    with PostgresAssetRegistry.connect(isolated_dsn, pool_min_size=2, pool_max_size=2) as registry:
+        if budget == "physical":
+            monkeypatch.setenv("ASSET_STORE_CAPACITY_BYTES", '{"cache": 100}')
+        elif budget == "bucket":
+            registry.set_bucket_quota(space="cache", quota_bytes=100)
+        else:
+            registry.set_partition_quota(
+                space="cache",
+                partition_id="test",
+                quota_bytes=100 if budget == "partition" else None,
+                quota_asset_count=1 if budget == "count" else None,
+            )
+        start = threading.Barrier(2)
+
+        def attempt(name: str) -> str:
+            start.wait(timeout=5)
+            try:
+                asset = registry.reserve_asset(
+                    space="cache",
+                    partition_id=name if budget in {"bucket", "physical"} else "test",
+                    aliases=[name],
+                    owner_service_id="bulk-loader",
+                    reserved_bytes=60,
+                )
+                return asset.asset_id
+            except (CapacityExceededError, QuotaExceededError):
+                return "denied"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            jobs = [executor.submit(attempt, name) for name in ("a", "b")]
+            results = [job.result(timeout=5) for job in jobs]
+        assert results.count("denied") == 1
+        assert registry.reserved_upload_bytes("cache") == 60
+        assert len(registry.list_assets()) == 1
+        assert registry.get_bucket_quota(space="cache").used_bytes == 0
+        # A separate registry/pool proves persistence of admission, not local state.
+        with PostgresAssetRegistry.connect(isolated_dsn, bootstrap_schema=False) as reopened:
+            assert reopened.reserved_upload_bytes("cache") == 60
+            with pytest.raises((CapacityExceededError, QuotaExceededError)):
+                reopened.reserve_asset(
+                    space="cache",
+                    partition_id="test",
+                    aliases=["c"],
+                    owner_service_id="bulk-loader",
+                    reserved_bytes=60,
+                )
