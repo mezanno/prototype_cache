@@ -1,6 +1,6 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-09-29 · SEC-02/05 implemented · Next: M-001/P2 resource bounds**
+> **Checkpoint: 2026-09-30 · SEC-02/05 implemented · Next: M-001/P2 resource bounds**
 >
 > **Current goal: [M-001 private Gallica IIIF cache pilot](milestones/PRIVATE_CACHE_PILOT.md)** — one host, trusted testers, existing fetcher over asset-store. Security gates remain open.
 
@@ -112,7 +112,7 @@ flowchart LR
     core["DELIVERED<br/>Ingest and retrieve<br/>Fetcher + worker-sim"]
     lifecycle["DELIVERED · B-014<br/>Lifecycle cleanup"]
     admin["LATEST · B-013<br/>Admin console + API"]
-    security["NEXT · B-018 remediation<br/>P2 resource bounds<br/>SEC-06 cleanup + admission limits"]
+    security["NEXT · B-018 remediation<br/>P2 resource bounds<br/>SEC-06 admission + pending bytes"]
     readiness["M-001 · PRIVATE PILOT<br/>Preload/read API + Compose<br/>Recovery + limited workload"]
     core --> lifecycle --> admin --> security --> readiness
     style core fill:#dcfce7,stroke:#15803d,color:#14532d
@@ -122,15 +122,16 @@ flowchart LR
     style readiness fill:#f1f5f9,stroke:#64748b,color:#334155
 ```
 
-**Evidence:** last code validation recorded **366 passing tests**, none skipped,
-with Garage/Postgres enabled; lint, formatting and strict typing passed. Backend
+**Evidence:** last code validation recorded **395 passing tests**, none skipped,
+with Garage/Postgres enabled; 18 cleanup cases pass including two subsequently
+added HTTP contracts. Lint, formatting and strict typing passed. Backend
 tests are environment-gated in ordinary runs. Browser visual/interaction QA remains
 pending (no browser available in the implementation session). This is not load or deployment certification.
 
 **Architect attention:** upstream services still own user→prefix authorization
 (R-012); local token storage is bounded (ADR-026), while atomic single-use
 consumption and replica/restart behavior remain constrained; legacy control-plane bypasses and shared-connection rollback are fixed (SEC-01/02).
-SEC-05 is implemented; resource bounds and the Gallica facade origin policy are
+SEC-05 and failed-upload cleanup (ADR-027) are implemented; aggregate resource bounds and the Gallica facade origin policy are
 the next pilot gates.
 Per-alias deadlines and content deduplication remain deferred; several foundational
 ADRs/spikes still await formal close-out despite working code.

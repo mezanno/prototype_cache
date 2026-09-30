@@ -83,7 +83,6 @@ def create_app(
     max_upload_bytes = int(os.environ.get("ASSET_STORE_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
     if max_upload_bytes <= 0:
         raise ValidationError("ASSET_STORE_MAX_UPLOAD_BYTES must be positive")
-    guard = StorageGuard(registry, store)
     raw_max_capabilities = os.environ.get("ASSET_STORE_MAX_CAPABILITIES", "10000")
     try:
         max_capabilities = int(raw_max_capabilities)
@@ -91,6 +90,7 @@ def create_app(
         raise ValidationError("ASSET_STORE_MAX_CAPABILITIES must be a positive integer") from exc
     capabilities = CapabilityStore(max_capabilities, clock=lambda: utcnow())
     metrics = build_metrics()
+    guard = StorageGuard(registry, store, metrics_registry=metrics.registry)
     metrics.active_capabilities.set_function(lambda: len(capabilities))
     register_metrics = getattr(registry, "register_metrics", None)
     if register_metrics is not None:

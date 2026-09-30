@@ -144,7 +144,9 @@ as part of preparing this plan.
 
 **P1 / SEC-05 is implemented and reviewed (2026-09-29). P2 is partially implemented:**
 capability storage is bounded and expired token state is retired (ADR-026).
-Failed-upload cleanup, pending-byte accounting and aggregate admission limits remain open.
+Failed-upload cleanup is implemented (ADR-027), with immediate fencing/reclamation
+and lifecycle retries. Pending-byte accounting, aggregate admission limits and
+capability issuance rate bounds remain open.
 See [connection validation evidence](../security/SEC05_OUTBOUND_CONNECTIONS.md).
 SEC-01 and SEC-02 are complete;
 do not reopen them as prerequisites unless a regression is found.

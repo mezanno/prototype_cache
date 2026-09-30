@@ -261,3 +261,19 @@ only after its issuance audit succeeds. Expired issued and consumed identifiers
 are retired lazily on mint/use; no expiry or replay checks are weakened. Metrics
 expose active state and capacity rejections without bearer identifiers. This
 bounds memory, not request/audit rate; single-use operation atomicity remains open.
+
+
+### Failed proxy-upload cleanup (M-001/P2, ADR-027)
+
+For FR-022, FR-050..052 and FR-060, a proxy PUT or commit failure triggers
+best-effort immediate cleanup of its own reserved asset. A pending reservation
+must be durably fenced as deleted before byte removal. Cleanup rechecks state
+under the asset lock and preserves available/expired assets. The original upload
+error is returned even if cleanup fails. A failed delete remains eligible for the
+existing lifecycle sweep; if fencing itself fails, pending-orphan cleanup applies.
+Process termination still relies on orphan sweeping. Failed aliases retain the
+existing deleted-reservation behavior; this slice does not introduce alias reuse.
+Acceptance covers quota/checksum rejection, interruption after storage PUT,
+committed-fence visibility, failed fence/delete recovery and successful-write
+preservation in memory and Postgres. Emit bounded bucket/outcome cleanup metrics
+and credential-free structured logs.

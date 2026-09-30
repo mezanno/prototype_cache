@@ -18,12 +18,15 @@ form the registry's ``reserve_asset`` expects and the partition-inclusive form
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from prometheus_client import CollectorRegistry, Counter
+
 from asset_store_core.capabilities import Capability, Operation, SingleUseLedger
 from asset_store_core.errors import AssetExpiredError, CapabilityDeniedError, ValidationError
-from asset_store_core.models import Asset, utcnow
+from asset_store_core.models import Asset, AssetState, utcnow
 from asset_store_core.object_store import ObjectStoreBackend
 from asset_store_core.paths import normalize_relative_alias, normalize_space, qualified_alias
 from asset_store_core.registry_base import AssetRegistry
@@ -85,7 +88,7 @@ class PresignedRead:
 class StorageGuard:
     """Authorization facade over the registry and an object-store backend."""
 
-    __slots__ = ("_ledger", "_registry", "_store")
+    __slots__ = ("_ledger", "_registry", "_store", "_cleanup_total")
 
     def __init__(
         self,
@@ -93,7 +96,14 @@ class StorageGuard:
         store: ObjectStoreBackend,
         *,
         ledger: SingleUseLedger | None = None,
+        metrics_registry: CollectorRegistry | None = None,
     ) -> None:
+        self._cleanup_total = Counter(
+            "asset_store_failed_upload_cleanup_total",
+            "Failed upload cleanup attempts by bucket and outcome (SEC-06).",
+            ["space", "outcome"],
+            registry=metrics_registry or CollectorRegistry(),
+        )
         self._registry = registry
         self._store = store
         self._ledger = ledger if ledger is not None else SingleUseLedger()
@@ -215,17 +225,63 @@ class StorageGuard:
         location = ObjectStoreLocation.for_asset(
             space=pending.space, partition_id=pending.partition_id, asset_id=pending.asset_id
         )
-        with self._registry.asset_lock(pending.asset_id) as locked:
-            if locked.state.value != "pending":
-                raise ValidationError("upload reservation is no longer pending")
-            stat = self._store.put_object(location, data)
-            asset = self._registry.commit_asset(
-                asset_id=pending.asset_id,
-                size_bytes=stat.size_bytes,
-                checksum=stat.checksum,
-                caller_service_id=capability.caller_service_id,
-                mime=mime,
-                expected_checksum=expected_checksum,
-            )
+        try:
+            with self._registry.asset_lock(pending.asset_id) as locked:
+                if locked.state.value != "pending":
+                    raise ValidationError("upload reservation is no longer pending")
+                stat = self._store.put_object(location, data)
+                asset = self._registry.commit_asset(
+                    asset_id=pending.asset_id,
+                    size_bytes=stat.size_bytes,
+                    checksum=stat.checksum,
+                    caller_service_id=capability.caller_service_id,
+                    mime=mime,
+                    expected_checksum=expected_checksum,
+                )
+        except BaseException:
+            self._cleanup_failed_upload(pending.asset_id, location)
+            raise
         self._ledger.record_successful_use(capability)
         return asset
+
+    def _cleanup_failed_upload(self, asset_id: str, location: ObjectStoreLocation) -> None:
+        """Fence before byte deletion; retain failed cleanup for GC (FR-022/060)."""
+        outcome = "deferred"
+        try:
+            # Persist the fence after the failed upload transaction has exited.
+            with self._registry.asset_lock(asset_id) as current:
+                if current.state is AssetState.PENDING:
+                    self._registry.lifecycle_update(
+                        current, state=AssetState.DELETED, now=utcnow(), reason="upload_failed"
+                    )
+                elif current.state is not AssetState.DELETED:
+                    outcome = "preserved"
+                    return
+            with self._registry.asset_lock(asset_id) as fenced:
+                if fenced.payload_deleted_at is not None:
+                    outcome = "reclaimed"
+                    return
+                if fenced.state is not AssetState.DELETED:
+                    outcome = "preserved"
+                    return
+                self._store.delete_object(location)
+                self._registry.lifecycle_update(
+                    fenced,
+                    state=AssetState.DELETED,
+                    now=utcnow(),
+                    reason="upload_failed",
+                    payload_deleted=True,
+                )
+            outcome = "reclaimed"
+        except Exception:
+            # Keep the original error; GC retries deleted or old pending assets.
+            pass
+        finally:
+            self._cleanup_total.labels(location.bucket, outcome).inc()
+            logging.getLogger("asset_store").log(
+                logging.WARNING if outcome == "deferred" else logging.INFO,
+                "Failed upload cleanup asset=%s outcome=%s",
+                asset_id,
+                outcome,
+                extra={"event": "upload.cleanup", "space": location.bucket},
+            )

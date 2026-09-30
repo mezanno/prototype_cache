@@ -2,6 +2,25 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Failed proxy-upload cleanup (ADR-027, 2026-09-30)
+
+M-001/P2 / SEC-06, FR-022/050..052/060: failed PUT/commit now triggers immediate
+best-effort cleanup. Separate committed deletion fencing precedes byte removal;
+state rechecks preserve successful assets. Failed fencing leaves pending-orphan
+maintenance eligible; failed deletion leaves a deleted asset for the next sweep.
+The original upload error is preserved and failed single-use writes remain unused.
+`asset_store_failed_upload_cleanup_total{space,outcome}` counts `reclaimed`,
+`deferred`, and `preserved`; `upload.cleanup` logs contain no bearer or error text.
+Lifecycle audit records carry reason `upload_failed` and the existing
+`lifecycle-worker` maintenance actor. Process kills still need orphan sweeping;
+failed alias reservations keep existing retention/reuse behavior. Aggregate
+admission, pending-byte accounting and issuance rate remain the next P2 slice.
+
+Validation: full Garage/Postgres suite **395 passed, none skipped**; after adding
+two HTTP contract cases, focused cleanup suite **18 passed**. Ruff lint/format,
+strict mypy and whitespace checks pass. Existing upstream deprecation warnings
+remain. No commit or deployment approval is implied.
+
 ## Bounded capability state (ADR-026, 2026-09-29)
 
 FR-010..013/FR-050: a locked process-local store admits at most
