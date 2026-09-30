@@ -289,6 +289,39 @@ The archived discovery docs described an "IIIF proxy" prefetching remote images.
 
 The IIIF server's goal is to serve content already stored in asset-store in a IIIF Image API-compatible format (other efficient distribution protocols may be studied in the future). It is a **reader** of asset-store, not a fetcher and not a mirror. It owns and manages `iiif_server_cache` independently for derived tile storage; that bucket is not provisioned or written by asset-store.
 
+### Private Gallica cache API (ADR-031, B-024)
+
+`POST /v1/cache/preload` accepts `{"url": "https://gallica.bnf.fr/iiif/ark:/12148/btv1b90017179/f15/full/800,/0/native.jpg", "no_cache": false}`.
+Unknown fields are rejected. Response uses the existing ensure-url schema:
+`asset_id`, `qualified_alias`, `cache_hit`, `bucket`, `partition_id`.
+`GET /gallica.bnf.fr/iiif/ark:/12148/btv1b90017179/f15/full/800,/0/native.jpg`
+returns stored JPEG/TIFF bytes, checksum ETag, `Cache-Control: no-store` and nosniff.
+Both require `Authorization: Service task-api:<secret>` or the admin identity.
+
+The shared policy permits HTTPS on the exact Gallica host, image paths under
+`/iiif/ark:/12148/<alphanumeric-id>/f<positive-page>/`, numeric/full/square regions,
+full/max/percentage/comma sizes, numeric rotation with optional flip, native/default/
+color/gray/bitonal quality and jpg/jpeg/tif/tiff format. This is a syntax allowlist,
+not a promise that the origin implements every permitted rendition. Queries,
+fragments, credentials, explicit ports, manifests and ambiguous encodings return
+403. Decode safe percent escapes once; preserve rendition spelling, including
+native versus default. Aliases live in the separate `gallica-pilot` partition.
+Every HTTP redirect must satisfy this policy before its target is contacted;
+connection-bound SSRF/TLS enforcement remains active.
+
+Missing/expired reads return problem+json 404 and never fetch. Changed forced
+refetch returns 409 and preserves stored bytes. Concurrent preloads may reuse a
+committed winner or return 409 with `Retry-After: 1`; retry explicitly. Backend
+rate/capacity failures return 503 with retry guidance; upstream failures return
+502/504. Reads verify registered size/checksum and use the configured byte cap.
+A reusable scoped internal capability is reminted once on 403 (expiry/restart).
+Both paths share bounded job admission. Operation counters/logs have bounded
+labels and omit source paths, query strings and credentials.
+
+Set `FETCHER_PILOT_MODE=true` in private deployment to remove `/v1/ensure-url`;
+its default remains enabled for existing development workflows. Deployment,
+persisted restart, approved-origin fixture and tester acceptance remain gates.
+
 ### IIIF image mirror
 
 M-001 first delivers a narrow host-prefixed cached-image facade inside fetcher-service

@@ -2,6 +2,29 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Gallica cache API checkpoint (ADR-031, 2026-10-01)
+
+B-024 / SCN-010 / FR-010–015 / FR-020–022: authenticated preload and cache-only
+host-prefixed reads now share an exact Gallica image policy. Separate
+`gallica-pilot` aliases preserve renditions without inheriting legacy quality
+merging. Queries and ambiguous encodings are rejected. Real HTTP redirects are
+policy checked before contact, in addition to connection-bound SSRF/TLS checks.
+Reads validate size/checksum, share bounded jobs and remint scoped internal
+capabilities once after 403. Backend errors are sanitized and capacity/rate
+rejections retain retry guidance. `FETCHER_PILOT_MODE=true` disables generic
+ensure-url; deployment must enable it. No migration.
+
+Cache operation counters and structured logs expose hit/stored/miss/error;
+forced-refetch counters cover matches and conflicts. No caller-visible tokens,
+raw keys or source queries. Tests use an in-memory store and approved URL/image
+fixtures, with mocked redirect transport; existing full regression includes
+Garage/Postgres. This does not certify a live Gallica corpus or deployment.
+
+Validation: **474 passed, none skipped**, Ruff lint/format, strict mypy (81 files)
+and whitespace checks pass. Next slice: approved-origin integration fixture and
+HTTP smoke script, then private Compose configuration and restart acceptance.
+P3 remains open until its remaining evidence is delivered.
+
 ## Capability issuance admission rate (ADR-030, 2026-10-01)
 
 M-001/P2 / FR-010/014/050: a lock-protected token bucket per configured service

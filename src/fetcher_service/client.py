@@ -21,6 +21,13 @@ DEFAULT_CAPABILITY_TTL_SECONDS = 3600
 class AssetStoreError(RuntimeError):
     """An asset-store control/data-plane call failed unexpectedly."""
 
+    def __init__(
+        self, message: str, *, status: int | None = None, retry_after: str | None = None
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
 
 class AssetStoreClient:
     """Minimal asset-store client: resolve, mint write capability, proxy PUT."""
@@ -49,7 +56,11 @@ class AssetStoreClient:
             return result
         if response.status_code == 404:
             return None
-        raise AssetStoreError(f"resolve failed ({response.status_code}): {response.text}")
+        raise AssetStoreError(
+            "resolve failed",
+            status=response.status_code,
+            retry_after=response.headers.get("Retry-After"),
+        )
 
     def mint_write_capability(
         self,
@@ -59,11 +70,18 @@ class AssetStoreClient:
     ) -> str:
         """Mint a write capability scoped to ``scope_prefix`` (``bucket/segment``)."""
 
+        return self._mint_capability("write", scope_prefix, ttl_seconds)
+
+    def mint_read_capability(self, *, scope_prefix: str, ttl_seconds: int = 300) -> str:
+        """Mint reusable internal read permission for the pilot proxy (B-024)."""
+        return self._mint_capability("read", scope_prefix, ttl_seconds)
+
+    def _mint_capability(self, operation: str, scope_prefix: str, ttl_seconds: int) -> str:
         response = self._http.post(
             "/capabilities",
             headers={"Authorization": f"Service {self._service_id}:{self._service_secret}"},
             json={
-                "operation": "write",
+                "operation": operation,
                 "scope_prefix": scope_prefix,
                 "ttl_seconds": ttl_seconds,
                 "single_use": False,
@@ -71,7 +89,9 @@ class AssetStoreClient:
         )
         if response.status_code != 201:
             raise AssetStoreError(
-                f"capability mint failed ({response.status_code}): {response.text}"
+                "capability mint failed",
+                status=response.status_code,
+                retry_after=response.headers.get("Retry-After"),
             )
         capability_id: str = response.json()["capability_id"]
         return capability_id
@@ -93,6 +113,32 @@ class AssetStoreClient:
             f"/objects/{quote(qualified_alias, safe='/')}", content=data, headers=headers
         )
         if response.status_code != 201:
-            raise AssetStoreError(f"object write failed ({response.status_code}): {response.text}")
+            raise AssetStoreError(
+                "object write failed",
+                status=response.status_code,
+                retry_after=response.headers.get("Retry-After"),
+            )
         asset: dict[str, Any] = response.json()
         return asset
+
+    def read_object(self, *, capability_id: str, qualified_alias: str, max_bytes: int) -> bytes:
+        """Capped proxy GET; never expose capability URLs or raw keys (B-024)."""
+        with self._http.stream(
+            "GET",
+            f"/objects/{quote(qualified_alias, safe='/')}",
+            headers={"Authorization": f"Capability {capability_id}"},
+        ) as response:
+            if response.status_code != 200:
+                raise AssetStoreError(
+                    "object read failed",
+                    status=response.status_code,
+                    retry_after=response.headers.get("Retry-After"),
+                )
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise AssetStoreError("cached object exceeds byte limit", status=413)
+                chunks.append(chunk)
+            return b"".join(chunks)

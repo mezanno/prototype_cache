@@ -20,7 +20,7 @@ and the admin console. Add a thin cache API to fetcher-service, using asset-stor
 internally; do not add another storage engine or deployable service.
 
 **API-first and the host-prefixed read URL are confirmed by the product owner.**
-The preload route below is proposed; finalize its request/response schema in P3:
+The preload schema is finalized in [the service contract](../services/fetcher-service.md#private-gallica-cache-api-adr-031-b-024):
 
 | Operation | Route shape | Result |
 |---|---|---|
@@ -46,8 +46,8 @@ https://gallica.bnf.fr/iiif/ark:/12148/<id>/f1/full/800,/0/default.jpg
 `cache.mymirror.tld` illustrates the pilot hostname; it is not a provisioned host.
 The first path segment selects an **exact allowlisted origin hostname**, initially
 `gallica.bnf.fr`; the upstream scheme is fixed to HTTPS. Reject credentials,
-explicit ports and non-allowlisted/subdomain lookalikes. Preserve the origin path
-and supported query semantics without double-decoding; reject ambiguous encodings.
+explicit ports and non-allowlisted/subdomain lookalikes. Preserve the origin rendition path without double-decoding; reject ambiguous encodings.
+Initial query support is empty: both routes reject query strings (ADR-031).
 Apply the same mapping to preload and reads so their canonical keys agree. This
 is the narrow host-prefixed image-mirror interface selected under B-021; it does
 not promise a complete IIIF server or rewriting of `info.json`/manifests.

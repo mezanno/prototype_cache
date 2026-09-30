@@ -13,6 +13,7 @@ import hashlib
 import ipaddress
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
@@ -135,8 +136,13 @@ class HttpFetcher:
         )
 
     def fetch(self, url: str) -> FetchedContent:
+        return self.fetch_with_policy(url, lambda _: None)
+
+    def fetch_with_policy(self, url: str, validate: Callable[[str], object]) -> FetchedContent:
+        """Apply a caller's origin policy before every redirect connection (B-024)."""
         current = url
         for _ in range(self._max_redirects + 1):
+            validate(current)
             self._validate(current)
             try:
                 with self._client.stream("GET", current) as response:

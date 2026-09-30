@@ -18,7 +18,7 @@ acceptance. Existing core implementations are reused. This sequence takes priori
 over the broad phases below for this milestone; their production requirements
 remain on the backlog. Full Swarm/HA and full-scale load certification are deferred,
 not marked complete. Separate preload/cache-only reads are confirmed; read-through
-on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and reviewed. P2 implementation is complete. Next: **P3 cache API (B-024)**.
+on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and reviewed. P2 implementation is complete. P3 API implementation is ready; origin fixture/smoke evidence and deployment remain next.
 
 ## Current state (2026-10-01)
 
@@ -54,9 +54,11 @@ on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and re
 - ADR-026: bounded local capability storage, expiry retirement, retryable overload
   and audit-before-publication are implemented. Atomic single-use consumption
   remains open; issuance rate admission is delivered by ADR-030.
-- Current combined checkpoint: **448 tests pass**, none skipped, with Garage/Postgres;
+- ADR-031 / B-024: authenticated Gallica preload and cache-only reads are implemented,
+  with exact-rendition aliases, redirect policy, scoped read-token renewal and telemetry.
+- Current combined checkpoint: **474 tests pass**, none skipped, with Garage/Postgres;
   lint, formatting and strict typing checks pass.
-- **Next: M-001/P3 preload/cache-only API (B-024).** Swarm,
+- **Next: M-001/P3 origin fixture and HTTP smoke evidence, then P4 private deployment.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ### P2 incremental checkpoint (2026-10-01)

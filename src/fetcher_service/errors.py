@@ -31,3 +31,20 @@ class UpstreamError(FetcherError):
 
 class UpstreamTimeoutError(UpstreamError):
     """The origin fetch timed out. Maps to 504."""
+
+
+class PilotDeniedError(FetcherError):
+    """The pilot origin/path policy rejected the request (HTTP 403)."""
+
+
+class CacheMissError(FetcherError):
+    """Cached bytes are absent/expired; no origin fetch occurs (HTTP 404)."""
+
+
+class CacheBackendError(FetcherError):
+    """Sanitized asset-store failure with a retryable HTTP status."""
+
+    def __init__(self, status: int, retry_after: str | None = None) -> None:
+        super().__init__("asset-store could not complete the cache operation")
+        self.status = status
+        self.retry_after = retry_after

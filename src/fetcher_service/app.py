@@ -14,7 +14,7 @@ import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, generate_latest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from asset_store_core.admission import (
     WorkAdmission,
@@ -27,8 +27,14 @@ from asset_store_core.errors import CapabilityDeniedError, ServiceAuthError
 from asset_store_core.service_identity import ServiceCredentialStore
 from fetcher_service.client import AssetStoreClient, AssetStoreError
 from fetcher_service.config import rule_set_from_env
-from fetcher_service.errors import ContentMismatchError
+from fetcher_service.errors import (
+    CacheBackendError,
+    CacheMissError,
+    ContentMismatchError,
+    PilotDeniedError,
+)
 from fetcher_service.fetcher import SyntheticFetcher, UrlFetcher, http_fetcher_from_env
+from fetcher_service.pilot import PilotCache
 from fetcher_service.rules import RuleSet, default_rule_set
 from fetcher_service.service import (
     EnsureUrlResult,
@@ -52,6 +58,20 @@ class EnsureUrlRequest(BaseModel):
     tmp_id: str | None = None
     preferred_alias_suffix: str | None = None
     ttl_seconds: int = Field(default=3600, ge=1, le=86_400)
+
+
+class PreloadRequest(BaseModel):
+    """Explicitly populate one approved image; force refetch is opt-in."""
+
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(
+        min_length=1,
+        max_length=2048,
+        examples=[
+            "https://gallica.bnf.fr/iiif/ark:/12148/btv1b90017179/f15/full/800,/0/native.jpg"
+        ],
+    )
+    no_cache: bool = False
 
 
 class EnsureUrlResponse(BaseModel):
@@ -140,6 +160,7 @@ def create_app(
         registry=metrics,
     )
     logger = logging.getLogger("fetcher_service")
+    logger.setLevel(logging.INFO)
     if not any(isinstance(h.formatter, JsonLogFormatter) for h in logger.handlers):
         handler = logging.StreamHandler()
         handler.setFormatter(JsonLogFormatter())
@@ -152,12 +173,45 @@ def create_app(
         logger=logger,
     )
     app.state.jobs = jobs
+    pilot = PilotCache(
+        client,
+        fetcher,
+        max_bytes=positive_limit_from_env("FETCHER_HTTP_MAX_BYTES", 50 * 1024 * 1024),
+    )
+    app.state.pilot = pilot
+    cache_operations = Counter(
+        "fetcher_cache_operations_total",
+        "Pilot cache operation outcomes.",
+        ["operation", "outcome"],
+        registry=metrics,
+    )
+
+    def record_cache(operation: str, outcome: str) -> None:
+        cache_operations.labels(operation, outcome).inc()
+        logger.info(
+            "cache.operation",
+            extra={
+                "event": "cache.operation",
+                "action": operation,
+                "outcome": outcome,
+                "service": "fetcher-service",
+            },
+        )
 
     def record_refetch(bucket: str, outcome: str) -> None:
         refetch_checks.labels(bucket, outcome).inc()
 
     @app.exception_handler(FetcherError)
     async def _fetcher_error(_request: Request, exc: FetcherError) -> JSONResponse:
+        if isinstance(exc, PilotDeniedError):
+            return _problem(403, "Cache policy denied", str(exc))
+        if isinstance(exc, CacheMissError):
+            return _problem(404, "Cache miss", str(exc))
+        if isinstance(exc, CacheBackendError):
+            response = _problem(exc.status, "Cache backend error", str(exc))
+            if exc.retry_after:
+                response.headers["Retry-After"] = exc.retry_after
+            return response
         if isinstance(exc, ContentMismatchError):
             return _problem(409, "Cached content mismatch", str(exc))
         if isinstance(exc, InvalidRequestError):
@@ -184,11 +238,6 @@ def create_app(
     def readyz() -> dict[str, str]:
         return {"status": "ready"}
 
-    @app.post(
-        "/v1/ensure-url",
-        response_model=EnsureUrlResponse,
-        dependencies=[Depends(require_dispatcher)],
-    )
     async def ensure_url_endpoint(body: EnsureUrlRequest) -> EnsureUrlResponse:
         with jobs.lease():
             result = await run_work_until_complete(
@@ -205,6 +254,64 @@ def create_app(
                 record_refetch=record_refetch,
             )
         return EnsureUrlResponse.from_result(result)
+
+    if os.environ.get("FETCHER_PILOT_MODE", "").lower() not in {"1", "true", "yes"}:
+        app.add_api_route(
+            "/v1/ensure-url",
+            ensure_url_endpoint,
+            methods=["POST"],
+            response_model=EnsureUrlResponse,
+            dependencies=[Depends(require_dispatcher)],
+        )
+
+    @app.post(
+        "/v1/cache/preload",
+        response_model=EnsureUrlResponse,
+        dependencies=[Depends(require_dispatcher)],
+    )
+    async def preload_cache(body: PreloadRequest) -> EnsureUrlResponse:
+        try:
+            with jobs.lease():
+                result = await run_work_until_complete(
+                    pilot.preload, body.url, no_cache=body.no_cache, record_refetch=record_refetch
+                )
+            record_cache("preload", "hit" if result.cache_hit else "stored")
+            return EnsureUrlResponse.from_result(result)
+        except Exception:
+            record_cache("preload", "error")
+            raise
+
+    @app.get(
+        "/{origin_host}/{origin_path:path}",
+        dependencies=[Depends(require_dispatcher)],
+        responses={
+            200: {"content": {"image/jpeg": {}, "image/tiff": {}}},
+            404: {"description": "Cache miss; preload first"},
+        },
+    )
+    async def read_cache(origin_host: str, origin_path: str, request: Request) -> Response:
+        try:
+            target = pilot.policy.require_read(
+                request.scope["raw_path"], request.scope["query_string"]
+            )
+            with jobs.lease():
+                image = await run_work_until_complete(pilot.read, target)
+            record_cache("read", "hit")
+            return Response(
+                image.data,
+                media_type=image.mime,
+                headers={
+                    "ETag": '"' + image.checksum + '"',
+                    "Cache-Control": "no-store",
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+        except CacheMissError:
+            record_cache("read", "miss")
+            raise
+        except Exception:
+            record_cache("read", "error")
+            raise
 
     return app
 

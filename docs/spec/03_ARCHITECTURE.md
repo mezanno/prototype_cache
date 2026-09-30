@@ -320,3 +320,9 @@ Tracked as `Q-*` rows in [`05_BACKLOG_AND_OPEN_QUESTIONS.md`](05_BACKLOG_AND_OPE
 - FR-065 batch policy reset: sync vs async (`Q-028`)
 - `results` partition as `{userid}` with `anon` reserved (`Q-029`) — **Resolved**
 - per-write size cap on `results` via capability (`Q-030`)
+
+### ADR-031 — private Gallica cache facade
+
+| ID | Decision | Status | Rationale | Alternatives |
+|---|---|---|---|---|
+| ADR-031 | Authenticated explicit preload and cache-only host-prefixed reads share an exact HTTPS Gallica image-path policy. Preserve requested rendition spelling; isolate aliases in `cache/gallica-pilot`. Reject queries, fragments, credentials, ports, encoded separators and double decoding. Validate every redirect before contacting it. Reuse scoped internal read capabilities and remint once on 403. Pilot mode disables generic ensure-url. | Accepted (2026-10-01) | B-024 / SCN-010 / FR-010–015 / FR-020–022: prevents legacy native/default canonicalization from conflating unproven byte equivalence. Reads never contact origin; bounded jobs and byte cap apply to both operations. | Legacy rendition merging; read-through (B-025); arbitrary origins/tmp fallback; mint on every read; full IIIF server. |
