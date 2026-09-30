@@ -61,7 +61,7 @@ Priority codes: **M** = must, **S** = should, **C** = could, **W** = won't. P0 =
 
 ### Audit and observability
 
-- **FR-050 (M)** Emit an audit event for every capability issuance (caller identity, scope, TTL, granted/denied).
+- **FR-050 (M)** Emit an audit event for every admitted capability issuance (caller identity, scope, TTL, granted/denied). Pre-issuance rate admission rejections emit metrics/logs without per-request audit rows (ADR-030), bounding denial audit growth.
 - **FR-051 (M)** Emit an audit event for every alias mutation (create, attach, detach, rename) and lifecycle transition.
 - **FR-052 (M)** Emit an audit event for every admin action.
 - **FR-053 (S)** Aggregate per-asset access counters (read hits, last-read timestamp); exposed via admin API and used to identify least-frequently-accessed assets.
@@ -318,3 +318,22 @@ payloads cannot be backfilled without object-store inspection. Configure physica
 budgets and run orphan sweeps for the pilot. Reservations persist across restart;
 Postgres admission is serialized even for initially absent quota rows. Migration
 0003 adds the nullable estimate without inventing sizes for historical assets.
+
+
+### Pilot capability issuance rate (M-001/P2, ADR-030)
+
+FR-010/014/050 and SEC-06: authenticate before rate admission. Each configured
+identity starts with `ASSET_STORE_CAPABILITY_RATE_BURST` attempts (default 20)
+and refills at `ASSET_STORE_CAPABILITY_RATE_PER_MINUTE` / 60 per second
+(default 120 per minute); both are positive integers. Lock-protected consumption
+uses monotonic time and bounded identity state. All admitted attempts consume
+credit, including subsequent policy, token-capacity or audit failures. Credit is
+not refunded. Rate rejection returns RFC 7807 HTTP 429 with `Retry-After` rounded
+up to seconds until the next attempt; no capability or issuance audit is created.
+Existing grants remain usable. Metrics and credential-free logs expose rate
+rejections with bounded labels. Invalid credentials create no limiter state and
+consume no valid identity credit. Rate state is process-local; restart restores
+burst credit and multiple processes multiply the bound. Deployment ingress and
+log retention remain required for the pilot. Test concurrent consumption, refill,
+identity isolation, failed attempts, auth ordering, bounded state and audit/no
+publication on saturation against HTTP and Postgres.

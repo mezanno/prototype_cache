@@ -52,6 +52,11 @@ class ServiceCredentialStore:
             raise ValidationError("credential store must define at least one identity")
         self._secrets = cleaned
 
+    @property
+    def service_ids(self) -> frozenset[str]:
+        """Finite configured identity set for rate admission (ADR-030)."""
+        return frozenset(self._secrets)
+
     def authenticate(self, service_id: str, secret: str) -> str:
         """Return the verified service id, or raise :class:`ServiceAuthError`.
 

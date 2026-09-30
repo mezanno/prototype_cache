@@ -37,6 +37,15 @@ including failed-delete physical estimates (migration 0003). SEC-06 remains
 partial: issuance rate limits are still open; unknown-size legacy orphan payloads
 require maintenance. Process termination relies on pending-orphan sweeps.
 
+## Subsequent remediation — 2026-10-01
+
+ADR-030 bounds authenticated mint attempts per identity with monotonic token
+buckets (default 120/minute, burst 20). HTTP 429 / Retry-After rejections occur
+before token/audit work, emit telemetry and preserve existing grants. Admitted
+failures retain their charge. SEC-06's selected M-001/P2 engineering slices are
+implemented (ADRs 027–030); deployment ingress/resource limits and log/audit
+retention remain operational gates. This is not broader security sign-off.
+
 ## Implemented
 
 | Finding | Result at this checkpoint |
@@ -45,7 +54,7 @@ require maintenance. Process termination relies on pending-orphan sweeps.
 | SEC-03 | Factories fail closed without configured credentials or explicit development opt-in. Unicode secrets reject cleanly; configuration errors do not echo secret values. Deployment TLS/rotation remains open. |
 | SEC-04 | Fetcher ingress requires task-api/admin authentication; its asset-store resolve calls authenticate too. End-user destination policy remains the dispatcher's responsibility (R-012). |
 | SEC-05 | Fetcher rejects non-global/multicast addresses, including CGNAT, and disables environment proxies. Connection-time DNS validation and numeric dialing are now implemented (ADR-025); see the subsequent evidence above. |
-| SEC-06 | Proxy uploads authorize before reading the body and enforce a configurable byte cap for declared and streamed bodies. Failed-write cleanup is implemented (ADR-027); aggregate admission is implemented (ADR-028); pending-byte accounting is implemented (ADR-029); issuance rate limits remain open. |
+| SEC-06 | Proxy uploads authorize before reading the body and enforce a configurable byte cap for declared and streamed bodies. Failed-write cleanup is implemented (ADR-027); aggregate admission is implemented (ADR-028); pending-byte accounting is implemented (ADR-029); issuance rate admission is implemented (ADR-030); deployment/retention gates remain. |
 | SEC-07 | New audit records contain a SHA-256 capability fingerprint, not the bearer. Capability errors omit bearer values; correlation IDs are bounded and sanitized. Historical audit rows are not rewritten. |
 | SEC-08 | Console and user guide explain that issued signed URLs survive metadata expiry until URL expiry or physical deletion. Strict revocation design remains open. |
 | SEC-09 | AnyIO updated to 4.15.1 (minimum 4.14.2); typing-extensions updated where required. Docker installs locked runtime extras using pinned uv 0.12.19. CI checks lock consistency and scans runtime dependencies. Image/OS scanning remains open. |
@@ -84,7 +93,7 @@ needed. New fingerprints change the capability audit JSON field from
 
 | Priority / finding | Required follow-up and acceptance evidence |
 |---|---|
-| P1 · SEC-06 / R-018 | Fence and reclaim failed uploads, reserve capacity before writes, bound aggregate concurrency and issuance. Test quota rejection, interrupted writes and cleanup races without deleting successful payloads. |
+| P1 · SEC-06 / R-018 | M-001/P2 engineering slices are implemented (ADRs 027–030). Configure physical budgets, concurrency/rate limits and ingress timeouts in the private stack; preserve scheduled orphan cleanup and log/audit retention. Pilot workload/soak must demonstrate bounded retained-state growth. |
 | P0 before exposure · SEC-03/04 / R-012, R-016, R-017 | Define trusted user-to-prefix authorization, deployment TLS, secret rotation and ingress limits; demonstrate unauthorized tenant destinations are rejected at the responsible upstream boundary. |
 | P2 · SEC-10 / R-020 | Local token bounds/retirement are implemented (ADR-026). Define replica semantics and atomic single-use consumption. Concurrent replay must permit at most one successful use; expired state must remain bounded. |
 | P2 · SEC-07 / R-019 | Decide retention and cleanup of historical audit rows/exports containing bearer values, preserving audit integrity. Verify new exports contain no usable credentials. |

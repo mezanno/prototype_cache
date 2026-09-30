@@ -40,7 +40,7 @@ Per-service (`asset-registry`, `storage-guard`, and later `fetcher`) Prometheus-
 - **`asset_store_failed_upload_cleanup_total{space,outcome}`** (counter, implemented ADR-027) - failed proxy-upload cleanup: `reclaimed`, `deferred` (inspect registry/storage health and lifecycle sweeps), or `preserved` (available/expired state was retained). Structured `upload.cleanup` logs identify the asset and outcome without credentials.
 - **`asset_store_requests_total`** (counter) - request count by endpoint and result class.
 - **`asset_store_request_duration_seconds`** (histogram) - per-endpoint latency; standard quantiles via histogram_quantile.
-- **`asset_store_capability_issued_total`** (counter) - by `mode` (`presigned`/`token`), `op` (`read`/`write`), `outcome` (`granted`/`denied`).
+- **`asset_store_capability_issued_total`** (counter) - by `mode` (`presigned`/`token`), `op` (`read`/`write`), `outcome` (`granted`/`denied`; implemented overload outcomes `capacity_denied`/`rate_denied`). ADR-030 rate rejections emit `capability.rate_denied` logs and create no per-request audit row.
 - **`asset_store_capability_issue_duration_seconds`** (histogram) - for NFR-003.
 - **`asset_store_alias_state_transitions_total`** (counter) - by `from`, `to`.
 - **`asset_store_storage_bytes`** (gauge) - per `space` and per `(space, partition_id)`; refreshed by a periodic compactor job (authoritative for quotas).

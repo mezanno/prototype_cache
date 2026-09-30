@@ -54,6 +54,7 @@ from asset_store_core.capabilities import Capability, CapabilityStore, Operation
 from asset_store_core.errors import (
     CapabilityCapacityError,
     CapabilityDeniedError,
+    CapabilityRateError,
     ChecksumMismatchError,
     ObjectNotFoundError,
     ServiceAuthError,
@@ -61,6 +62,7 @@ from asset_store_core.errors import (
     ValidationError,
 )
 from asset_store_core.guard import DEFAULT_PRESIGN_TTL_SECONDS, StorageGuard
+from asset_store_core.issuance_rate import IssuanceRateLimiter
 from asset_store_core.models import utcnow
 from asset_store_core.object_store import LocalObjectStore, ObjectStoreBackend
 from asset_store_core.paths import STORAGE_BUCKETS, normalize_space
@@ -95,6 +97,11 @@ def create_app(
     except ValueError as exc:
         raise ValidationError("ASSET_STORE_MAX_CAPABILITIES must be a positive integer") from exc
     capabilities = CapabilityStore(max_capabilities, clock=lambda: utcnow())
+    issuance_rate = IssuanceRateLimiter(
+        credentials.service_ids,
+        per_minute=positive_limit_from_env("ASSET_STORE_CAPABILITY_RATE_PER_MINUTE", 120),
+        burst=positive_limit_from_env("ASSET_STORE_CAPABILITY_RATE_BURST", 20),
+    )
     metrics = build_metrics()
     guard = StorageGuard(registry, store, metrics_registry=metrics.registry)
     reserved_upload_bytes = Gauge(
@@ -133,6 +140,7 @@ def create_app(
     app.state.store = store
     app.state.uploads = uploads
     app.state.guard = guard
+    app.state.issuance_rate = issuance_rate
     app.state.capabilities = capabilities
     app.state.metrics = metrics
     app.add_middleware(ObservabilityMiddleware, metrics=metrics, logger=logger)
@@ -410,6 +418,17 @@ def create_app(
         body: CapabilityMintRequest,
         caller_service_id: str = Depends(require_service_identity),
     ) -> CapabilityOut:
+        try:
+            issuance_rate.admit(caller_service_id)
+        except CapabilityRateError:
+            metrics.capability_issued_total.labels(
+                SERVICE_NAME, body.operation.value, "rate_denied"
+            ).inc()
+            logger.warning(
+                "Capability issuance rate exhausted",
+                extra={"event": "capability.rate_denied", "caller_service_id": caller_service_id},
+            )
+            raise
         bucket = normalize_space(body.scope_prefix.strip("/").split("/", 1)[0])
         try:
             assert_service_bucket_allowed(caller_service_id, bucket, operation=body.operation)

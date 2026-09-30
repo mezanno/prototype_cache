@@ -369,3 +369,39 @@ def test_concurrent_pending_reservations_cannot_overbook(
                     owner_service_id="bulk-loader",
                     reserved_bytes=60,
                 )
+
+
+def test_rate_rejection_needs_no_registry_checkout_or_audit(
+    isolated_dsn: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-030: rate denial remains available while the Postgres pool is saturated."""
+    monkeypatch.setenv("ASSET_STORE_CAPABILITY_RATE_BURST", "1")
+    monkeypatch.setenv("ASSET_STORE_CAPABILITY_RATE_PER_MINUTE", "1")
+    with PostgresAssetRegistry.connect(isolated_dsn, pool_max_size=1, pool_timeout=0.1) as registry:
+        held, release = threading.Event(), threading.Event()
+        body = {"operation": "write", "scope_prefix": "cache/test", "ttl_seconds": 60}
+        app = create_app(registry=registry)
+        with TestClient(app) as client:
+            first = client.post("/capabilities", headers=ADMIN, json=body)
+            assert first.status_code == 201
+            before = registry.audit_events
+
+            def hold() -> None:
+                with registry.unit_of_work():
+                    held.set()
+                    assert release.wait(5)
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                holder = executor.submit(hold)
+                try:
+                    assert held.wait(3)
+                    for _ in range(5):
+                        denied = client.post("/capabilities", headers=ADMIN, json=body)
+                        assert denied.status_code == 429
+                        assert denied.headers["Retry-After"] == "60"
+                    assert client.get("/healthz").status_code == 200
+                finally:
+                    release.set()
+                holder.result(timeout=5)
+            assert registry.audit_events == before
+            assert len(app.state.capabilities) == 1

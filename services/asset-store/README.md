@@ -28,3 +28,14 @@ Guarded uploads reserve exact byte sizes before PUT (ADR-029). Run
 budgets. Pending uploads count in quota/capacity admission; failed cleanup keeps
 its physical estimate until lifecycle purge. Available quota counters keep their
 existing meaning. `asset_store_reserved_upload_bytes` exposes retained estimates.
+
+
+## Capability issuance rate
+
+`ASSET_STORE_CAPABILITY_RATE_PER_MINUTE` defaults to `120` and
+`ASSET_STORE_CAPABILITY_RATE_BURST` to `20` (positive integers, per configured
+service identity per process). Exhausted admission returns `429` with
+`Retry-After`; reuse valid capabilities and retry with backoff. Failed admitted
+mint attempts also consume credit. Rate denials emit metrics/logs and create no
+per-request issuance audit. Restart restores burst credit; keep one application
+process for M-001. See ADR-030.

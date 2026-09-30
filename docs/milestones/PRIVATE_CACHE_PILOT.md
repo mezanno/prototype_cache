@@ -142,14 +142,17 @@ as part of preparing this plan.
 | **P5 — make it operable and recoverable** | Minimum B-004/B-017/B-019, plus restart subset of B-016: hit/miss, origin failures, ingest bytes, pool/queue pressure, disk and lifecycle signals; daily backup procedure and one restore test; deploy/rollback runbook | Operator can distinguish a hit, origin failure and local saturation. Restore metadata and matching objects/config into an isolated stack and verify checksums/aliases. Roll back a pinned application image with migration compatibility checked. Credentials stay out of logs and repository; image scan findings reviewed |
 | **P6 — run the pilot acceptance** | Pilot-sized B-015 + B-019, distinct from full S-2/S-3 certification | Exercise agreed corpus and concurrency, record hit/miss latency, errors, bytes and disk growth; run a 24-hour soak with repeated hits and scheduled cleanup; produce a dated go/no-go record listing residual risks, operator and recovery steps |
 
-**P1 / SEC-05 is implemented and reviewed (2026-09-29). P2 is partially implemented:**
+**P1 / SEC-05 is implemented and reviewed (2026-09-29). P2 implementation is complete (2026-10-01):**
 capability storage is bounded and expired token state is retired (ADR-026).
 Failed-upload cleanup is implemented (ADR-027), with immediate fencing/reclamation
 and lifecycle retries. Aggregate upload/fetch job admission is implemented
 (ADR-028), with no-wait overload and cancellation-safe completion. Durable
 exact-size upload reservations are implemented (ADR-029, migration 0003); failed
-cleanup retains physical estimates until purge. Capability issuance rate bounds
-remain open.
+cleanup retains physical estimates until purge. Capability issuance admission is
+rate-bounded per configured identity (ADR-030), with 429/refill responses. Next:
+**P3 / B-024 preload and cache-only reads**. P4/P5 still must configure these
+bounds, ingress timeouts, volumes and log/audit retention; pilot acceptance and
+release approval remain open.
 See [connection validation evidence](../security/SEC05_OUTBOUND_CONNECTIONS.md).
 SEC-01 and SEC-02 are complete;
 do not reopen them as prerequisites unless a regression is found.

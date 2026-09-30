@@ -24,6 +24,7 @@ from asset_store_core.errors import (
     CapabilityAlreadyConsumedError,
     CapabilityCapacityError,
     CapabilityDeniedError,
+    CapabilityRateError,
     CapacityExceededError,
     ChecksumMismatchError,
     InvalidStateTransitionError,
@@ -46,6 +47,7 @@ _STATUS_BY_ERROR: dict[type[AssetStoreError], int] = {
     CapabilityDeniedError: 403,
     CapabilityAlreadyConsumedError: 403,
     CapabilityCapacityError: 503,
+    CapabilityRateError: 429,
     WorkCapacityError: 503,
     AliasNotFoundError: 404,
     AssetNotFoundError: 404,
@@ -89,6 +91,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         if isinstance(exc, QuotaExceededError):
             extra["scope"] = exc.scope
         response = _problem(status=status, title=type(exc).__name__, detail=str(exc), **extra)
+        if isinstance(exc, CapabilityRateError):
+            response.headers["Retry-After"] = str(exc.retry_after)
         if isinstance(exc, CapacityExceededError):
             response.headers["Retry-After"] = "60"
         if isinstance(exc, (RegistryUnavailableError, CapabilityCapacityError, WorkCapacityError)):

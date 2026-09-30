@@ -2,6 +2,32 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Capability issuance admission rate (ADR-030, 2026-10-01)
+
+M-001/P2 / FR-010/014/050: a lock-protected token bucket per configured service
+identity admits mint attempts before policy, token capacity or issuance audit.
+`ASSET_STORE_CAPABILITY_RATE_PER_MINUTE=120` refills credit; the initial/maximum
+burst is `ASSET_STORE_CAPABILITY_RATE_BURST=20` (positive integers). Saturation
+returns 429 with computed `Retry-After`. Failed admitted attempts are charged;
+invalid credentials consume no credit. Existing grants remain usable. Limiter
+state is fixed to configured identities; process restart restores burst credit.
+
+Rate admission rejections increment capability issuance outcome `rate_denied`
+and emit `capability.rate_denied` logs with the verified identity. They create no
+capability/audit row. Admitted grant/policy-denial auditing remains after rate
+admission, including audit-before-publication. This bounds audit work per identity
+rather than lifetime audit size; ingress controls/log and audit retention remain
+P4/P5 operations work. No migration. Single-process pilot only.
+
+Validation: **448 tests passed, none skipped**, with Garage/Postgres enabled;
+43 focused capability/Postgres regressions pass. Ruff lint/format, strict mypy
+(78 files) and whitespace checks pass. Two existing upstream deprecation warnings
+remain.
+
+P2 implementation slices are complete (ADRs 026–030); next is **P3 / B-024**,
+the Gallica preload and cache-only read API. Deployment/resource configuration,
+scans and acceptance evidence remain before inviting testers.
+
 ## Durable upload byte reservations (ADR-029, 2026-10-01)
 
 M-001/P2 / SEC-06 / FR-022/064/066/068: guarded writes persist exact-size

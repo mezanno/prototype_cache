@@ -111,3 +111,11 @@ class RegistryUnavailableError(AssetStoreError):
 
 class WorkCapacityError(AssetStoreError):
     """Aggregate process work admission is saturated (M-001/P2, HTTP 503)."""
+
+
+class CapabilityRateError(AssetStoreError):
+    """Authenticated issuance rate admission exhausted (ADR-030, HTTP 429)."""
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__("capability issuance rate exhausted; retry with backoff")
+        self.retry_after = retry_after

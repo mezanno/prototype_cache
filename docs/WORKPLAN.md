@@ -18,9 +18,9 @@ acceptance. Existing core implementations are reused. This sequence takes priori
 over the broad phases below for this milestone; their production requirements
 remain on the backlog. Full Swarm/HA and full-scale load certification are deferred,
 not marked complete. Separate preload/cache-only reads are confirmed; read-through
-on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and reviewed. Next: **P2 resource bounds**.
+on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and reviewed. P2 implementation is complete. Next: **P3 cache API (B-024)**.
 
-## Current state (2026-09-29)
+## Current state (2026-10-01)
 
 - B-009/B-010: durable Postgres registry, migrations, authenticated capabilities,
   guarded uploads and presigned reads are implemented, with Garage/S3 storage.
@@ -53,10 +53,10 @@ on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and re
   transport regressions accepted.
 - ADR-026: bounded local capability storage, expiry retirement, retryable overload
   and audit-before-publication are implemented. Atomic single-use consumption
-  and issuance rate limits remain open.
-- Current combined checkpoint: **432 tests pass**, none skipped, with Garage/Postgres;
+  remains open; issuance rate admission is delivered by ADR-030.
+- Current combined checkpoint: **448 tests pass**, none skipped, with Garage/Postgres;
   lint, formatting and strict typing checks pass.
-- **Next: M-001/P2 capability issuance rate bounds.** Swarm,
+- **Next: M-001/P3 preload/cache-only API (B-024).** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ### P2 incremental checkpoint (2026-10-01)
@@ -67,7 +67,9 @@ through the existing lifecycle worker. Aggregate upload/fetch job admission is
 implemented (ADR-028), with no-wait overload responses and cancellation-safe
 worker completion. Durable exact-size upload reservations are implemented
 (ADR-029, migration 0003), including retained physical estimates on failed cleanup.
-Capability issuance rate bounds remain open.
+Capability issuance rate admission is implemented (ADR-030), with bounded
+per-identity token buckets and 429/refill responses. P2 engineering slices are
+complete; P4/P5 resource/ingress configuration and pilot acceptance remain.
 
 ## Engineering quality bar
 
@@ -163,7 +165,7 @@ prototype:
   SEC-01 and bounded hardening are complete (2026-09-27); SEC-02 pooled
   transaction isolation is complete (2026-09-28, ADR-023). See [closeout and follow-ups](security/B018_CLOSEOUT.md);
   readiness exit criteria remain open.
-- Lifecycle hardening: rate limits on capability issuance per service identity; idempotency-key replay protection across services.
+- Lifecycle hardening: capability issuance admission rate limits delivered (ADR-030); idempotency-key replay protection across services remains open.
 - Backup hook for Postgres + a second S3 target (B-017) - design and basic implementation.
 - Resolve Q-003, Q-005, Q-006, Q-010, Q-014, Q-017 (the Phase 2/3 batch of open questions).
 
@@ -212,11 +214,11 @@ prototype:
 - Twice-weekly delivery sync: backlog progress, blockers, risks.
 - Single source of truth: `docs/spec/` and the ADR table.
 
-## Immediate next actions (2026-09-29)
+## Immediate next actions (2026-10-01)
 
 1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
    automated HTTP contracts and static JavaScript syntax checks pass.
-2. **B-018 / M-001/P2:** capability issuance rate bounds; follow
+2. **M-001/P3 / B-024:** implement the Gallica preload and cache-only read API; follow
    the [closeout backlog](security/B018_CLOSEOUT.md) for deployment, DNS/egress,
    resource cleanup and capability concurrency work.
 3. Operational deployment, alert wiring and B-015 performance certification remain;
