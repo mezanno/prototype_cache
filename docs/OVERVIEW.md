@@ -1,6 +1,6 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-10-01 · SEC-02/05 implemented · Next: M-001/P3 cache API**
+> **Checkpoint: 2026-10-01 · SEC-02/05 implemented · P3 API/local evidence complete · Next: M-001/P4 private deployment**
 >
 > **Current goal: [M-001 private Gallica IIIF cache pilot](milestones/PRIVATE_CACHE_PILOT.md)** — one host, trusted testers, existing fetcher over asset-store. Security gates remain open.
 
@@ -10,7 +10,8 @@ lifecycle, while existing S3 software stores the bytes.
 
 **Legend:** 🟢 **Implemented** = working and tested in the prototype · 🟡 **Partial** = gaps remain
 · 🔵 **Simulated** = test substitute · ⚪ **Planned** = not delivered here.
-Status words accompany colors. No implementation task is currently in progress.
+Status words accompany colors. Gallica preload/cache-only reads and local HTTPS
+origin/smoke checks are implemented; private deployment acceptance remains open.
 
 ## Architecture at a glance
 

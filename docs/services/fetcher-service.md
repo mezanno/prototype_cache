@@ -319,8 +319,9 @@ Both paths share bounded job admission. Operation counters/logs have bounded
 labels and omit source paths, query strings and credentials.
 
 Set `FETCHER_PILOT_MODE=true` in private deployment to remove `/v1/ensure-url`;
-its default remains enabled for existing development workflows. Deployment,
-persisted restart, approved-origin fixture and tester acceptance remain gates.
+its default remains enabled for existing development workflows. Local HTTPS origin/Garage/Postgres restart coverage and the
+[HTTP smoke script](../../tools/cache-pilot/README.md) are implemented. Private
+deployment/container restart and tester acceptance remain gates.
 
 ### IIIF image mirror
 

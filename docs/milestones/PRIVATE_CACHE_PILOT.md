@@ -150,7 +150,9 @@ and lifecycle retries. Aggregate upload/fetch job admission is implemented
 exact-size upload reservations are implemented (ADR-029, migration 0003); failed
 cleanup retains physical estimates until purge. Capability issuance admission is
 rate-bounded per configured identity (ADR-030), with 429/refill responses. Next:
-**P3 / B-024 preload and cache-only reads**. P4/P5 still must configure these
+**P3 / B-024 is implemented with local HTTPS origin, durable restart fixtures
+and an [HTTP smoke script](../../tools/cache-pilot/README.md). Next: P4 private
+Compose packaging and deployment acceptance**. P4/P5 still must configure these
 bounds, ingress timeouts, volumes and log/audit retention; pilot acceptance and
 release approval remain open.
 See [connection validation evidence](../security/SEC05_OUTBOUND_CONNECTIONS.md).

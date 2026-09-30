@@ -2,6 +2,31 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Gallica origin and smoke evidence (2026-10-01)
+
+M-001/P3 / B-024 / SCN-010 / FR-010–015 / FR-020–022: a generated JPEG is served
+by a local HTTPS origin with a Gallica hostname certificate. Test-only DNS/port
+mapping and private-address permission retain hostname/SNI verification and the
+production image policy. Garage bytes and isolated Postgres metadata survive
+registry/app reopen; cached reads work during origin errors, repeated reads and
+preloads do not contact origin, and lost capabilities remint. No live Gallica
+requests or confidential/third-party fixture content.
+
+The [HTTP smoke artifact](../tools/cache-pilot/README.md) validates preload,
+two capped downloads with matching ETags/hashes and repeated preload reuse.
+It requires explicit endpoint/origin/service credentials, verifies TLS, disables
+environment proxies and redirects, and prints only hashes/counts/hit flags or
+sanitized failures. Tests exercise a real cache HTTP socket and negative response,
+checksum, byte-limit and credential-output cases. This is an operator check,
+not a new ingestion CLI or background job API. No production code or migration
+changes in this slice; no new technical ADR beyond ADR-031 is needed.
+
+Validation: **481 tests pass, none skipped**, with Garage/Postgres; Ruff
+lint/format, strict mypy (84 files) and whitespace checks pass. P3 implementation
+and local evidence are complete. Next: P4 private Compose packaging, secrets,
+resource configuration and deployment acceptance. Fresh-host/container restart,
+admin browser acceptance, live corpus, backup/restore and soak remain open.
+
 ## Gallica cache API checkpoint (ADR-031, 2026-10-01)
 
 B-024 / SCN-010 / FR-010–015 / FR-020–022: authenticated preload and cache-only
