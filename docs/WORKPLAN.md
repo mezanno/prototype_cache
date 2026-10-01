@@ -232,6 +232,7 @@ prototype:
 ## Owner-requested sequential acceptance work
 
 Work one task at a time; commit and pause for owner resume between tasks.
+For desktop/session reset, start with [the handoff](SESSION_HANDOFF.md).
 Task 1: admin acceptance — [live HTTP checks pass](acceptance/ADMIN_UI_LOCAL.md)
 on a dedicated disposable fixture; browser visual/interaction checks are blocked
 because no browser is connected to this session. Login was previously confirmed
