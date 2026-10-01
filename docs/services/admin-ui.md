@@ -1,6 +1,7 @@
 # Admin console (B-013)
 
 Operator walkthrough: [Using the console](../guides/admin-console.md).
+Local task-1 [acceptance evidence and browser blocker](../acceptance/ADMIN_UI_LOCAL.md).
 
 Implements SCN-004, FR-040..042, FR-005..007 and FR-051..053. The console is
 served by asset-store at `/admin` with no separate frontend build or service.

@@ -2,6 +2,19 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Sequential task 1: live admin evidence (2026-10-01)
+
+Owner requested one task at a time with commit/pause boundaries. Live deployed
+admin HTTP checks passed for filtering/usage, annotations, revision conflicts,
+aliases, eviction policy, quota changes, expiry/read denial, TTL restoration,
+bulk expiry, audit and metrics. Only a new 36-byte disposable fixture and its
+partition were mutated; it was left expired, without physical purge. No product
+code change. [Acceptance record](acceptance/ADMIN_UI_LOCAL.md) preserves findings.
+
+Visual/button acceptance remains blocked: computer-use inventory has no browser
+and the in-app browser creation attempt failed. HTTP checks are not recorded as
+visual evidence. Task 1 remains open; task 2 backup/restore has not begun.
+
 ## Documented task workflow (ADR-036, 2026-10-01)
 
 [Short quickstart](PILOT_QUICKSTART.md) covers fresh deployment/runbook links,

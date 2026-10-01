@@ -229,6 +229,14 @@ prototype:
 - Twice-weekly delivery sync: backlog progress, blockers, risks.
 - Single source of truth: `docs/spec/` and the ADR table.
 
+## Owner-requested sequential acceptance work
+
+Work one task at a time; commit and pause for owner resume between tasks.
+Task 1: admin acceptance — [live HTTP checks pass](acceptance/ADMIN_UI_LOCAL.md)
+on a dedicated disposable fixture; browser visual/interaction checks are blocked
+because no browser is connected to this session. Login was previously confirmed
+by the owner. Task 1 is not complete; backup/restore has not started.
+
 ## Immediate next actions (2026-10-01)
 
 1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
