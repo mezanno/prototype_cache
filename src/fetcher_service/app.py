@@ -68,7 +68,7 @@ class PreloadRequest(BaseModel):
         min_length=1,
         max_length=2048,
         examples=[
-            "https://gallica.bnf.fr/iiif/ark:/12148/btv1b90017179/f15/full/800,/0/native.jpg"
+            "https://openapi.bnf.fr/iiif/image/v3/ark:/12148/bd6t543024772/f18/full/max/0/default.webp"
         ],
     )
     no_cache: bool = False
@@ -285,7 +285,7 @@ def create_app(
         "/{origin_host}/{origin_path:path}",
         dependencies=[Depends(require_dispatcher)],
         responses={
-            200: {"content": {"image/jpeg": {}, "image/tiff": {}}},
+            200: {"content": {"image/jpeg": {}, "image/tiff": {}, "image/webp": {}}},
             404: {"description": "Cache miss; preload first"},
         },
     )

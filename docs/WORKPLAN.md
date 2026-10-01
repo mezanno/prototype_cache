@@ -18,7 +18,7 @@ acceptance. Existing core implementations are reused. This sequence takes priori
 over the broad phases below for this milestone; their production requirements
 remain on the backlog. Full Swarm/HA and full-scale load certification are deferred,
 not marked complete. Separate preload/cache-only reads are confirmed; read-through
-on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and reviewed. P2 implementation is complete. P3 implementation and local origin/smoke evidence are complete. Next: P4 private Compose packaging and deployment acceptance.
+on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and reviewed. P2 implementation is complete. P3 implementation and local origin/smoke evidence are complete. Next: P4 local deployment is running; remaining acceptance and P5 operations are next.
 
 ## Current state (2026-10-01)
 
@@ -58,12 +58,20 @@ on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and re
   with exact-rendition aliases, redirect policy, scoped read-token renewal and telemetry.
   Local HTTPS origin tests cover Garage/Postgres and reopened applications; the
   HTTP smoke script verifies hashes and repeated preload reuse over a real socket.
-- Current combined checkpoint: **499 tests pass**, none skipped, with Garage/Postgres;
+- Current combined checkpoint: **519 tests pass**, none skipped, with Garage/Postgres;
   lint, formatting and strict typing checks pass.
 - ADR-032: separate private Compose package and protected configuration preflight
-  are implemented; startup, real deployment smoke, container restart, private
-  access and admin acceptance remain open.
-- **Next: M-001/P4 image/host selections and deployment acceptance.** Swarm,
+  are implemented. The owner selected this machine. ADR-033 immutable local-image
+  support and ADR-034 BnF v3/WebP are implemented; live HTTP smoke, container
+  persistence and capability renewal pass. ADR-035 maps the owner-approved legacy
+  full-image form to the current v3 canonical JPEG resource; other renditions stay
+  independent. Local downloaded files differ slightly, so byte equivalence is not
+  claimed. The [quickstart](PILOT_QUICKSTART.md) task/result example passed against
+  deployed APIs with a scoped worker identity and 64 MiB local results budget.
+  The owner confirmed admin login; remaining UI workflows are still unreviewed. Scheduled cleanup is disabled; admin,
+  scanning, host disk controls and recovery/soak acceptance remain open.
+  See [local deployment evidence](../deploy/pilot/LOCAL_DEPLOYMENT.md).
+- **Next: M-001/P4 remaining acceptance and P5 operational recovery.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ### P2 incremental checkpoint (2026-10-01)
@@ -225,8 +233,9 @@ prototype:
 
 1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
    automated HTTP contracts and static JavaScript syntax checks pass.
-2. **M-001/P4:** select reviewed images/host/operator and run the prepared private
-   [Compose package](../deploy/pilot/README.md) deployment acceptance; follow
+2. **M-001/P4–P5:** review scans and remaining UI/operating controls, then rehearse
+   backup/restore and rollback on the running local
+   [Compose package](../deploy/pilot/README.md); follow
    the [closeout backlog](security/B018_CLOSEOUT.md) for deployment, DNS/egress,
    resource cleanup and capability concurrency work.
 3. Operational deployment, alert wiring and B-015 performance certification remain;

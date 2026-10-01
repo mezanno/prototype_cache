@@ -109,3 +109,31 @@ def test_main_failure_does_not_print_credentials_or_source_query(
     output = capsys.readouterr().out
     assert "FAIL:" in output
     assert "origin-secret" not in output and "service-secret" not in output
+
+
+def test_smoke_uses_v3_host_and_webp_type() -> None:
+    url = (
+        "https://openapi.bnf.fr/iiif/image/v3/ark:/12148/bd6t543024772/f18/full/max/0/default.webp"
+    )
+    calls: list[str] = []
+    preloads = 0
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        nonlocal preloads
+        if request.method == "POST":
+            preloads += 1
+            return httpx.Response(200, json={"asset_id": "asset", "cache_hit": preloads > 1})
+        calls.append(request.url.path)
+        return httpx.Response(
+            200,
+            content=b"webp",
+            headers={
+                "Content-Type": "image/webp",
+                "ETag": '"sha256:' + hashlib.sha256(b"webp").hexdigest() + '"',
+            },
+        )
+
+    with httpx.Client(base_url="http://localhost", transport=httpx.MockTransport(respond)) as http:
+        result = run_smoke(http, url, max_bytes=1024)
+    assert calls == ["/" + url.removeprefix("https://")] * 2
+    assert result.size_bytes == 4

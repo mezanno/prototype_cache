@@ -1,5 +1,9 @@
 # M-001 private pilot package (ADR-032)
 
+Start with the short [deployment/task quickstart](../../docs/PILOT_QUICKSTART.md).
+The [local v3/WebP deployment record](LOCAL_DEPLOYMENT.md) captures the running
+candidate, live smoke/restart results and remaining release gates.
+
 Separate from the development Compose project. One process each for asset-store,
 fetcher and scheduled lifecycle, with Postgres and Garage persistent volumes.
 B-003/B-019 / FR-050/064/068; this delivers packaging, not deployment sign-off.
@@ -14,8 +18,12 @@ reviewed image digests, approved Gallica corpus, RAM/disk allocation and backup
 location. Existing implementation baseline is Garage v1.0.1 and Postgres 16;
 use reviewed digests for those versions before attempting any backend upgrade.
 The app image must contain this repository checkpoint and migration 0003.
-Build it with `deploy/Dockerfile` and record the registry digest after publishing
-through the operator's authorized release process. Do not deploy a mutable tag.
+For this local host, build it with `deploy/Dockerfile` and set `PILOT_APP_IMAGE`
+to its immutable image ID (`docker image inspect <build-tag> --format '{{.Id}}'`).
+No registry publication is required (ADR-033). Record the source commit, image ID
+and resolved build input digests. For a registry image, record its digest after publishing
+through the operator's authorized release process. Do not deploy a mutable tag. Application services use `pull_policy: never`;
+explicitly pull a selected registry app image before startup.
 The Dockerfile pins dependencies via `uv.lock`; base/build image digest locking
 and image scan review remain release gates. No images are downloaded or published
 by the preflight checker.
@@ -173,3 +181,12 @@ reviewed/scanned image digests; actual host budgets and credentials; fresh start
 real-network smoke; container restart; admin browser check; private access review.
 P5 adds monitoring, audit retention, backup/restore and rollback rehearsal; P6 adds
 live corpus and soak acceptance. Do not run `down -v` on retained pilot data.
+
+## Optional task worker
+
+The local task workflow uses the existing `worker` role, provisioned only in
+asset-store credentials. Preflight permits it as an optional fourth identity;
+fetcher still authenticates only task-api/admin dispatchers. The local host sets
+`PILOT_RESULTS_CAPACITY_BYTES=67108864` (64 MiB); cache-only defaults remain 1 MiB.
+API, migration and lifecycle share this budget. See the quickstart for the
+verified simulator example and real-worker integration sequence.

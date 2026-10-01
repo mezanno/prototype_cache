@@ -44,8 +44,8 @@ https://gallica.bnf.fr/iiif/ark:/12148/<id>/f1/full/800,/0/default.jpg
 ```
 
 `cache.mymirror.tld` illustrates the pilot hostname; it is not a provisioned host.
-The first path segment selects an **exact allowlisted origin hostname**, initially
-`gallica.bnf.fr`; the upstream scheme is fixed to HTTPS. Reject credentials,
+The first path segment selects an **exact allowlisted origin hostname**, approved legacy
+`gallica.bnf.fr` and current `openapi.bnf.fr` Image API v3 (ADR-034); the upstream scheme is fixed to HTTPS. Reject credentials,
 explicit ports and non-allowlisted/subdomain lookalikes. Preserve the origin rendition path without double-decoding; reject ambiguous encodings.
 Initial query support is empty: both routes reject query strings (ADR-031).
 Apply the same mapping to preload and reads so their canonical keys agree. This
@@ -153,7 +153,8 @@ rate-bounded per configured identity (ADR-030), with 429/refill responses. Next:
 **P3 / B-024 is implemented with local HTTPS origin, durable restart fixtures
 and an [HTTP smoke script](../../tools/cache-pilot/README.md). Next: P4 private
 [Compose packaging](../../deploy/pilot/README.md) is prepared (ADR-032);
-image/host selection and deployment acceptance remain**. P4/P5 still must configure these
+the local host now runs the v3/WebP candidate with live smoke/restart evidence;
+remaining acceptance and P5 operations are next**. P4/P5 still must configure these
 bounds, ingress timeouts, volumes and log/audit retention; pilot acceptance and
 release approval remain open.
 See [connection validation evidence](../security/SEC05_OUTBOUND_CONNECTIONS.md).

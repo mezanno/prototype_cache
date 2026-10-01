@@ -76,3 +76,10 @@ the entire suite with nothing skipped.
 - Global execution plan: `docs/WORKPLAN.md`
 - Agent operating guide: `AGENTS.md`
 - Cursor rules for agents: `.cursor/rules/`
+
+## Local pilot deployment and task workflow
+
+See the short [pilot quickstart](docs/PILOT_QUICKSTART.md) for deployment,
+authenticated caching, worker input reads and manifest-last result publication.
+The running local pilot supports the current BnF v3 API and mapped legacy
+full-image URLs. Task scheduling/processing code remains external.

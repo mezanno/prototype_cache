@@ -222,3 +222,113 @@ def test_concurrent_commit_reuses_winner(stack: Stack, monkeypatch: pytest.Monke
     assert retry.status_code == 200
     assert retry.json()["asset_id"] == winner["asset_id"]
     assert retry.json()["cache_hit"]
+
+
+V3_URL = "https://openapi.bnf.fr/iiif/image/v3/ark:/12148/bd6t543024772/f18/full/max/0/default.webp"
+
+
+def test_v3_webp_preload_and_host_prefixed_read(stack: Stack) -> None:
+    api, origin, _, _ = stack
+    origin.mime = "image/webp"
+    read = "/" + V3_URL.removeprefix("https://")
+    assert api.get(read).status_code == 404
+    assert origin.calls == 0
+    first = api.post("/v1/cache/preload", json={"url": V3_URL})
+    assert first.status_code == 200, first.text
+    assert first.json()["qualified_alias"].startswith(
+        "cache/gallica-pilot/openapi.bnf.fr/iiif/image/v3/"
+    )
+    result = api.get(read)
+    assert result.status_code == 200
+    assert result.headers["content-type"] == "image/webp"
+    assert result.content == origin.data
+    assert api.post("/v1/cache/preload", json={"url": V3_URL}).json()["cache_hit"]
+    assert origin.calls == 1
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        V3_URL.replace("openapi.bnf.fr", "openapi.bnf.fr.evil"),
+        V3_URL.replace("openapi.bnf.fr", "openapi.bnf.fr:443"),
+        V3_URL.replace("openapi.bnf.fr", "user@openapi.bnf.fr"),
+        V3_URL.replace("/image/v3/", "/image/v2/"),
+        V3_URL + "?secret=x",
+        V3_URL.replace("default.webp", "info.json"),
+        V3_URL.replace("openapi.bnf.fr", "gallica.bnf.fr"),
+        URL.replace("gallica.bnf.fr", "openapi.bnf.fr"),
+        URL.replace("native.jpg", "default.webp"),
+    ],
+)
+def test_v3_does_not_expand_other_origin_paths(url: str) -> None:
+    with pytest.raises(PilotDeniedError):
+        GallicaPolicy().require(url)
+
+
+def test_v3_shared_mapping_keeps_host_and_version_identity() -> None:
+    policy = GallicaPolicy()
+    v3 = policy.require(V3_URL)
+    assert policy.require_read(("/" + V3_URL.removeprefix("https://")).encode(), b"") == v3
+    assert policy.require(V3_URL.replace("/ark:", "/ark%3A")) == v3
+    legacy = policy.require(URL)
+    assert v3.relative_alias != legacy.relative_alias
+    assert legacy.relative_alias.startswith("gallica-pilot/iiif/ark:")
+
+
+LEGACY_FULL_URL = "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9907264/f7/full/full/0/native.jpg"
+CURRENT_FULL_URL = (
+    "https://openapi.bnf.fr/iiif/image/v3/ark:/12148/bpt6k9907264/f7/full/max/0/default.jpg"
+)
+
+
+@pytest.mark.parametrize("first_url", [LEGACY_FULL_URL, CURRENT_FULL_URL])
+def test_legacy_and_current_full_image_share_one_asset(stack: Stack, first_url: str) -> None:
+    api, origin, _, _ = stack
+    urls: list[str] = []
+    original = origin.fetch
+
+    def record(url: str) -> FetchedContent:
+        urls.append(url)
+        return original(url)
+
+    origin.fetch = record  # type: ignore[method-assign]
+    first = api.post("/v1/cache/preload", json={"url": first_url})
+    assert first.status_code == 200, first.text
+    for url in (LEGACY_FULL_URL, CURRENT_FULL_URL):
+        hit = api.post("/v1/cache/preload", json={"url": url})
+        assert hit.status_code == 200
+        assert hit.json()["asset_id"] == first.json()["asset_id"]
+        assert hit.json()["qualified_alias"] == first.json()["qualified_alias"]
+        assert hit.json()["cache_hit"]
+        assert api.get("/" + url.removeprefix("https://")).content == origin.data
+    assert urls == [CURRENT_FULL_URL]
+
+
+def test_full_image_mapping_does_not_merge_other_renditions() -> None:
+    policy = GallicaPolicy()
+    legacy = policy.require(LEGACY_FULL_URL)
+    current = policy.require(CURRENT_FULL_URL)
+    assert legacy.relative_alias == current.relative_alias
+    assert legacy.fetch_url == current.origin_url
+    for url in (
+        LEGACY_FULL_URL.replace("/full/full/", "/full/800,/"),
+        LEGACY_FULL_URL.replace("/0/", "/90/"),
+        LEGACY_FULL_URL.replace("native.jpg", "default.jpg"),
+        CURRENT_FULL_URL.replace("default.jpg", "default.webp"),
+    ):
+        assert policy.require(url).relative_alias != current.relative_alias
+
+
+def test_legacy_forced_refetch_preserves_shared_immutable_asset(stack: Stack) -> None:
+    api, origin, _, _ = stack
+    first = api.post("/v1/cache/preload", json={"url": CURRENT_FULL_URL}).json()
+    origin.data = b"changed"
+    assert (
+        api.post("/v1/cache/preload", json={"url": LEGACY_FULL_URL, "no_cache": True}).status_code
+        == 409
+    )
+    for url in (LEGACY_FULL_URL, CURRENT_FULL_URL):
+        assert api.get("/" + url.removeprefix("https://")).content == b"image fixture"
+        assert (
+            api.post("/v1/cache/preload", json={"url": url}).json()["asset_id"] == first["asset_id"]
+        )

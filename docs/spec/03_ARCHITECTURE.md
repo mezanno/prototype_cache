@@ -332,3 +332,27 @@ Tracked as `Q-*` rows in [`05_BACKLOG_AND_OPEN_QUESTIONS.md`](05_BACKLOG_AND_OPE
 | ID | Decision | Status | Rationale | Alternatives |
 |---|---|---|---|---|
 | ADR-032 | M-001/P4 uses a separate Compose project with digest-pinned operator-supplied application/Garage/Postgres images, protected runtime env/config files, durable named volumes, no published backend ports, loopback API ports, explicit migration completion, bounded CPU/memory/PIDs/logs, and an opt-in scheduled lifecycle profile after dry-run review. Application image is shared by both APIs, migration and lifecycle. | Accepted (2026-10-01) | B-003/B-019, FR-050/064/068, NFR operational boundary: isolate private deployment from committed dev credentials, preserve one process per service and existing authenticated proxy paths. API remains reachable through an operator-managed tunnel; remote TLS/private ingress and host disk quotas remain deployment gates. Docker operators can inspect env credentials and are trusted. | Reuse dev stack/default credentials; publish S3/Postgres/admin; mutable image tags; silently apply cleanup; embedded secret values; claim named volumes impose disk quotas. |
+
+### ADR-033 — local pilot application image identity
+
+| ID | Decision | Status | Rationale | Alternatives |
+|---|---|---|---|---|
+| ADR-033 | On the authorized local pilot host, permit a bare immutable `sha256:<64 hex>` application image ID alongside registry digest references. All application services use the same identity with `pull_policy: never`; registry images must be pulled explicitly before startup. Garage/Postgres retain registry digest pins. | Accepted (2026-10-01) | Enables a locally built, unpublished image without a new registry. Preflight rejects mutable tags and local IDs for backends. Record source commit, image ID and resolved build input digests as deployment evidence. Image scanning and tester release approval remain gates. | Publish before every local rehearsal; mutable local tags; deploy an unrecorded build; introduce another registry service. |
+
+### ADR-034 — BnF Image API v3 and WebP
+
+| ID | Decision | Status | Rationale | Alternatives |
+|---|---|---|---|---|
+| ADR-034 | Add the product-owner-approved exact HTTPS host `openapi.bnf.fr` and `/iiif/image/v3/ark:/12148/<id>/f<page>/...` image paths, including WebP. Reuse the shared preload/read/redirect policy and `gallica-pilot` capability scope; new aliases include `openapi.bnf.fr/` before the full versioned path. Keep legacy keys unchanged and never merge the two APIs. | Accepted (2026-10-01) | Current BnF URL supplied by the owner; legacy samples returned origin 403 during local deployment. Preserves exact rendition/format and host/version identity while maintaining finite allowlist, no-query and connection-bound SSRF/TLS rules. | Conflate legacy/v3 aliases; arbitrary BnF hosts; weaken origin checks; silently convert WebP; require a new deployable. |
+
+### ADR-035 — approved full-image legacy/v3 identity
+
+| ID | Decision | Status | Rationale | Alternatives |
+|---|---|---|---|---|
+| ADR-035 | Per product-owner instruction, map legacy `/iiif/ark:/12148/<id>/f<page>/full/full/0/native.jpg` to the corresponding current `/iiif/image/v3/ark:/12148/<id>/f<page>/full/max/0/default.jpg` cache alias. Prefer that current v3 URL for cold fetch and forced refetch of this mapped form. Both public read URLs resolve the same asset. Other sizes/regions/rotations/qualities/formats remain independent. Existing v3 keys are unchanged; previously stored legacy keys are not automatically migrated/deleted. | Accepted (2026-10-01) | Owner identifies these as the same resource. Direct legacy test returned 403; v3 returned JPEG. Owner-provided downloads have equal dimensions but different hashes/pixels, so this is logical resource identity with a canonical v3 representation, not byte-equivalent URL normalization. Canonical v3 fetch enables the legacy facade without weakening origin policy; changed canonical refetch remains conflict. | Fetch a currently denied legacy endpoint on every cold request; conflate arbitrary renditions; claim unobserved byte equality; silently rebind historical aliases. |
+
+### ADR-036 — optional local task-worker identity
+
+| ID | Decision | Status | Rationale | Alternatives |
+|---|---|---|---|---|
+| ADR-036 | Permit an optional distinct `worker` credential in the pilot asset-store configuration, keeping dispatcher credentials unchanged. Provision it locally for the owner-requested cache/read/process/results workflow. Use existing worker policy and simulator; do not add a scheduler/processing engine. | Accepted (2026-10-01) | SCN-002/005, FR-014/015/050: scoped cache reads and results writes use the existing worker role instead of sharing admin authority. Default cache-only templates remain valid. `PILOT_RESULTS_CAPACITY_BYTES` keeps the 1 MiB cache-only default; the local task demonstration explicitly allocates 64 MiB, shared by API/lifecycle. | Give workers the admin secret; pretend the simulator performs OCR; add a task engine inside asset-store. |

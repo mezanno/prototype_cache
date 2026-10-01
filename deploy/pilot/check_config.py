@@ -20,9 +20,22 @@ def validate_model(model: dict[str, Any]) -> None:
     services = model.get("services", {})
     if set(services) != {"garage", "postgres", "migrate", "asset-store", "fetcher", "lifecycle"}:
         raise ConfigFailure("unexpected service set")
-    for service in services.values():
-        if re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", service.get("image", "")) is None:
-            raise ConfigFailure("every image must be pinned by SHA-256 digest")
+    for name, service in services.items():
+        image = service.get("image", "")
+        registry_pin = re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", image) is not None
+        local_pin = (
+            name in {"asset-store", "fetcher", "migrate", "lifecycle"}
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", image) is not None
+        )
+        if not registry_pin and not local_pin:
+            raise ConfigFailure(
+                "images require registry digests or immutable local application IDs"
+            )
+        if (
+            name in {"asset-store", "fetcher", "migrate", "lifecycle"}
+            and service.get("pull_policy") != "never"
+        ):
+            raise ConfigFailure("application images must be explicitly prepared before startup")
         if not service.get("mem_limit") or not service.get("cpus") or not service.get("pids_limit"):
             raise ConfigFailure("every service needs memory, CPU and PID limits")
         log = service.get("logging", {})
@@ -96,7 +109,11 @@ def validate_model(model: dict[str, Any]) -> None:
 
     storage_creds = credentials(asset.get("ASSET_STORE_SERVICE_CREDENTIALS", ""))
     dispatch_creds = credentials(fetch.get("ASSET_STORE_SERVICE_CREDENTIALS", ""))
-    if set(storage_creds) != {"fetcher", "task-api", "admin"} or set(dispatch_creds) != {
+    if not (
+        {"fetcher", "task-api", "admin"}
+        <= set(storage_creds)
+        <= {"fetcher", "task-api", "admin", "worker"}
+    ) or set(dispatch_creds) != {
         "task-api",
         "admin",
     }:

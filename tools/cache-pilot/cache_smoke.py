@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from fetcher_service.errors import PilotDeniedError
-from fetcher_service.pilot_policy import GallicaPolicy
+from fetcher_service.pilot_policy import IMAGE_MIMES, GallicaPolicy
 
 
 class SmokeFailure(RuntimeError):
@@ -54,11 +54,11 @@ def run_smoke(http: httpx.Client, origin_url: str, *, max_bytes: int) -> SmokeRe
     for _ in range(2):
         digest = hashlib.sha256()
         size = 0
-        with http.stream("GET", "/gallica.bnf.fr" + target.path) as response:
+        with http.stream("GET", "/" + target.host + target.path) as response:
             if response.status_code != 200:
                 raise SmokeFailure(f"cached read returned HTTP {response.status_code}")
             mime = response.headers.get("Content-Type", "").split(";", 1)[0]
-            if mime not in {"image/jpeg", "image/tiff"}:
+            if mime not in IMAGE_MIMES:
                 raise SmokeFailure("cached read returned an unsupported content type")
             for chunk in response.iter_bytes():
                 size += len(chunk)

@@ -1,6 +1,6 @@
 # asset-store — architecture & progress
 
-> **Checkpoint: 2026-10-01 · SEC-02/05 implemented · P3 API/local evidence complete · P4 package prepared · Next: private deployment acceptance**
+> **Checkpoint: 2026-10-01 · SEC-02/05 implemented · P3 API/local evidence complete · Local v3/WebP pilot running · Next: remaining acceptance/recovery**
 >
 > **Current goal: [M-001 private Gallica IIIF cache pilot](milestones/PRIVATE_CACHE_PILOT.md)** — one host, trusted testers, existing fetcher over asset-store. Security gates remain open.
 

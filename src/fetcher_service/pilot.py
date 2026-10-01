@@ -13,7 +13,7 @@ import httpx
 from fetcher_service.client import AssetStoreClient, AssetStoreError
 from fetcher_service.errors import CacheBackendError, CacheMissError, UpstreamError
 from fetcher_service.fetcher import FetchedContent, HttpFetcher, UrlFetcher
-from fetcher_service.pilot_policy import PARTITION, GallicaPolicy, PilotTarget
+from fetcher_service.pilot_policy import IMAGE_MIMES, PARTITION, GallicaPolicy, PilotTarget
 from fetcher_service.rules import RuleSet
 from fetcher_service.service import EnsureUrlResult, ensure_url
 
@@ -38,7 +38,7 @@ class _ApprovedFetcher:
             content = self.fetcher.fetch(url)
         if len(content.data) > self.max_bytes:
             raise UpstreamError("origin image exceeds pilot byte limit")
-        if content.mime not in {"image/jpeg", "image/tiff"}:
+        if content.mime not in IMAGE_MIMES:
             raise UpstreamError("origin did not return a supported image content type")
         return content
 
@@ -74,7 +74,7 @@ class PilotCache:
                 self.client,
                 self.rules,
                 self.fetcher,
-                url=target.origin_url,
+                url=target.fetch_url,
                 no_cache=no_cache,
                 capability_ttl_seconds=300,
                 record_refetch=record_refetch,
@@ -111,7 +111,7 @@ class PilotCache:
             if size > self.max_bytes:
                 raise CacheBackendError(413)
             mime = asset.get("mime")
-            if mime not in {"image/jpeg", "image/tiff"}:
+            if mime not in IMAGE_MIMES:
                 raise CacheBackendError(502)
             token = self._read_token()
             try:

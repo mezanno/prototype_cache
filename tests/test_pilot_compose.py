@@ -139,3 +139,44 @@ def test_failure_output_does_not_expose_secret(
     monkeypatch.setattr(sys, "argv", ["check_config.py", str(runtime)])
     assert main() == 1
     assert "sensitive-test-secret" not in capsys.readouterr().out
+
+
+def test_local_application_identity_is_supported(runtime: Path) -> None:
+    model = load_model(runtime)
+    for name in ("asset-store", "fetcher", "migrate", "lifecycle"):
+        model["services"][name]["image"] = "sha256:" + "4" * 64
+    validate_model(model)
+    model["services"]["garage"]["image"] = "sha256:" + "5" * 64
+    with pytest.raises(ConfigFailure):
+        validate_model(model)
+
+
+def test_application_image_must_not_be_pulled_implicitly(runtime: Path) -> None:
+    model = load_model(runtime)
+    model["services"]["fetcher"]["pull_policy"] = "always"
+    with pytest.raises(ConfigFailure):
+        validate_model(model)
+
+
+def test_optional_worker_uses_existing_scoped_identity(runtime: Path) -> None:
+    model = load_model(runtime)
+    for name in ("asset-store", "migrate", "lifecycle"):
+        env = model["services"][name]["environment"]
+        env["ASSET_STORE_SERVICE_CREDENTIALS"] += ",worker:" + "9" * 64
+    validate_model(model)
+    for name in ("asset-store", "migrate", "lifecycle"):
+        env = model["services"][name]["environment"]
+        env["ASSET_STORE_SERVICE_CREDENTIALS"] += ",unapproved:" + "8" * 64
+    with pytest.raises(ConfigFailure):
+        validate_model(model)
+
+
+def test_task_results_budget_is_shared_with_lifecycle(runtime: Path) -> None:
+    import json
+
+    runtime.write_text(runtime.read_text() + "PILOT_RESULTS_CAPACITY_BYTES=67108864\n")
+    model = load_model(runtime)
+    validate_model(model)
+    for name in ("asset-store", "migrate", "lifecycle"):
+        budgets = json.loads(model["services"][name]["environment"]["ASSET_STORE_CAPACITY_BYTES"])
+        assert budgets["results"] == 67108864

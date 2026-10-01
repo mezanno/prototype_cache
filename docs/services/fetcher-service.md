@@ -296,9 +296,42 @@ Unknown fields are rejected. Response uses the existing ensure-url schema:
 `asset_id`, `qualified_alias`, `cache_hit`, `bucket`, `partition_id`.
 `GET /gallica.bnf.fr/iiif/ark:/12148/btv1b90017179/f15/full/800,/0/native.jpg`
 returns stored JPEG/TIFF bytes, checksum ETag, `Cache-Control: no-store` and nosniff.
+The new owner-approved BnF v3 API uses `https://openapi.bnf.fr/iiif/image/v3/ark:/12148/bd6t543024772/f18/full/max/0/default.webp`
+and a matching `/openapi.bnf.fr/iiif/image/v3/...` cached-read path (ADR-034).
+WebP (`image/webp`) is supported on this new image path alongside JPEG/TIFF.
+New keys include `openapi.bnf.fr/` before the versioned path within `gallica-pilot`;
+legacy keys are unchanged except the owner-approved full-image mapping below. Credentials/ports/queries/
+manifests and other API versions/host-path combinations remain denied.
+
+ADR-035 maps legacy `/iiif/ark:/12148/<id>/f<page>/full/full/0/native.jpg`
+to current `/iiif/image/v3/ark:/12148/<id>/f<page>/full/max/0/default.jpg`.
+Both reads/preloads use the current v3 cache key and asset; cold/forced fetches
+use the v3 endpoint. Other renditions/formats are not merged. Historical legacy
+assets, if any, require explicit reviewed migration rather than automatic rebinding.
+The supplied legacy endpoint returned 403 during direct verification. Owner-provided
+JPEG downloads have equal dimensions but different hashes and slightly different
+pixels. This exception standardizes the resource on the v3 representation; it
+does not promise to preserve the legacy JPEG encoding. All other paths retain
+exact-rendition behavior.
+
+**IIIF server/transcoding consideration:** the product owner reports, based on
+discussions with BnF specialists, that different IIIF servers may back the old
+and current API versions. Different server implementations can use different
+image libraries, codec versions or encoding settings. This is owner-supplied
+architectural context; the backend topology and the cause of the observed JPEG
+differences have not been independently verified in this prototype.
+Equal source/page identity and dimensions do not establish encoded-byte equality;
+JPEG encoding can also introduce small decoded-pixel differences. Resource
+identity must therefore come from an explicit approved URL mapping, not assumed
+hash equality or automatic visual similarity. The mapped full-image pair uses
+v3 as its canonical representation. Checksum integrity and forced-refetch conflict
+checks still compare exact stored bytes; a transcoder change can cause a conflict
+without a change to the underlying source image. No automatic replacement or
+pixel-based dedup is introduced.
+
 Both require `Authorization: Service task-api:<secret>` or the admin identity.
 
-The shared policy permits HTTPS on the exact Gallica host, image paths under
+The shared policy permits HTTPS on the exact legacy `gallica.bnf.fr` host, image paths under
 `/iiif/ark:/12148/<alphanumeric-id>/f<positive-page>/`, numeric/full/square regions,
 full/max/percentage/comma sizes, numeric rotation with optional flip, native/default/
 color/gray/bitonal quality and jpg/jpeg/tif/tiff format. This is a syntax allowlist,

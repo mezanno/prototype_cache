@@ -9,6 +9,7 @@ x-logging: &logging
 
 x-app: &app
   image: ${PILOT_APP_IMAGE:?set a digest-pinned application image}
+  pull_policy: never
   restart: unless-stopped
   read_only: true
   tmpfs:
@@ -34,7 +35,7 @@ x-storage-env: &storage-env
   ASSET_STORE_PG_POOL_MAX: "4"
   ASSET_STORE_PG_POOL_TIMEOUT: "2"
   ASSET_STORE_PG_POOL_MAX_WAITING: "8"
-  ASSET_STORE_CAPACITY_BYTES: '{"cache":1073741824,"tmp":67108864,"users":1048576,"results":1048576}'
+  ASSET_STORE_CAPACITY_BYTES: '{"cache":1073741824,"tmp":67108864,"users":1048576,"results":${PILOT_RESULTS_CAPACITY_BYTES:-1048576}}'
   ASSET_STORE_CAPACITY_HARD_RATIO: "0.95"
 
 services:

@@ -11,7 +11,7 @@ Run from the repository root with its existing Python environment:
 
 ```bash
 export CACHE_PILOT_BASE_URL=http://127.0.0.1:8081
-export CACHE_PILOT_ORIGIN_URL=https://gallica.bnf.fr/iiif/ark:/12148/btv1b90017179/f15/full/800,/0/native.jpg
+export CACHE_PILOT_ORIGIN_URL=https://openapi.bnf.fr/iiif/image/v3/ark:/12148/bd6t543024772/f18/full/max/0/default.webp
 export CACHE_PILOT_SERVICE_ID=task-api
 read -rsp 'Task API service secret: ' CACHE_PILOT_SERVICE_SECRET
 export CACHE_PILOT_SERVICE_SECRET

@@ -2,6 +2,83 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Documented task workflow (ADR-036, 2026-10-01)
+
+[Short quickstart](PILOT_QUICKSTART.md) covers fresh deployment/runbook links,
+local/tunnel endpoints, cache preload and alias/checksum resolution, worker
+capability reads, external processing and manifest-last result writes.
+A distinct optional worker credential uses existing read/write role policy;
+preflight continues to require only task-api/admin on fetcher. Local results
+capacity is explicitly 64 MiB through `PILOT_RESULTS_CAPACITY_BYTES`, retaining
+the 1 MiB cache-only default. API/lifecycle share the budget. No new scheduler,
+processing engine, capability policy, migration or binary fixture was added.
+
+The exact guide example passed against deployed HTTP APIs, writing one copied
+WebP artifact and a completion manifest under a fresh attempt prefix. Existing
+worker/asset-store metrics, correlation and audits cover this path. Owner
+confirmed admin login works after correcting copy/paste; broader UI acceptance
+remains open. **519 tests pass, none skipped**, with Garage/Postgres; Ruff
+lint/format, strict mypy (86 files) and whitespace checks pass.
+
+## Shared legacy/current full-image resource (ADR-035, 2026-10-01)
+
+The owner supplied a legacy full/full/native.jpg URL and corresponding current
+v3 full/max/default.jpg URL and requested one cache resource. This specific
+structural full-image form now uses the existing current v3 alias. Cold and
+forced fetches prefer v3; both public read paths resolve that same asset. Other
+renditions remain independent. Previously stored legacy keys are not silently
+migrated or rebound. Existing scope/limits/audit/refetch metrics remain active.
+
+Owner-provided JPEGs are both 2210×3218 but differ in bytes and slightly in RGB
+pixels (mean absolute difference 0.6277/255). This is canonical resource identity,
+not byte-equivalent origin dedup. The owner reports discussions with BnF specialists indicating
+that different IIIF servers may back the API versions. Server/transcoder/codec
+or settings differences may explain small encoding/pixel differences; this is
+owner-supplied architectural context, not independently verified causation. Exact checksum refetch can conflict after re-encoding
+even when source identity is unchanged; no automatic semantic dedup/replacement.
+The canonical v3 representation is served
+through either mapped cache URL; preserving both JPEG encodings would require
+separate assets. Direct old API verification returned 403, consistent with the
+owner's instability report; direct v3 returned JPEG successfully. The comparison
+and running image identity are recorded in local deployment evidence.
+
+Validation: **517 tests passed, none skipped**, with development Garage/Postgres;
+48 focused API/smoke checks cover both preload orders, one origin fetch, shared
+asset/alias, equal reads, rendition separation and immutable refetch conflict.
+Ruff lint/format, strict mypy (86 files) and whitespace checks pass. Included in the owner-authorized implementation/documentation checkpoint.
+
+## Local deployment and current BnF v3 (ADRs 033/034, 2026-10-01)
+
+The owner selected this machine with local/SSH-tunnel access and supplied the
+current `openapi.bnf.fr/iiif/image/v3/.../default.webp` image URL. The shared
+policy now approves only that exact v3 host/path family in addition to the
+legacy Gallica image family. WebP is preserved; new aliases include the v3 host
+and full versioned path in `gallica-pilot`. Legacy keys remain unchanged.
+Capability scope is still this partition, not the entire cache. Redirect policy,
+encoding/query restrictions, SSRF/TLS and byte/job limits remain active. Smoke
+reads now derive the approved host instead of hardcoding the legacy one.
+
+Local image IDs are accepted for application services only, with explicit
+`pull_policy: never`; backend references retain registry digest pins. Fresh
+protected credentials and isolated volumes were provisioned, migration 0003
+applied and the authenticated loopback APIs started. No registry publication or
+production risk sign-off. The working candidate and resolved build inputs are
+recorded in [deployment evidence](../deploy/pilot/LOCAL_DEPLOYMENT.md).
+
+Live v3 preload fetched 655,296 WebP bytes. Repeat downloads matched checksum
+ETags and reused the asset. Full container restart and asset-store-only restart
+preserved identity/bytes and reminted read permission. Cached smoke added no
+origin connections. Auth/policy/miss/disabled-generic-route checks passed.
+A separate generated JPEG exercised storage before the working origin URL was
+provided; earlier legacy URLs returned upstream 403 and were not bypassed.
+Lifecycle dry run had no candidates/errors; scheduled apply remains disabled.
+
+Validation: **513 tests passed, none skipped**, with development Garage/Postgres;
+44 focused API/smoke and 20 preflight tests, Ruff lint/format, strict mypy (86
+files) and whitespace checks pass. Remaining: admin browser acceptance, scans,
+host disk/retention controls, cleanup scheduling approval, backup/restore/rollback,
+corpus/soak and limited tester release decision. No additional schema migration.
+
 ## Private pilot Compose package (ADR-032, 2026-10-01)
 
 M-001/P4 / B-003/B-019 / FR-050/064/068: a separate private project packages
