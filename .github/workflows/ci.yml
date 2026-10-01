@@ -39,6 +39,9 @@ jobs:
       - name: Type check (mypy --strict)
         run: uv run mypy
 
+      - name: Verify Compose tooling for configuration tests
+        run: docker compose version
+
       - name: Tests
         run: uv run pytest -q
 

@@ -152,7 +152,8 @@ cleanup retains physical estimates until purge. Capability issuance admission is
 rate-bounded per configured identity (ADR-030), with 429/refill responses. Next:
 **P3 / B-024 is implemented with local HTTPS origin, durable restart fixtures
 and an [HTTP smoke script](../../tools/cache-pilot/README.md). Next: P4 private
-Compose packaging and deployment acceptance**. P4/P5 still must configure these
+[Compose packaging](../../deploy/pilot/README.md) is prepared (ADR-032);
+image/host selection and deployment acceptance remain**. P4/P5 still must configure these
 bounds, ingress timeouts, volumes and log/audit retention; pilot acceptance and
 release approval remain open.
 See [connection validation evidence](../security/SEC05_OUTBOUND_CONNECTIONS.md).

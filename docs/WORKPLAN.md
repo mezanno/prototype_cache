@@ -58,9 +58,12 @@ on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and re
   with exact-rendition aliases, redirect policy, scoped read-token renewal and telemetry.
   Local HTTPS origin tests cover Garage/Postgres and reopened applications; the
   HTTP smoke script verifies hashes and repeated preload reuse over a real socket.
-- Current combined checkpoint: **481 tests pass**, none skipped, with Garage/Postgres;
+- Current combined checkpoint: **499 tests pass**, none skipped, with Garage/Postgres;
   lint, formatting and strict typing checks pass.
-- **Next: M-001/P4 private Compose packaging and deployment acceptance.** Swarm,
+- ADR-032: separate private Compose package and protected configuration preflight
+  are implemented; startup, real deployment smoke, container restart, private
+  access and admin acceptance remain open.
+- **Next: M-001/P4 image/host selections and deployment acceptance.** Swarm,
   operational dashboards, security hardening and load certification remain open.
 
 ### P2 incremental checkpoint (2026-10-01)
@@ -222,7 +225,8 @@ prototype:
 
 1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
    automated HTTP contracts and static JavaScript syntax checks pass.
-2. **M-001/P4:** package the private Compose stack and run deployment acceptance; follow
+2. **M-001/P4:** select reviewed images/host/operator and run the prepared private
+   [Compose package](../deploy/pilot/README.md) deployment acceptance; follow
    the [closeout backlog](security/B018_CLOSEOUT.md) for deployment, DNS/egress,
    resource cleanup and capability concurrency work.
 3. Operational deployment, alert wiring and B-015 performance certification remain;

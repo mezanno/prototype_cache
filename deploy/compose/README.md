@@ -66,7 +66,8 @@ docker compose -f docker-compose.garage.yml down
 ```
 
 Without `.env.garage` exported, the integration tests **skip**, so the default
-`uv run pytest` run stays Docker-free.
+`uv run pytest` run starts no containers. The private-pilot configuration tests
+require Docker Compose CLI parsing but no daemon access.
 
 > The credentials in [`garage.toml`](garage/garage.toml) and
 > [`garage-init.sh`](garage-init.sh) are **DEV-ONLY** and intentionally
@@ -131,3 +132,9 @@ The asset-store service serves `/admin` on its existing HTTP port; no extra
 container is needed. Configure the `admin` service credential alongside the
 other identities. See the [console runbook](../../docs/services/admin-ui.md).
 Legacy administrative endpoints now require admin authentication as well.
+
+## Private pilot package
+
+Use the separate [M-001 package](../pilot/README.md) for private deployment
+preparation. Its project, credentials, ports and volumes are isolated from this
+development stack; deployment acceptance is still required.

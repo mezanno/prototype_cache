@@ -2,6 +2,34 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
+## Private pilot Compose package (ADR-032, 2026-10-01)
+
+M-001/P4 / B-003/B-019 / FR-050/064/068: a separate private project packages
+Garage, Postgres, asset-store, real pilot-mode fetcher, migration and scheduled
+lifecycle. API ports bind loopback; backends publish none. Protected operator
+runtime files supply provisioned secrets and digest-pinned images. Application
+containers are read-only with bounded scratch, no added capabilities and one
+ASGI process. CPU/memory/PIDs, byte/job/pool/token admission and rotating logs
+are explicit. API startup waits for migration success. Scheduled apply is an
+opt-in profile after dry-run review, sharing API budgets and existing logs/metrics.
+
+[Preflight and runbook](../deploy/pilot/README.md) check actual Compose rendering,
+secret-file permissions, matching non-development service/database credentials,
+image digests, origin enforcement and limits. Secret-bearing Compose output is
+captured rather than printed. Runtime files are ignored and excluded from builds.
+Docker administrators can inspect environment credentials and are trusted.
+Named volumes do not impose disk quotas: host allocation, audit retention,
+monitoring and backup remain operational gates. No data migration/schema change
+is introduced by this packaging slice; it uses existing migration 0003.
+
+Validation: **499 tests pass, none skipped**, with Garage/Postgres; 18 preflight
+regressions, Ruff lint/format, strict mypy (86 files) and whitespace checks pass.
+Installed Garage v1.0.1 CLI help confirms key/bucket provisioning syntax. Default
+tests now require Compose CLI parsing without daemon access; CI checks tooling.
+No pilot containers were started and no images published. Next: reviewed image
+and host selections, real deployment smoke/restart/private access and admin
+browser acceptance; P5/P6 recovery/soak gates remain open.
+
 ## Gallica origin and smoke evidence (2026-10-01)
 
 M-001/P3 / B-024 / SCN-010 / FR-010–015 / FR-020–022: a generated JPEG is served

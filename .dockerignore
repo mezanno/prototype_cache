@@ -9,3 +9,4 @@ docs
 tests
 deploy/compose/.env.garage
 *.egg-info
+deploy/pilot/private

@@ -35,7 +35,8 @@ and upload limits, see the [security checkpoint](docs/security/B018_CLOSEOUT.md)
 
 ## Running the full test suite
 
-The default run is **Docker-free**: infrastructure-backed tests skip unless their
+The default run starts no containers. Private-pilot configuration tests require
+the Docker Compose CLI (no daemon access); infrastructure-backed tests skip unless their
 backend is reachable. The local HTTPS transport tests require the `openssl` CLI
 to generate a temporary test certificate.
 

@@ -1,0 +1,155 @@
+# M-001/P4 / ADR-032: isolated private stack. See README before starting.
+name: asset-store-pilot
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app: &app
+  image: ${PILOT_APP_IMAGE:?set a digest-pinned application image}
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  pids_limit: 128
+  cpus: "1.0"
+  mem_limit: 512m
+  logging: *logging
+
+x-storage-env: &storage-env
+  ASSET_STORE_DEV_MODE: "0"
+  ASSET_STORE_S3_ENDPOINT: http://garage:3900
+  ASSET_STORE_S3_REGION: garage
+  ASSET_STORE_MAX_UPLOAD_BYTES: "52428800"
+  ASSET_STORE_MAX_INFLIGHT_UPLOADS: "2"
+  ASSET_STORE_MAX_CAPABILITIES: "1000"
+  ASSET_STORE_CAPABILITY_RATE_PER_MINUTE: "120"
+  ASSET_STORE_CAPABILITY_RATE_BURST: "20"
+  ASSET_STORE_PG_POOL_MIN: "1"
+  ASSET_STORE_PG_POOL_MAX: "4"
+  ASSET_STORE_PG_POOL_TIMEOUT: "2"
+  ASSET_STORE_PG_POOL_MAX_WAITING: "8"
+  ASSET_STORE_CAPACITY_BYTES: '{"cache":1073741824,"tmp":67108864,"users":1048576,"results":1048576}'
+  ASSET_STORE_CAPACITY_HARD_RATIO: "0.95"
+
+services:
+  garage:
+    image: ${PILOT_GARAGE_IMAGE:?set a digest-pinned Garage image}
+    restart: unless-stopped
+    volumes:
+      - ${PILOT_GARAGE_CONFIG:?set an absolute protected Garage config path}:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    healthcheck:
+      test: [CMD, /garage, status]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    pids_limit: 128
+    cpus: "1.0"
+    mem_limit: 512m
+    logging: *logging
+
+  postgres:
+    image: ${PILOT_POSTGRES_IMAGE:?set a digest-pinned Postgres 16 image}
+    restart: unless-stopped
+    env_file:
+      - ${PILOT_POSTGRES_ENV:?set an absolute protected Postgres env path}
+    environment:
+      POSTGRES_USER: asset
+      POSTGRES_DB: asset_store
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD, pg_isready, -U, asset, -d, asset_store]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    pids_limit: 128
+    cpus: "1.0"
+    mem_limit: 768m
+    logging: *logging
+
+  migrate:
+    <<: *app
+    restart: "no"
+    mem_limit: 256m
+    env_file:
+      - ${PILOT_ASSET_ENV:?set an absolute protected asset-store env path}
+    environment: *storage-env
+    command: [alembic, upgrade, head]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  asset-store:
+    <<: *app
+    env_file:
+      - ${PILOT_ASSET_ENV:?set an absolute protected asset-store env path}
+    environment: *storage-env
+    command: [uvicorn, "asset_store_core.api.app:create_app_from_env", --factory,
+              --host, "0.0.0.0", --port, "8000", --workers, "1", --no-access-log]
+    ports:
+      - "127.0.0.1:${PILOT_ASSET_PORT:-18000}:8000"
+    depends_on:
+      garage:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  fetcher:
+    <<: *app
+    env_file:
+      - ${PILOT_FETCHER_ENV:?set an absolute protected fetcher env path}
+    environment:
+      ASSET_STORE_DEV_MODE: "0"
+      ASSET_STORE_BASE_URL: http://asset-store:8000
+      FETCHER_SERVICE_ID: fetcher
+      FETCHER_PILOT_MODE: "true"
+      FETCHER_SYNTHETIC: "false"
+      FETCHER_MAX_INFLIGHT_JOBS: "2"
+      FETCHER_HTTP_MAX_BYTES: "52428800"
+      FETCHER_HTTP_CONNECT_TIMEOUT: "5"
+      FETCHER_HTTP_READ_TIMEOUT: "30"
+      FETCHER_HTTP_MAX_REDIRECTS: "3"
+      FETCHER_ALLOW_PRIVATE_HOSTS: "false"
+    command: [uvicorn, "fetcher_service.app:create_app", --factory,
+              --host, "0.0.0.0", --port, "8001", --workers, "1", --no-access-log]
+    ports:
+      - "127.0.0.1:${PILOT_FETCHER_PORT:-18001}:8001"
+    depends_on:
+      asset-store:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/readyz', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  lifecycle:
+    <<: *app
+    profiles: [maintenance]
+    mem_limit: 256m
+    env_file:
+      - ${PILOT_ASSET_ENV:?set an absolute protected asset-store env path}
+    environment: *storage-env
+    command: [python, -m, asset_store_core.lifecycle, --apply, --interval, "60",
+              --metrics-file, /tmp/lifecycle.prom]
+    depends_on:
+      asset-store:
+        condition: service_healthy
+
+volumes:
+  garage-meta:
+  garage-data:
+  postgres-data:
