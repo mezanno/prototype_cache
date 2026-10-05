@@ -190,3 +190,11 @@ fetcher still authenticates only task-api/admin dispatchers. The local host sets
 `PILOT_RESULTS_CAPACITY_BYTES=67108864` (64 MiB); cache-only defaults remain 1 MiB.
 API, migration and lifecycle share this budget. See the quickstart for the
 verified simulator example and real-worker integration sequence.
+
+## Recovery rehearsal
+
+The 2026-10-05 [coherent cold backup and isolated restore](../../docs/BACKUP_RESTORE_REHEARSAL.md)
+passed for the local pilot (ADR-037). Use the recorded ordering, fresh volume and
+network isolation checks, pinned backend versions, table fingerprints and payload
+checksums for subsequent rehearsals. Daily/off-host backup scheduling and retention
+remain open; this evidence is not an online/PITR backup implementation.

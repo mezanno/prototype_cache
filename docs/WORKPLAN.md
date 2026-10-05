@@ -242,6 +242,16 @@ verified in a temporary workspace preview against the pilot API; the running pil
 image remains unchanged. The owner approved this commit; deploy/recheck the
 reviewed fix before closing task 1. No push; backup/restore has not started.
 
+## Backup/restore follow-up (2026-10-05)
+
+Owner resumed task 2; coherent cold backup and isolated restore passed (ADR-037).
+All seven tables and six retained payloads match baseline; restored/original HTTP
+cache-hit smoke passed. Original pilot is healthy; restore stack is stopped,
+backup and restore volumes retained. See [evidence](BACKUP_RESTORE_REHEARSAL.md).
+Daily/off-host backup operation, retention, rollback and browser recheck remain
+open. Owner approved the evidence commit and requested a pause on 2026-10-06;
+do not start task 3 until explicitly resumed.
+
 ## CLI deployment follow-up (2026-10-05)
 
 The approved B-013 fix (`4bf46ba`) is now deployed through an immutable image

@@ -1,15 +1,18 @@
 # Session reset handoff — updated 2026-10-05
 
-## Current checkpoint — CLI deployment follow-up
+## Current checkpoint — backup/restore rehearsal passed
 
-The reviewed `4bf46ba` fix is deployed to both pilot application containers as
-`sha256:f25279675d7e78c02eba46621452eebd148572a6584e1179e094af81a7468fff`.
-Preflight, migration, both readiness endpoints, served-source identity, all 10
-Node regressions against downloaded JavaScript, and authenticated cache-hit smoke
-passed. See [deployment evidence](../deploy/pilot/LOCAL_DEPLOYMENT.md#cli-image-update--2026-10-05).
-Browser disconnect recheck remains pending; task 1 is not fully closed. No backup/
-restore, commit or push was performed. Evidence edits are uncommitted. Further
-commits require approval; pause before task 2 until explicit owner resume.
+Deployment evidence committed as `d425176`; no push. Owner resumed task 2 and
+explicitly approved the outage/protected backup after automatic review rejection.
+Coherent cold snapshot and isolated restore passed on 2026-10-05: seven database
+tables match; all six retained payloads (2,052,400 bytes) match sizes/checksums.
+Original and restored cache-hit smoke/readiness passed. Original pilot is healthy;
+restore services are stopped, volumes and protected backup retained. See
+[rehearsal evidence](BACKUP_RESTORE_REHEARSAL.md), including corrected procedure
+errors and remaining daily/off-host/retention gates. The owner approved committing evidence and ADR-037 on 2026-10-06 and
+requested a pause. No push; further commits require owner approval.
+Task 1's deployed browser recheck remains pending. Pause before task 3 monitoring/
+retention/cleanup scheduling until owner resumes. Scheduled cleanup is disabled.
 
 ## Historical checkpoint — workspace acceptance
 
