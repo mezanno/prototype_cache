@@ -1,6 +1,8 @@
-# Task 1 — local admin acceptance (2026-10-01)
+# Task 1 — local admin acceptance (2026-10-05)
 
-**Status: live HTTP acceptance passed; visual/interaction acceptance blocked.**
+**Status: browser checks and workspace fix verified; owner approved this commit.**
+The running pilot still uses its previous image; the disconnect fix requires a
+subsequent image update and deployed recheck before task 1 is fully closed.
 Requirement: B-013 / SCN-004 / FR-040–042 / FR-005–007 / FR-051–053.
 The owner requested one task at a time with a commit and pause between tasks.
 Task 2 (backup/restore) has not started.
@@ -48,23 +50,74 @@ Postgres-backed cases; only two existing upstream deprecation warnings.
 Existing admin regression tests exercise memory/Postgres contract cases; this
 record adds real deployed HTTP evidence, not a new product feature or ADR.
 
-## Browser blocker and remaining checks
+## Browser acceptance (2026-10-05)
 
-Computer-use inventory reported no available browser/app surfaces. Attempting
-`createBrowserTab("iab", ...)` returned **Browser is not available: iab**.
-A connected browser is required before declaring B-013 UI acceptance complete.
-HTTP responses cannot establish visual layout or correct browser event handling.
+The desktop in-app browser could reach the pilot at `127.0.0.1:18000/admin`.
+The earlier no-browser blocker is resolved. Native JavaScript confirmation dialogs
+blocked the automation API; the owner accepted these dialogs while the agent
+operated the controls and verified each result. This is assisted browser evidence,
+not an unattended browser test suite.
 
-Resume task 1 after connecting a browser containing the local admin page:
+| Check | Browser result |
+|---|---|
+| Connect and filtered listing | Dedicated expired fixture, 36 bytes, quota 1,024 bytes / 3 assets |
+| Inspect and related audit | Correct metadata, aliases and admin history; no raw storage key |
+| TTL restore | Available; quota usage changed to 36 bytes / 1 asset; TTL audit appeared |
+| Annotation save | Added `browser: 2026-10-05`; success feedback and audit appeared |
+| Mutable alias | Attached then detached `.../worker1/browser.txt`; original alias retained |
+| Invalid annotation JSON | Visible error; saved annotations preserved |
+| Expire | Returned to expired; quota usage returned to 0 bytes / 0 assets |
+| Stale revision in second tab | Rejected with “asset changed; reload before applying”; reselect refreshed metadata |
+| State and alias-prefix filters | Available/nonmatching prefix produced no rows; expired/matching prefix returned the fixture |
+| Bulk preview after expiry | Zero candidates; apply button disabled |
+| Failed login and recovery | Invalid credential feedback; valid reconnect succeeded |
+| Disconnect | Found retained quota edit values; corrected client clears them and denies reads until reconnect |
+| Desktop and narrow layout | Readable at default desktop viewport and 390-pixel viewport; no document overflow |
+| Keyboard focus | Tab navigation displayed a visible focus outline; controls remained accessible |
 
-1. Check layout, visible status, keyboard focus and connect/disconnect behavior.
-2. Filter to the dedicated results partition and expired fixture above; inspect
-   metadata, annotations, quota display and audit history.
-3. Restore the fixture with TTL, edit its test annotation, attach/detach a mutable
-   test alias, then expire it again through the visible UI controls.
-4. Check displayed success/error feedback and stale-selection recovery; ensure
-   Disconnect clears displayed data and in-memory credential usage.
-5. Record browser screenshots/findings, fix concrete defects with regressions,
-   commit completion and pause for owner resume before backup/restore.
+Final fixture state: **expired**, payload unpurged, original alias only, eviction
+policy `exempt`, quota unchanged (1,024 bytes / 3 assets). The browser annotation
+is retained as evidence. Cached images and real task outputs were not mutated.
+No physical cleanup or scheduling changes were made.
 
-Do not perform these mutations on the owner's cached images or real task outputs.
+## Confirmed defect and correction
+
+Disconnect removed the asset panels but left loaded quota limits visible and
+retained annotation/alias edit values in hidden controls. Additionally, controlled
+JavaScript tests reproduced late responses restoring old data after disconnect.
+The client now clears loaded/editable state on disconnect or a new connection,
+and discards both successful responses and errors from an earlier connection.
+User-entered list filters remain for convenient reconnection. Already submitted
+server mutations are not cancelled or undone by disconnect.
+
+The corrected workspace UI was served temporarily at `127.0.0.1:18002/admin`,
+with `/admin/api` forwarded to the unchanged pilot API. No API responses were
+mocked in these browser checks. This verified the actual workspace JavaScript
+without modifying protected runtime files, replacing the immutable pilot image,
+or restarting services. The preview and browser sessions were stopped afterward.
+The correction is **not yet deployed** at port 18000.
+
+Security review: old responses cannot repopulate disconnected pages or overwrite
+new-session feedback. Credentials remain in page memory only; no credential was
+saved in screenshots, URLs, source or test fixtures. Existing admin authorization,
+revision checks, API audit, action metrics and structured logs remain in use.
+No new server critical path or architecture decision was introduced.
+
+## Validation and evidence
+
+- **519 Python tests passed, none skipped**, using the separate development
+  Postgres/Garage stack; two upstream deprecation warnings.
+- **10 JavaScript client regressions passed** with Node 22 and no npm dependencies.
+  They cover field clearing, delayed list/inspection/audit/preview responses,
+  reconnect, errors, delayed JSON decoding and mutation completion after disconnect.
+  All 10 fail against the original client, confirming the regression coverage.
+- Ruff lint/format, strict mypy (86 files), JavaScript syntax and whitespace checks pass.
+- CI now runs the JavaScript suite with Node 22 alongside existing checks.
+
+Screenshots show the corrected workspace UI using the real fixture:
+[desktop overview](images/admin-summary.png), [full desktop](images/admin-desktop.png),
+[narrow layout](images/admin-narrow.png), [disconnected fields](images/admin-disconnected.png).
+
+The owner approved committing this checkpoint; no push. Next: apply the reviewed client
+through the normal immutable-image pilot update and recheck disconnect, then pause
+for explicit owner resume before task 2 (backup/restore).

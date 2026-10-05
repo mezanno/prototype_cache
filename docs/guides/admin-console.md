@@ -54,6 +54,8 @@ than 500 assets match. A preview changes nothing.
 
 - **Disconnect** clears the credential and displayed data. Refreshing the page
   also requires reconnecting; the credential is not saved in browser storage.
+  Disconnect also clears quota/edit fields and ignores responses from the previous
+  connection. It does not undo actions already submitted to the server.
 - **Unauthorized / forbidden:** check the admin secret with your administrator.
 - **Quota exceeded when restoring:** increase the quota or free capacity first.
 - **Bytes still present after deletion:** ask the operator to check the

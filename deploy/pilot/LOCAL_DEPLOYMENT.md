@@ -70,7 +70,9 @@ was configured or exposed.
 
 ## Gates still open
 
-Admin browser interaction acceptance; image/runtime scan findings; configured
+Admin disconnect fix deployment/recheck (browser acceptance and workspace fix
+verified on 2026-10-05; see [evidence](../../docs/acceptance/ADMIN_UI_LOCAL.md));
+image/runtime scan findings; configured
 host disk quotas/monitoring and audit retention; scheduled cleanup approval;
 backup/restore and rollback rehearsal; representative corpus/concurrency/24-hour
 soak; named operator/testers and limited release go/no-go. Named volumes are not

@@ -1,4 +1,26 @@
-# Session reset handoff — 2026-10-01
+# Session reset handoff — updated 2026-10-05
+
+## Current checkpoint (supersedes the historical resume state below)
+
+Task 1 browser acceptance was exercised with owner-assisted native confirmations.
+The fixture is expired again with its original alias only and `browser: 2026-10-05`
+annotation. A disconnect cleanup defect was fixed in workspace JavaScript and
+verified in a temporary local UI preview forwarding to the real pilot API.
+**The running pilot image is unchanged; the fix is not deployed.**
+
+The owner approved committing this checkpoint: client cleanup/session isolation, 10 Node regressions and
+CI wiring, acceptance screenshots and documentation. All 519 Python tests pass
+against separate dev Postgres/Garage, all 10 client regressions pass, Ruff/mypy and
+syntax/whitespace checks pass. See [updated acceptance](acceptance/ADMIN_UI_LOCAL.md).
+
+The owner approved this commit and forbids pushing. Further commits require approval.
+Next: apply the reviewed fix through the normal immutable
+pilot image update and recheck disconnect before task 1 closes. Then pause for
+explicit owner resume before backup/restore. Do not redo completed browser actions
+or infer that the deployed original client contains the fix. Temporary preview
+and browser sessions were closed; protected runtime files were not changed.
+
+## Historical checkpoint — 2026-10-01
 
 ## Resume instruction
 

@@ -42,6 +42,14 @@ jobs:
       - name: Verify Compose tooling for configuration tests
         run: docker compose version
 
+      - name: Install Node for admin client regressions
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Admin client regressions
+        run: node --test tests/admin_client.test.cjs
+
       - name: Tests
         run: uv run pytest -q
 

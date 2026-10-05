@@ -1,7 +1,7 @@
 # Admin console (B-013)
 
 Operator walkthrough: [Using the console](../guides/admin-console.md).
-Local task-1 [acceptance evidence and browser blocker](../acceptance/ADMIN_UI_LOCAL.md).
+Local task-1 [acceptance evidence and deployment follow-up](../acceptance/ADMIN_UI_LOCAL.md).
 
 Implements SCN-004, FR-040..042, FR-005..007 and FR-051..053. The console is
 served by asset-store at `/admin` with no separate frontend build or service.
@@ -9,6 +9,11 @@ A small same-origin JavaScript client uses `/admin/api`; credentials stay in
 page memory, never browser storage or URLs. Use an explicitly configured `admin`
 service credential and HTTPS outside local development. This is a trusted operator
 console, not end-user authentication or a task-engine delegation endpoint.
+
+Disconnect clears loaded data and edit fields, including partition quota limits.
+Responses from an earlier connection must not repopulate the page or overwrite
+feedback after disconnect/reconnect. Disconnect does not undo server actions
+already submitted; reconnect and inspect their audit history if needed.
 
 ## Contract (ADR-021)
 
@@ -75,7 +80,10 @@ API summary:
 | POST | `/aliases/expire?prefix=…` | Apply explicit preview candidates |
 | GET | `/audit` | Last 100 events (limit 1..500) |
 
-Tests: `tests/test_admin.py` runs against memory and isolated Postgres schemas
+Client regressions: `node --test tests/admin_client.test.cjs` (Node 22; no npm
+dependencies). Controlled delayed responses verify disconnect/reconnect cleanup.
+
+API tests: `tests/test_admin.py` runs against memory and isolated Postgres schemas
 (the latter requires `ASSET_STORE_PG_DSN`). Existing lifecycle-worker tests cover
 physical deletion after the admin metadata transition. No cleanup is run against
 operator data by the console tests.

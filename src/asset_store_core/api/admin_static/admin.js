@@ -1,19 +1,40 @@
 'use strict';
 const $ = id => document.getElementById(id);
+let session = 0;
+class StaleSessionError extends Error {}
 let secret = '', selected = null, next = null, filters = '', preview = null, previewPrefix = '';
 function status(message, error = false) { $('status').textContent = message; $('status').className = error ? 'error' : ''; }
 async function request(path, body, method) {
   if (!secret) throw new Error('Connect with an admin credential first.');
-  const response = await fetch('/admin/api' + path, {
-    method: method || (body ? 'POST' : 'GET'), cache: 'no-store',
-    headers: {'Authorization': 'Service admin:' + secret, 'Content-Type': 'application/json'},
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
-  return data;
+  const started = session;
+  try {
+    const response = await fetch('/admin/api' + path, {
+      method: method || (body ? 'POST' : 'GET'), cache: 'no-store',
+      headers: {'Authorization': 'Service admin:' + secret, 'Content-Type': 'application/json'},
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await response.json();
+    if (started !== session) throw new StaleSessionError();
+    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+    return data;
+  } catch (error) {
+    if (started !== session) throw new StaleSessionError();
+    throw error;
+  }
 }
-function run(fn) { return async () => { try { await fn(); } catch (e) { status(e.message, true); } }; }
+function run(fn) { return async () => { try { await fn(); } catch (e) { if (!(e instanceof StaleSessionError)) status(e.message, true); } }; }
+// FR-014 / FR-040..042: retire old requests and all loaded or editable data.
+function clearSession() {
+  session++; secret = ''; selected = null; preview = null; previewPrefix = ''; next = null;
+  for (const id of ['secret', 'annotations', 'alias', 'quota-bytes', 'quota-count']) $(id).value = '';
+  for (const id of ['metadata', 'events', 'preview-result', 'quota']) $(id).textContent = '';
+  $('ttl').value = '86400'; $('eviction').value = 'inherit';
+  $('mutable').checked = false; $('quota-sweep').checked = false;
+  $('assets').replaceChildren(); $('actions').hidden = true;
+  $('apply-bulk').disabled = true; $('next').disabled = true;
+  $('selection').textContent = 'Choose an asset.';
+}
+
 function getFilters() {
   const params = new URLSearchParams();
   for (const [key, value] of new FormData($('filters'))) {
@@ -54,8 +75,8 @@ async function mutate(action, extra = {}) {
   await request('/assets/' + encodeURIComponent(id) + '/actions', {action, expected_updated_at: selected.updated_at, ...extra});
   await list(); await inspect(id); status(`Applied ${action}.`);
 }
-$('connect').onclick = run(async () => { secret = $('secret').value; $('secret').value = ''; filters = getFilters(); await list(); });
-$('disconnect').onclick = () => { secret = ''; selected = null; preview = null; next = null; $('secret').value = ''; $('metadata').textContent = ''; $('events').textContent = ''; $('assets').replaceChildren(); $('actions').hidden = true; $('apply-bulk').disabled = true; $('next').disabled = true; $('preview-result').textContent = ''; $('quota').textContent = ''; $('selection').textContent = 'Choose an asset.'; status('Disconnected.'); };
+$('connect').onclick = run(async () => { const credential = $('secret').value; clearSession(); secret = credential; filters = getFilters(); await list(); });
+$('disconnect').onclick = () => { clearSession(); status('Disconnected.'); };
 $('filters').onsubmit = event => { event.preventDefault(); run(async () => { filters = getFilters(); preview = null; $('apply-bulk').disabled = true; await list(); })(); };
 $('next').onclick = run(() => list(next));
 $('expire').onclick = run(() => mutate('expire'));

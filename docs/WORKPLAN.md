@@ -40,7 +40,9 @@ on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and re
   gating are implemented. Dry-run is the default; explicit apply uses deletion
   fencing and retryable payload cleanup (ADR-020, migration 0002).
 - B-013: admin console and authenticated API are implemented (ADR-021);
-  browser visual/interaction acceptance remains pending. See [admin contract](services/admin-ui.md).
+  browser acceptance found a disconnect cleanup defect, now fixed and verified in
+  the workspace preview (2026-10-05). The owner approved this commit; pilot image update/recheck
+  remain. See [acceptance evidence](acceptance/ADMIN_UI_LOCAL.md).
 - B-018: [security review performed](security/B018_REVIEW.md); confirmed blockers
   and [bounded fixes completed](security/B018_CLOSEOUT.md), with remaining work
   tracked in the closeout backlog. SEC-01 / R-014 and SEC-02 / R-015 are closed
@@ -68,7 +70,8 @@ on a miss is explicitly deferred as **B-025**. P1 / SEC-05 is implemented and re
   independent. Local downloaded files differ slightly, so byte equivalence is not
   claimed. The [quickstart](PILOT_QUICKSTART.md) task/result example passed against
   deployed APIs with a scoped worker identity and 64 MiB local results budget.
-  The owner confirmed admin login; remaining UI workflows are still unreviewed. Scheduled cleanup is disabled; admin,
+  The owner assisted browser acceptance on 2026-10-05; the disconnect fix awaits
+  pilot image update/recheck after this approved commit. Scheduled cleanup is disabled; admin,
   scanning, host disk controls and recovery/soak acceptance remain open.
   See [local deployment evidence](../deploy/pilot/LOCAL_DEPLOYMENT.md).
 - **Next: M-001/P4 remaining acceptance and P5 operational recovery.** Swarm,
@@ -171,7 +174,7 @@ prototype:
 
 **Work items:**
 
-- B-013 - **Implemented (2026-09-26), browser QA pending:** console at `/admin`,
+- B-013 - **Implemented; browser-tested 2026-10-05, fix awaiting deployment:** console at `/admin`,
   authenticated cursor listings/inspection/audit, revision-checked lifecycle and
   TTL restoration, aliases, annotations, quotas and bounded bulk expiry. Both
   registry adapters are covered. See [admin contract](services/admin-ui.md), ADR-021.
@@ -233,15 +236,17 @@ prototype:
 
 Work one task at a time; commit and pause for owner resume between tasks.
 For desktop/session reset, start with [the handoff](SESSION_HANDOFF.md).
-Task 1: admin acceptance — [live HTTP checks pass](acceptance/ADMIN_UI_LOCAL.md)
-on a dedicated disposable fixture; browser visual/interaction checks are blocked
-because no browser is connected to this session. Login was previously confirmed
-by the owner. Task 1 is not complete; backup/restore has not started.
+Task 1: [browser acceptance and disconnect fix](acceptance/ADMIN_UI_LOCAL.md)
+have been verified against the dedicated disposable fixture. The corrected UI was
+verified in a temporary workspace preview against the pilot API; the running pilot
+image remains unchanged. The owner approved this commit; deploy/recheck the
+reviewed fix before closing task 1. No push; backup/restore has not started.
 
-## Immediate next actions (2026-10-01)
+## Immediate next actions (2026-10-05)
 
-1. **B-013 acceptance follow-up:** visually exercise the console in a browser;
-   automated HTTP contracts and static JavaScript syntax checks pass.
+1. **B-013 acceptance follow-up:** the owner approved committing the tested disconnect
+   cleanup fix and browser evidence; apply via immutable pilot image update and
+   recheck disconnect. Pause before task 2 until explicitly resumed by the owner.
 2. **M-001/P4–P5:** review scans and remaining UI/operating controls, then rehearse
    backup/restore and rollback on the running local
    [Compose package](../deploy/pilot/README.md); follow

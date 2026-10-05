@@ -2,18 +2,25 @@
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
 
-## Sequential task 1: live admin evidence (2026-10-01)
+## Sequential task 1: browser acceptance (2026-10-05)
 
-Owner requested one task at a time with commit/pause boundaries. Live deployed
-admin HTTP checks passed for filtering/usage, annotations, revision conflicts,
-aliases, eviction policy, quota changes, expiry/read denial, TTL restoration,
-bulk expiry, audit and metrics. Only a new 36-byte disposable fixture and its
-partition were mutated; it was left expired, without physical purge. No product
-code change. [Acceptance record](acceptance/ADMIN_UI_LOCAL.md) preserves findings.
+Assisted browser checks exercised the dedicated disposable fixture: restore,
+annotations, mutable alias attach/detach, expiry, conflict recovery, filters,
+quota display and related audit. Desktop/narrow layout and keyboard focus were
+checked. The owner handled native confirmation dialogs unavailable to automation.
+The fixture is expired again; cached images and task outputs were preserved.
 
-Visual/button acceptance remains blocked: computer-use inventory has no browser
-and the in-app browser creation attempt failed. HTTP checks are not recorded as
-visual evidence. Task 1 remains open; task 2 backup/restore has not begun.
+A confirmed disconnect defect left quota/edit values behind. The workspace client
+now clears loaded/editable state and ignores responses from previous connections.
+Ten Node regressions pass (all fail against the original client) and run in CI.
+The full Python suite passes: **519 tests, none skipped**, plus Ruff, strict mypy
+(86 files), JavaScript syntax and whitespace checks.
+
+[Acceptance evidence](acceptance/ADMIN_UI_LOCAL.md) includes screenshots from a
+temporary workspace UI preview forwarding to the real pilot API. The fixed client
+is not yet in the running immutable pilot image. The owner approved this commit;
+image update/deployed recheck remain before task 1 closes. No push is authorized;
+task 2 backup/restore has not begun.
 
 ## Documented task workflow (ADR-036, 2026-10-01)
 
