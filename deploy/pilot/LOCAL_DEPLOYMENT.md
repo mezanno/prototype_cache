@@ -127,3 +127,31 @@ artifact and published the manifest last at:
 This is a protocol demonstration, not an OCR job or scheduler integration.
 Secrets were not printed. Runtime configuration and owner-downloaded comparison
 images are not committed.
+
+## CLI image update — 2026-10-05
+
+B-013 / SCN-004 / FR-040–042 / FR-005–007 / FR-051–053.
+Source commit `4bf46ba` is now deployed to asset-store and fetcher via immutable
+image `sha256:f25279675d7e78c02eba46621452eebd148572a6584e1179e094af81a7468fff`.
+The build used the previously recorded Python and uv digests, explicitly pinned
+in a temporary Dockerfile; `uv.lock` remained unchanged. An initial build resolved
+a newer Python tag and was not deployed. Previous app image
+`sha256:cf5736cb6147c223c13760945c76e593cc71213412ab6f3ce154f280e4fae2d7`
+remains available for rollback. Protected pilot configuration changed only its
+application image reference. Configuration preflight and migration gate passed.
+Application containers were recreated; Garage/Postgres containers and volumes
+were retained. Scheduled cleanup remains disabled.
+
+CLI acceptance: both APIs returned ready; HTTP-served `/admin/admin.js` matched
+committed source byte-for-byte (SHA-256
+`113114e25a1dcb98054b460c16b52ae3f512ade57741f968d0cef5faff2521f4`).
+All 10 Node client regressions passed using that downloaded script and controlled
+responses. This verifies shipped client behavior in a simulated DOM, not browser
+interaction. Authenticated cached WebP smoke passed: 655,296 bytes, SHA-256
+`c5a299d6b8a05253e4eb072e016b9be2ac6c8cd7711ec2b4ce352c75ebef88bf`,
+initial cache hit and repeat preload hit. This also exercises internal capability
+renewal after the application restart. Credentials were not printed.
+
+The deployed browser disconnect recheck remains pending because this session is
+CLI-only. Task 1 is not fully closed. Backup/restore has not started; pause before
+task 2 pending explicit owner resume. Evidence changes are uncommitted; no push.

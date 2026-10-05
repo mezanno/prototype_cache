@@ -242,6 +242,16 @@ verified in a temporary workspace preview against the pilot API; the running pil
 image remains unchanged. The owner approved this commit; deploy/recheck the
 reviewed fix before closing task 1. No push; backup/restore has not started.
 
+## CLI deployment follow-up (2026-10-05)
+
+The approved B-013 fix (`4bf46ba`) is now deployed through an immutable image
+update. Preflight/migration/readiness, source identity, 10 Node regressions on
+HTTP-downloaded client code and authenticated cache-hit smoke passed. See
+[deployment evidence](../deploy/pilot/LOCAL_DEPLOYMENT.md#cli-image-update--2026-10-05).
+The browser disconnect recheck remains pending; task 1 remains open. Pause before
+backup/restore until explicit owner resume. Earlier undeployed status describes
+the checkpoint before this update. Evidence changes are uncommitted; no push.
+
 ## Immediate next actions (2026-10-05)
 
 1. **B-013 acceptance follow-up:** the owner approved committing the tested disconnect

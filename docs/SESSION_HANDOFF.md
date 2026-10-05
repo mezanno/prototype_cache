@@ -1,6 +1,17 @@
 # Session reset handoff — updated 2026-10-05
 
-## Current checkpoint (supersedes the historical resume state below)
+## Current checkpoint — CLI deployment follow-up
+
+The reviewed `4bf46ba` fix is deployed to both pilot application containers as
+`sha256:f25279675d7e78c02eba46621452eebd148572a6584e1179e094af81a7468fff`.
+Preflight, migration, both readiness endpoints, served-source identity, all 10
+Node regressions against downloaded JavaScript, and authenticated cache-hit smoke
+passed. See [deployment evidence](../deploy/pilot/LOCAL_DEPLOYMENT.md#cli-image-update--2026-10-05).
+Browser disconnect recheck remains pending; task 1 is not fully closed. No backup/
+restore, commit or push was performed. Evidence edits are uncommitted. Further
+commits require approval; pause before task 2 until explicit owner resume.
+
+## Historical checkpoint — workspace acceptance
 
 Task 1 browser acceptance was exercised with owner-assisted native confirmations.
 The fixture is expired again with its original alias only and `browser: 2026-10-05`

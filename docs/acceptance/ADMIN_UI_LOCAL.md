@@ -1,8 +1,9 @@
 # Task 1 — local admin acceptance (2026-10-05)
 
-**Status: browser checks and workspace fix verified; owner approved this commit.**
-The running pilot still uses its previous image; the disconnect fix requires a
-subsequent image update and deployed recheck before task 1 is fully closed.
+**Status: reviewed fix deployed; CLI acceptance passed on 2026-10-05.**
+The deployed browser disconnect recheck remains pending in this CLI-only session.
+See [image update evidence](../../deploy/pilot/LOCAL_DEPLOYMENT.md#cli-image-update--2026-10-05).
+The historical workspace evidence below predates deployment.
 Requirement: B-013 / SCN-004 / FR-040–042 / FR-005–007 / FR-051–053.
 The owner requested one task at a time with a commit and pause between tasks.
 Task 2 (backup/restore) has not started.
