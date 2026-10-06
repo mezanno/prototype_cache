@@ -300,3 +300,37 @@ Preparation validation: **542 tests passed, none skipped**, against separate
 development Garage/Postgres; two existing upstream deprecation warnings. Ruff
 lint/format, strict mypy (91 files), Node client suite and CLI help passed.
 No accelerated pilot execution or schedule installation occurred.
+
+## Fetcher fault-injection acceptance prerequisite — 2026-10-06
+
+Owner explicitly requested randomized client/origin HTTP errors, unexpected
+failures and network failures. Include this in the observability/documentation
+prerequisite, then implement a bounded isolated fault harness and pause for
+approval before live fault injection or pipeline integration. Existing accelerated
+cache-only success does not exercise origin failure handling.
+
+Required scenarios: client invalid/unauthorized requests and disconnect/cancel;
+origin 404/429/500/502/503 and recovery; DNS/connect refusal/reset, connect/read
+timeout, TLS failure, truncated/slow response bodies; unexpected internal/backend
+exceptions. Define expected outcomes from the existing fetcher contract before
+implementation (upstream HTTP/transport failures → 502, upstream timeout → 504;
+client and admission errors retain their documented status). No new automatic
+retry policy is implied by origin 429/503. Use seeded random sequences plus
+forced deterministic coverage, recording seed, injected fault counts, observed
+statuses, latency, recovery and failed attempts so rare cases cannot be missed.
+
+Verify no corrupt or partially published available assets, preserved prior cached
+bytes after failed refetch, released admission slots/connections, bounded state,
+no credential/URL leakage in logs, and correctly correlated metrics/logs/audit.
+Follow failed requests with successful requests to prove recovery. Keep fault
+origins and backend failures isolated from real BnF and retained pilot content;
+do not disable SSRF/TLS controls in the running pilot. Service restarts or host
+network disruption require a separately reviewed scope.
+
+Coverage baseline: `tests/test_fetcher_service.py` already covers origin 404,
+502/504 mapping, slow-read timeout, redirect/body caps; `test_fetcher_refetch.py`
+covers failed-refetch preservation; `test_fetcher_garage.py` covers a real origin
+503; `test_fetcher_transport.py` covers connection deadlines, validated address
+fallback, TLS and connection release. This is existing partial coverage, not
+completion of the new randomized end-to-end failure matrix. Identify remaining
+gaps when implementing the harness and observability. No injection performed.
