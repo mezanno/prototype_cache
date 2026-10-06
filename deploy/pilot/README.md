@@ -215,8 +215,10 @@ remain open; a successful rollback is not security release approval.
 
 ## Pilot workload observation
 
-[Task 5's active soak](../../docs/TASK5_PILOT_ACCEPTANCE.md) uses the approved three
+[Task 5's acceptance record](../../docs/TASK5_PILOT_ACCEPTANCE.md) uses the approved three
 URLs/two cached resources, three-client verified cache-only reads and a dedicated
 tiny tmp fixture. The minute cron self-stops workload at 24 hours and stores
 private bounded samples; review evidence and remove only its cron entry afterward.
-Existing monitoring/lifecycle continue. Task 5 is not yet complete.
+Existing monitoring/lifecycle continue. The owner stopped the soak incomplete on
+2026-10-06; its cron was removed and private evidence preserved. The cron file
+is a retained template, not an installed schedule. Task 5 is not complete.

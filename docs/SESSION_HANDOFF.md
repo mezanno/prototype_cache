@@ -1,5 +1,33 @@
 # Session reset handoff — updated 2026-10-05
 
+## Current disposition — stopped incomplete (2026-10-06)
+
+Owner approved ending the uninterrupted soak in favor of a future accelerated
+run and daytime observation. Only the task-5 cron entry was removed at
+21:11:11 UTC; monitoring and lifecycle schedules were preserved. Original state
+was not rewritten or restarted. A byte-identical mode-600 snapshot is retained
+as `deploy/pilot/private/task5-soak-incomplete.json`; original cron is retained
+privately for recovery. The original state still says `running`, but no soak
+schedule remains: that value is historical, not evidence of an active run.
+
+[Stopped-run summary](TASK5_INCOMPLETE_EVIDENCE.json): 30 samples, 90 successful
+reads, 30 explicit retried 503 responses, no read errors or recorded issues.
+Roughly 30 minutes of observation is **not a passed 24-hour soak**. Normal
+expiry/deletion grace is unchanged; fixture reclamation acceptance is pending.
+The workload's startup burst remains separate from these scheduled totals.
+
+Next checkpoint: prepare and test a paced 15-minute accelerated workload,
+commit, and pause for owner approval before execution. Before any integration
+into the real processing pipeline, **implement observability and documentation**
+and validate them as their own checkpoint. This must cover input retrieval,
+processing/result publication, job correlation, timings, failures/retries,
+overload, resource measurements and credential-safe operator guidance. Confirm
+the pipeline contract before selecting concrete instrumentation. Existing
+monitoring is a baseline, not completion of that integration prerequisite.
+Daytime observations must report cumulative active time, suspension gaps and
+resume recovery; they cannot claim an uninterrupted 24-hour soak.
+
+
 ## Current checkpoint — backup/restore rehearsal passed
 
 Deployment evidence committed as `d425176`; no push. Owner resumed task 2 and

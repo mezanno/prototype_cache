@@ -1,0 +1,20 @@
+{
+  "disposition": "incomplete_stopped_by_owner",
+  "stopped_at_utc": "2026-10-06T21:11:11.527203+00:00",
+  "original_status": "running",
+  "started_at": 1791319297.9904177,
+  "original_deadline": 1791405697.9904177,
+  "last_sample_at": 1791321061.276596,
+  "sample_count": 30,
+  "successful_reads": 90,
+  "http_attempt_statuses": {
+    "200": 90,
+    "503": 30
+  },
+  "read_errors": {},
+  "recorded_issue_count": 0,
+  "snapshot_sha256": "c137fcf46a2a9f615dc270c6192fb2fcd22848017868b3b2a06c710638594104",
+  "soak_cron_removed": true,
+  "other_cron_entries_preserved": true,
+  "cleanup_acceptance": "not_observed; normal grace unchanged"
+}

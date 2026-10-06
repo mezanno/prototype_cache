@@ -380,3 +380,9 @@ Tracked as `Q-*` rows in [`05_BACKLOG_AND_OPEN_QUESTIONS.md`](05_BACKLOG_AND_OPE
 | ID | Decision | Status | Rationale | Alternatives |
 |----|----------|--------|-----------|--------------|
 | ADR-040 | For M-001 task 5, freeze a reviewed URL/size/checksum corpus, measure three-client burst outcomes with bounded overload retries, then schedule cache-only reads each minute over a true 24-hour wall-clock window. Retain bounded private samples of integrity/latency/resource/lifecycle/origin signals; lock overlapping runs, stop workload at deadline and require review rather than automatic release sign-off. Use one dedicated tiny tmp fixture to observe scheduled expiry and normal 24-hour-grace reclamation without changing policy. | Accepted for selected three-URL pilot (2026-10-06) | B-015/B-019, NFR-002/004/005 and FR-064: exercise existing private API and admission limits without origin load or speculative production load tooling; preserve errors and coverage limits. See [task 5](../TASK5_PILOT_ACCEPTANCE.md). | Claim a short test is a 24-hour soak; fetch origins on read misses; raise quotas/concurrency; unbounded histories; auto-approve release from successful requests. |
+
+ADR-040 checkpoint update (2026-10-06): owner stopped the uninterrupted soak
+incomplete. Preserve evidence; an accelerated run must be labeled separately,
+and suspension gaps exclude uninterrupted-soak claims. Real pipeline integration
+requires implemented and validated observability plus documentation first. No
+new acceptance or release approval is inferred.
