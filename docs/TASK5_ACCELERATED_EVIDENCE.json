@@ -1,0 +1,117 @@
+{
+  "disposition": "observations_reviewed_not_release_approval",
+  "status": "observations_complete_review_required",
+  "started_at_utc": "2026-10-06T21:15:01.680510+00:00",
+  "finished_at_utc": "2026-10-06T21:30:01.721270+00:00",
+  "elapsed_seconds": 900.0106230079546,
+  "summary": {
+    "planned_reads": 4320,
+    "attempted_reads": 4320,
+    "successful_reads": 4320,
+    "skipped_slots": 0,
+    "unstarted_slots": 0,
+    "bytes": 3076954560,
+    "http_attempt_statuses": {
+      "200": 4320,
+      "503": 720
+    },
+    "errors": {},
+    "p95_ms_with_retries": 1084.2936480185017,
+    "max_ms_with_retries": 1154.0254999999888
+  },
+  "issues": [],
+  "checks": {
+    "no_read_errors": true,
+    "no_recorded_issues": true,
+    "no_new_origin_connections": true,
+    "registered_content_unchanged": true,
+    "container_ids_unchanged": true,
+    "three_clients_reported": true,
+    "target_volume_completed": true,
+    "resource_observations_available": true
+  },
+  "resource_samples": 16,
+  "sample_gap_seconds_max": 64.44926285743713,
+  "containers": {
+    "asset-store-pilot-asset-store-1": {
+      "memory_percent_min": 15.76,
+      "memory_percent_max": 15.83,
+      "memory_percent_final": 15.77,
+      "cpu_percent_max": 27.21,
+      "pids_max": 13,
+      "container_ids_unchanged": true
+    },
+    "asset-store-pilot-lifecycle-1": {
+      "memory_percent_min": 24.98,
+      "memory_percent_max": 25.02,
+      "memory_percent_final": 25.02,
+      "cpu_percent_max": 0.0,
+      "pids_max": 5,
+      "container_ids_unchanged": true
+    },
+    "asset-store-pilot-garage-1": {
+      "memory_percent_min": 1.1,
+      "memory_percent_max": 1.16,
+      "memory_percent_final": 1.15,
+      "cpu_percent_max": 10.71,
+      "pids_max": 12,
+      "container_ids_unchanged": true
+    },
+    "asset-store-pilot-fetcher-1": {
+      "memory_percent_min": 9.54,
+      "memory_percent_max": 9.88,
+      "memory_percent_final": 9.88,
+      "cpu_percent_max": 44.1,
+      "pids_max": 3,
+      "container_ids_unchanged": true
+    },
+    "asset-store-pilot-postgres-1": {
+      "memory_percent_min": 3.63,
+      "memory_percent_max": 4.03,
+      "memory_percent_final": 4.03,
+      "cpu_percent_max": 11.73,
+      "pids_max": 15,
+      "container_ids_unchanged": true
+    }
+  },
+  "database_initial": {
+    "assets": 7,
+    "aliases": 9,
+    "audit_rows": 64,
+    "database_bytes": 8133655,
+    "retained_payload_bytes": 2052432
+  },
+  "database_final": {
+    "assets": 7,
+    "aliases": 9,
+    "audit_rows": 66,
+    "database_bytes": 8141847,
+    "retained_payload_bytes": 2052432
+  },
+  "active_capabilities_max": 1.0,
+  "registry_waiters_max": 0.0,
+  "docker_disk_free_ratio_min": 0.16821362786298769,
+  "baseline_origin_connections": 0,
+  "final_origin_connections": 0,
+  "private_report_sha256": "8165c4868603b5fd33598026c6d84b031c9c44d1701fab4b65a58736e3aa35c2",
+  "limitations": [
+    "Three URLs, two unique resources; cached reads only",
+    "No pipeline ingestion/processing/result-publication workload",
+    "Minute resource sampling cannot capture all short peaks",
+    "No 24-hour grace reclamation or continuous-service certification",
+    "Pipeline observability and documentation prerequisites remain pending"
+  ],
+  "audit_growth_review": {
+    "initial_rows": 64,
+    "final_rows": 66,
+    "new_actions": [
+      {
+        "action": "capability.issue",
+        "outcome": "granted",
+        "count": 2
+      }
+    ]
+  },
+  "slot_validation": "Each client reported slots 0..1439 exactly once; every read began before the 900-second deadline.",
+  "post_run_pilot_health": "Application and backend services healthy; lifecycle running."
+}

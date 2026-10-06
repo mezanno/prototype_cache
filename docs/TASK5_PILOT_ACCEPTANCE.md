@@ -159,3 +159,36 @@ Preparation validation: **542 tests passed, none skipped**, against separate
 development Garage/Postgres; two existing upstream deprecation warnings. Ruff
 lint/format, strict mypy (91 files), Node client suite and CLI help passed.
 No accelerated pilot execution or schedule installation occurred.
+
+## Accelerated execution reviewed — 2026-10-06
+
+Owner approved live execution after preparation commit `c6f58ab`.
+[Reviewed evidence](TASK5_ACCELERATED_EVIDENCE.json) records 21:15:01–21:30:01 UTC,
+900.01 seconds of workload. All three clients completed their 1,440 slots:
+**4,320/4,320 successful size/SHA-256/ETag/MIME-verified reads**, 3,076,954,560
+bytes, zero missed/unstarted slots and no read failures. All launches occurred
+before the deadline. **720 explicit 503 attempts** recovered through existing
+bounded retries; no limits were raised. Whole-run p95 including retries was
+1,084.29 ms, maximum 1,154.03 ms. This does **not** establish the 200 ms latency
+target or full-scale concurrency certification; overload latency remains visible.
+
+Sixteen resource observations including final capture; largest scheduled sample
+gap 64.45 seconds. No new origin connections, monitoring alerts, container
+recreation or registered-content changes. Application/backend health passed
+again. Audit grew 64→66 rows: two granted `capability.issue` events. Database
+size grew by 8,192 bytes. Active capabilities peaked at one; registry waiters
+at zero. Docker disk free-space ratio stayed at least 16.82%. Sampled memory:
+asset-store 15.76–15.83%, fetcher 9.54–9.88%, Postgres 3.63–4.03%, Garage
+1.10–1.16%, lifecycle 24.98–25.02%; these are sampled values, not proof against
+slow leaks or short peaks. Original incomplete soak and its private snapshot
+remain unchanged; no cron was installed for this foreground run.
+
+Outcome: accelerated integrity/volume and observed stability checks passed;
+latency/overload and coverage limits retained. This is two unique cached resources,
+not the real pipeline or a 24-hour soak. Normal fixture cleanup grace remains
+unchanged and reclamation acceptance is still pending. Security/browser/backup/
+release gates remain open. Pipeline integration requires implemented observability
+and documentation first. Commit evidence and pause for owner approval before
+starting that prerequisite work. Last code validation remains 542 tests passed;
+this checkpoint changes evidence/docs only. Private full report is mode 600 with
+checksum recorded in the public summary.

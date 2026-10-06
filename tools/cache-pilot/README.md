@@ -88,7 +88,9 @@ Prepare a new private report path, then run from the repository root:
   --state deploy/pilot/private/task5-accelerated.json
 ```
 
-**Execution awaits owner approval.** No accelerated pilot run has been performed.
+The owner approved the first run on 2026-10-06; reviewed results are in
+[Task 5 evidence](../../docs/TASK5_ACCELERATED_EVIDENCE.json). A new run requires
+a fresh report path and owner approval at the current checkpoint.
 The command stays in the foreground; it installs no cron. Three persistent HTTP
 clients target 1,440 reads each over 900 seconds (one per client every 0.625 s).
 Existing overload retries can consume several slots: missed slots are counted
