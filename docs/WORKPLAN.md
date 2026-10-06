@@ -302,3 +302,13 @@ Private minute CLI health monitor and conservative retention policy implemented
 is near 10% free-space warning; disk, off-host backup and remote-alert gates remain
 open. No audit/backup purge. Review/commit this task, then pause before task 4;
 no push.
+
+## Task 4 CLI follow-up — 2026-10-06
+
+Owner resumed task 4. Deployed/current/prior image scans reviewed (Trivy 0.75.0),
+exact app-runtime pip-audit performed, application-only rollback/return rehearsal
+passed (ADR-039). All six retained payloads and stable metadata match; backend
+containers/schema unchanged, lifecycle resumed and monitor healthy. See [task 4](TASK4_SECURITY_ROLLBACK.md).
+High/Critical findings and Garage build-inventory coverage remain security gates;
+no dependency/backend upgrades or risk acceptance inferred. No commit/push yet.
+Pause before task 5; explicit owner approval required.

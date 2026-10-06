@@ -155,3 +155,12 @@ renewal after the application restart. Credentials were not printed.
 The deployed browser disconnect recheck remains pending because this session is
 CLI-only. Task 1 is not fully closed. Backup/restore has not started; pause before
 task 2 pending explicit owner resume. Evidence changes are uncommitted; no push.
+
+## Task 4 scan/rollback checkpoint — 2026-10-06
+
+[Exact-image scan review and rollback](../../docs/TASK4_SECURITY_ROLLBACK.md) passed
+old/current cached-byte and metadata checks. Current f25279675d7e… image restored;
+Garage/Postgres unchanged, lifecycle resumed, monitor healthy. High/Critical
+vulnerability findings and Garage binary inventory coverage remain open. Earlier
+cleanup-disabled/no-backup/no-rollback statements describe historical checkpoints.
+Task 5 and browser recheck remain pending; no release sign-off.

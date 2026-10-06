@@ -205,3 +205,10 @@ remain open; this evidence is not an online/PITR backup implementation.
 the installed minute monitor and enabled 60-second lifecycle worker. Read
 `private/monitor.json`; check its timestamp for freshness. Audit/backups retained
 without automatic deletion. Docker disk headroom is near 10% free.
+
+## Application rollback
+
+Use the [Task 4 runbook and recorded compatibility gate](../../docs/TASK4_SECURITY_ROLLBACK.md#operator-rollback-runbook).
+The retained prior/current pair was rehearsed without schema/backend changes;
+return-current image and lifecycle are healthy. Image vulnerability findings
+remain open; a successful rollback is not security release approval.

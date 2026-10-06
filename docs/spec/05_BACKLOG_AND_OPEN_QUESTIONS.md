@@ -98,7 +98,7 @@ and remaining acceptance tests: [security checkpoint](../security/B018_CLOSEOUT.
 | R-017 | Unauthenticated fetcher deputy and incomplete SSRF boundary (SEC-04/05) | P0 before exposure | Partial: dispatcher authentication, connection-bound DNS/IP validation and environment-proxy disabling implemented (ADR-025); tenant/origin destination policy and deployment egress review remain open |
 | R-018 | Failed-upload bytes and unbounded body/token resources (SEC-06) | P1 | Partial: per-request proxy body cap implemented; aggregate admission limits, failed-write cleanup and token retirement remain open |
 | R-019 | Live bearer in audit; old signed URLs survive admin expiry (SEC-07/08) | P1 | Partial: new audit fingerprints and bearer-free errors implemented; historical audit cleanup and strict revocation contract remain open; signed-URL behavior documented |
-| R-020 | Vulnerable dependency lock, unscanned/non-locked images and process-local capability state (SEC-09/10) | P1 | Partial: patched runtime lock, locked image installation and CI runtime scan implemented; image/OS scanning and capability concurrency/replica contract remain open |
+| R-020 | Vulnerable dependency lock, unscanned/non-locked images and process-local capability state (SEC-09/10) | P1 | Partial: patched runtime lock, locked image installation and CI runtime scan implemented; image/OS scans performed 2026-10-06 with open High/Critical findings; Garage image inventory inconclusive (source-lock supplement only); remediation/build coverage and capability concurrency/replica contract remain open. See [task 4](../TASK4_SECURITY_ROLLBACK.md) |
 
 ## Implementation Backlog (Prototype)
 

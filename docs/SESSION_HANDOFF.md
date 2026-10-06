@@ -182,3 +182,12 @@ audit/backup copies retained without deletion scheduling. See [task 3](TASK3_OPE
 Earlier cleanup-disabled/pause-before-task-3 statements are historical.
 Owner approved the task-3 commit. Task 4 has not started; wait for explicit
 owner approval before security scans or rollback work. No push.
+
+## Latest checkpoint — task 4 performed (2026-10-06)
+
+Owner resumed task 4. Scan/review and app rollback/return passed; current image
+f25279675d7e… is restored, backend containers/schema unchanged, lifecycle resumed,
+monitor no alerts. Six payloads/stable metadata and pre-existing audit match.
+[Task 4 record](TASK4_SECURITY_ROLLBACK.md) lists open High/Critical remediation
+and Garage scan coverage limits. No release/risk sign-off. Owner approved committing task 4 and explicitly resumed task 5. No push.
+Browser recheck pending.

@@ -121,3 +121,12 @@ commit verification cases in `tests/test_admin.py`, and adapted integration test
 Two upstream deprecation warnings (Starlette/httpx and AnyIO BlockingPortal) remain;
 there are no test failures. Historical exploit probes must run at `14b1f59`, not
 against this hardened tree. Current validation uses the regression suite.
+
+## Task 4 deployed-image scan review — 2026-10-06
+
+[Task 4 scan findings and rollback](../TASK4_SECURITY_ROLLBACK.md) records exact
+current/prior app, Postgres and Garage image scans, app-vs-base Python inventory
+coverage and independent pip-audit. High/Critical findings remain; Garage binary
+inventory was undetected, supplemented with its release source lock (not deployed
+build attestation). SEC-09/R-020 are not closed or accepted. Prior-image rollback
+and return-current cached-byte/metadata checks passed without backend/schema changes.

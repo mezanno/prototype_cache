@@ -368,3 +368,9 @@ Tracked as `Q-*` rows in [`05_BACKLOG_AND_OPEN_QUESTIONS.md`](05_BACKLOG_AND_OPE
 | ID | Decision | Status | Rationale | Alternatives |
 |----|----------|--------|-----------|--------------|
 | ADR-038 | For M-001 task 3, run a host cron read-only health snapshot each minute, atomically replacing a private JSON file; read API metrics, Docker health/disk and lifecycle freshness. Enable existing 60-second cleanup after live dry-run review. Retain all pilot audit/metadata and existing backups; distinguish bounded diagnostic logs from audit retention. | Accepted for local pilot (2026-10-06) | B-004/B-014/B-019, FR-064 and NFR-009: reuse implemented signals without another monitoring deployment; no audit purge or shorter payload grace. See [task 3 evidence](../TASK3_OPERATIONS.md). | Full Prometheus/Grafana now; unbounded snapshot logs; automatic audit/backup deletion; treat Docker logs as durable audit. |
+
+### ADR-039 — application-only pilot rollback with compatibility gate
+
+| ID | Decision | Status | Rationale | Alternatives |
+|----|----------|--------|-----------|--------------|
+| ADR-039 | Rehearse M-001/P5 rollback of only asset-store/fetcher to the retained immutable prior image after verifying identical migration history and current schema compatibility. Pause lifecycle, retain backend containers/volumes/config, verify all retained bytes/metadata and cache-only HTTP reuse, always return to the current app and resume lifecycle. | Accepted for local rehearsal (2026-10-06) | B-019/NFR-005: proves application recovery without introducing database/backend downgrade or regeneration; scans and vulnerability disposition remain separate release gates. See [task 4](../TASK4_SECURITY_ROLLBACK.md). | Downgrade schema/backend; leave old admin client deployed; substitute rebuild for retained rollback artifact; claim clean scan from unsupported inventory. |

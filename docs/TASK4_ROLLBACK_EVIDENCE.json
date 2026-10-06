@@ -1,0 +1,426 @@
+{
+  "stages": [
+    {
+      "stage": "current_before",
+      "timestamp": 1791318406.9168,
+      "checksum": "sha256:c5a299d6b8a05253e4eb072e016b9be2ac6c8cd7711ec2b4ce352c75ebef88bf",
+      "size_bytes": 655296,
+      "initial_cache_hit": true,
+      "origin_connections_unchanged": true,
+      "asset_store_image": "sha256:f25279675d7e78c02eba46621452eebd148572a6584e1179e094af81a7468fff",
+      "fetcher_image": "sha256:f25279675d7e78c02eba46621452eebd148572a6584e1179e094af81a7468fff"
+    },
+    {
+      "stage": "previous_rollback",
+      "timestamp": 1791318414.461963,
+      "checksum": "sha256:c5a299d6b8a05253e4eb072e016b9be2ac6c8cd7711ec2b4ce352c75ebef88bf",
+      "size_bytes": 655296,
+      "initial_cache_hit": true,
+      "origin_connections_unchanged": true,
+      "asset_store_image": "sha256:cf5736cb6147c223c13760945c76e593cc71213412ab6f3ce154f280e4fae2d7",
+      "fetcher_image": "sha256:cf5736cb6147c223c13760945c76e593cc71213412ab6f3ce154f280e4fae2d7"
+    },
+    {
+      "stage": "current_return",
+      "timestamp": 1791318423.4265065,
+      "checksum": "sha256:c5a299d6b8a05253e4eb072e016b9be2ac6c8cd7711ec2b4ce352c75ebef88bf",
+      "size_bytes": 655296,
+      "initial_cache_hit": true,
+      "origin_connections_unchanged": true,
+      "asset_store_image": "sha256:f25279675d7e78c02eba46621452eebd148572a6584e1179e094af81a7468fff",
+      "fetcher_image": "sha256:f25279675d7e78c02eba46621452eebd148572a6584e1179e094af81a7468fff"
+    }
+  ],
+  "started_at": 1791318394.529248,
+  "baseline": {
+    "alembic_version": {
+      "count": 1,
+      "fingerprint": "a0fdd87e0e6b8b641674c1925d20ac194e8624d6539c5cd1e4c3164abd9af837"
+    },
+    "alias_tombstones": {
+      "count": 0,
+      "fingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "aliases": {
+      "count": 8,
+      "fingerprint": "1b3786ede4c14ed2947ab54718c86743740ffbf2bdab2e3ffb822111f8defd84"
+    },
+    "assets_count": 6,
+    "assets_fingerprint": "3cca5a5b4b32b30d74dba3e9d521b6e3f9d9fcc6b5ffa71391fcd8129f8ab9ef",
+    "audit_count": 48,
+    "audit_cutoff": 48,
+    "bucket_quotas": {
+      "count": 2,
+      "fingerprint": "1de57c12fdb6cc6e489ccbea2cd863e93e64d362736d6a3cd0523791f77b6647"
+    },
+    "existing_audit_fingerprint": "1ceb900baaa1fe4aee7155e6541eeb9f81069ebe1c9ee054643f259d91028e73",
+    "partition_quotas": {
+      "count": 3,
+      "fingerprint": "a026ef90be32b4ee25e1b5f12f08ccf12b87070e3287d28d6f72f1dc46b9724f"
+    },
+    "payloads": {
+      "bytes": 2052400,
+      "checked": 6,
+      "fingerprint": "c66bfc77519bd58ae70d3f0dcabe949772c98080c53ab1b5b58ba117f0907c85"
+    }
+  },
+  "rollback_inventory": {
+    "alembic_version": {
+      "count": 1,
+      "fingerprint": "a0fdd87e0e6b8b641674c1925d20ac194e8624d6539c5cd1e4c3164abd9af837"
+    },
+    "alias_tombstones": {
+      "count": 0,
+      "fingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "aliases": {
+      "count": 8,
+      "fingerprint": "1b3786ede4c14ed2947ab54718c86743740ffbf2bdab2e3ffb822111f8defd84"
+    },
+    "assets_count": 6,
+    "assets_fingerprint": "3cca5a5b4b32b30d74dba3e9d521b6e3f9d9fcc6b5ffa71391fcd8129f8ab9ef",
+    "audit_count": 50,
+    "audit_cutoff": 48,
+    "bucket_quotas": {
+      "count": 2,
+      "fingerprint": "1de57c12fdb6cc6e489ccbea2cd863e93e64d362736d6a3cd0523791f77b6647"
+    },
+    "existing_audit_fingerprint": "1ceb900baaa1fe4aee7155e6541eeb9f81069ebe1c9ee054643f259d91028e73",
+    "partition_quotas": {
+      "count": 3,
+      "fingerprint": "a026ef90be32b4ee25e1b5f12f08ccf12b87070e3287d28d6f72f1dc46b9724f"
+    },
+    "payloads": {
+      "bytes": 2052400,
+      "checked": 6,
+      "fingerprint": "c66bfc77519bd58ae70d3f0dcabe949772c98080c53ab1b5b58ba117f0907c85"
+    }
+  },
+  "final_inventory": {
+    "alembic_version": {
+      "count": 1,
+      "fingerprint": "a0fdd87e0e6b8b641674c1925d20ac194e8624d6539c5cd1e4c3164abd9af837"
+    },
+    "alias_tombstones": {
+      "count": 0,
+      "fingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "aliases": {
+      "count": 8,
+      "fingerprint": "1b3786ede4c14ed2947ab54718c86743740ffbf2bdab2e3ffb822111f8defd84"
+    },
+    "assets_count": 6,
+    "assets_fingerprint": "3cca5a5b4b32b30d74dba3e9d521b6e3f9d9fcc6b5ffa71391fcd8129f8ab9ef",
+    "audit_count": 51,
+    "audit_cutoff": 48,
+    "bucket_quotas": {
+      "count": 2,
+      "fingerprint": "1de57c12fdb6cc6e489ccbea2cd863e93e64d362736d6a3cd0523791f77b6647"
+    },
+    "existing_audit_fingerprint": "1ceb900baaa1fe4aee7155e6541eeb9f81069ebe1c9ee054643f259d91028e73",
+    "partition_quotas": {
+      "count": 3,
+      "fingerprint": "a026ef90be32b4ee25e1b5f12f08ccf12b87070e3287d28d6f72f1dc46b9724f"
+    },
+    "payloads": {
+      "bytes": 2052400,
+      "checked": 6,
+      "fingerprint": "c66bfc77519bd58ae70d3f0dcabe949772c98080c53ab1b5b58ba117f0907c85"
+    }
+  },
+  "backend_containers_unchanged": true,
+  "success": true,
+  "finished_at": 1791318425.7150831,
+  "compatibility": {
+    "current_inventory": {
+      "migrations": {
+        "migrations/env.py": "e8f9c679b4d6e97d858a3c3c674b09ce46b6f61774d49fb132c28d2ac4c4c679",
+        "migrations/versions/0001_initial_schema.py": "ba99477610f3db15ec29bd37455b99848a6f83cf85a42902532a649810079419",
+        "migrations/versions/0003_upload_reservations.py": "5b443197052e9b3877584952d451c2da3bd58440a3996b22a6c199621dd54a7d",
+        "migrations/versions/0002_lifecycle.py": "ef0903cb6b896d6636900dd3690356d845a49a85887ddb3a8c095bfa1052e706"
+      },
+      "lock": "8f708db83283dff20fe5fab45566b4c150b94e05e34bfe19218623c331bd48ef",
+      "packages": [
+        [
+          "Mako",
+          "1.3.12"
+        ],
+        [
+          "MarkupSafe",
+          "3.0.3"
+        ],
+        [
+          "SQLAlchemy",
+          "2.0.51"
+        ],
+        [
+          "alembic",
+          "1.18.5"
+        ],
+        [
+          "annotated-doc",
+          "0.0.4"
+        ],
+        [
+          "annotated-types",
+          "0.7.0"
+        ],
+        [
+          "anyio",
+          "4.15.1"
+        ],
+        [
+          "asset-store-prototype",
+          "0.1.0"
+        ],
+        [
+          "boto3",
+          "1.43.38"
+        ],
+        [
+          "botocore",
+          "1.43.38"
+        ],
+        [
+          "certifi",
+          "2026.6.17"
+        ],
+        [
+          "click",
+          "8.4.2"
+        ],
+        [
+          "fastapi",
+          "0.138.2"
+        ],
+        [
+          "greenlet",
+          "3.5.3"
+        ],
+        [
+          "h11",
+          "0.16.0"
+        ],
+        [
+          "httpcore",
+          "1.0.9"
+        ],
+        [
+          "httpx",
+          "0.28.1"
+        ],
+        [
+          "idna",
+          "3.18"
+        ],
+        [
+          "jmespath",
+          "1.1.0"
+        ],
+        [
+          "prometheus_client",
+          "0.25.0"
+        ],
+        [
+          "psycopg",
+          "3.3.4"
+        ],
+        [
+          "psycopg-binary",
+          "3.3.4"
+        ],
+        [
+          "psycopg-pool",
+          "3.3.3"
+        ],
+        [
+          "pydantic",
+          "2.13.4"
+        ],
+        [
+          "pydantic_core",
+          "2.46.4"
+        ],
+        [
+          "python-dateutil",
+          "2.9.0.post0"
+        ],
+        [
+          "s3transfer",
+          "0.19.0"
+        ],
+        [
+          "six",
+          "1.17.0"
+        ],
+        [
+          "starlette",
+          "1.3.1"
+        ],
+        [
+          "typing-inspection",
+          "0.4.2"
+        ],
+        [
+          "typing_extensions",
+          "4.16.0"
+        ],
+        [
+          "urllib3",
+          "2.7.0"
+        ],
+        [
+          "uvicorn",
+          "0.49.0"
+        ]
+      ]
+    },
+    "previous_inventory": {
+      "migrations": {
+        "migrations/env.py": "e8f9c679b4d6e97d858a3c3c674b09ce46b6f61774d49fb132c28d2ac4c4c679",
+        "migrations/versions/0001_initial_schema.py": "ba99477610f3db15ec29bd37455b99848a6f83cf85a42902532a649810079419",
+        "migrations/versions/0003_upload_reservations.py": "5b443197052e9b3877584952d451c2da3bd58440a3996b22a6c199621dd54a7d",
+        "migrations/versions/0002_lifecycle.py": "ef0903cb6b896d6636900dd3690356d845a49a85887ddb3a8c095bfa1052e706"
+      },
+      "lock": "8f708db83283dff20fe5fab45566b4c150b94e05e34bfe19218623c331bd48ef",
+      "packages": [
+        [
+          "Mako",
+          "1.3.12"
+        ],
+        [
+          "MarkupSafe",
+          "3.0.3"
+        ],
+        [
+          "SQLAlchemy",
+          "2.0.51"
+        ],
+        [
+          "alembic",
+          "1.18.5"
+        ],
+        [
+          "annotated-doc",
+          "0.0.4"
+        ],
+        [
+          "annotated-types",
+          "0.7.0"
+        ],
+        [
+          "anyio",
+          "4.15.1"
+        ],
+        [
+          "asset-store-prototype",
+          "0.1.0"
+        ],
+        [
+          "boto3",
+          "1.43.38"
+        ],
+        [
+          "botocore",
+          "1.43.38"
+        ],
+        [
+          "certifi",
+          "2026.6.17"
+        ],
+        [
+          "click",
+          "8.4.2"
+        ],
+        [
+          "fastapi",
+          "0.138.2"
+        ],
+        [
+          "greenlet",
+          "3.5.3"
+        ],
+        [
+          "h11",
+          "0.16.0"
+        ],
+        [
+          "httpcore",
+          "1.0.9"
+        ],
+        [
+          "httpx",
+          "0.28.1"
+        ],
+        [
+          "idna",
+          "3.18"
+        ],
+        [
+          "jmespath",
+          "1.1.0"
+        ],
+        [
+          "prometheus_client",
+          "0.25.0"
+        ],
+        [
+          "psycopg",
+          "3.3.4"
+        ],
+        [
+          "psycopg-binary",
+          "3.3.4"
+        ],
+        [
+          "psycopg-pool",
+          "3.3.3"
+        ],
+        [
+          "pydantic",
+          "2.13.4"
+        ],
+        [
+          "pydantic_core",
+          "2.46.4"
+        ],
+        [
+          "python-dateutil",
+          "2.9.0.post0"
+        ],
+        [
+          "s3transfer",
+          "0.19.0"
+        ],
+        [
+          "six",
+          "1.17.0"
+        ],
+        [
+          "starlette",
+          "1.3.1"
+        ],
+        [
+          "typing-inspection",
+          "0.4.2"
+        ],
+        [
+          "typing_extensions",
+          "4.16.0"
+        ],
+        [
+          "urllib3",
+          "2.7.0"
+        ],
+        [
+          "uvicorn",
+          "0.49.0"
+        ]
+      ]
+    },
+    "identical_migrations": true,
+    "identical_lock": true,
+    "identical_runtime_packages": true,
+    "schema_revision": "0003_upload_reservations"
+  }
+}
