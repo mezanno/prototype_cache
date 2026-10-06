@@ -392,3 +392,9 @@ new acceptance or release approval is inferred.
 | ID | Decision | Status | Rationale | Alternatives |
 |----|----------|--------|-----------|--------------|
 | ADR-041 | Separate foreground 900-second workload with three persistent clients, each targeting 1,440 reads at 0.625-second intervals. Use monotonic pacing, skip missed slots without catch-up, stop launching reads at deadline, allow existing bounded requests/retries to drain. Record every outcome and missed slot, aggregate latency, minute resource/origin observations and final evidence in a private report. Preserve the incomplete soak unchanged. | Accepted for tooling preparation (2026-10-06); live execution awaits owner approval | B-015/B-019, NFR-002/004/005: bounded load without changing admission limits or claiming elapsed-time equivalence. Backpressure may reduce achieved volume. | Overlap unlimited rounds to force 4,320 completions; shorten deletion grace; equate accelerated load with uninterrupted 24-hour operation. |
+
+ADR-040 observation update (2026-10-06): owner authorized a fresh 24-hour
+wall-clock run across host suspension. Reuse the existing gap-recording runner
+and normal cleanup grace with separate private state. Assess observed recovery
+and sampling coverage; deliberate missing samples exclude uninterrupted-service
+claims. No changed retry/expiry policy or new runtime implementation.

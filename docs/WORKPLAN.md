@@ -456,3 +456,46 @@ pause for approval before advancing. Daytime active-hour/suspend-resume
 observation is separate from uninterrupted 24-hour acceptance. Security findings,
 Garage inventory coverage, browser recheck, off-host backup/disk controls, tmp
 reclamation acceptance and release sign-off remain open.
+
+## Current checkpoint — new suspend/resume observation running
+
+Owner explicitly resumed observation on 2026-10-06, then authorized committing
+this checkpoint before suspension; **owner will push, agent must not push**. Earlier
+pause instructions and disabled-soak status below are historical. No further
+implementation or fault injection authorized by this observation request.
+
+New state: `deploy/pilot/private/task5-resume-soak.json` (private, mode 600).
+Start **2026-10-06 21:37:26 UTC / 23:37:26 Paris**; 24-hour wall-clock boundary
+**2026-10-07 21:37:26 UTC / 23:37:26 Paris**. Minute tick from
+`deploy/pilot/soak.cron` is installed; original monitoring entries preserved.
+Crontab backup: `deploy/pilot/private/task5-crontab-before-resume.txt`.
+[Startup summary](TASK5_RESUME_SOAK_START.json): 60/60 verified burst reads,
+one retried 503, p95 84.45 ms, zero origin-counter change. First scheduled sample
+had zero issues. Same three approved URLs/two cached resources; no new preloads,
+quota changes, cleanup commands, code edits or backend restarts.
+
+Preserve original `task5-soak.json`, `task5-soak-incomplete.json` and accelerated
+report; do not rerun `start` or overwrite any existing state. Original expired
+32-byte fixture `caa51e80-8874-4eb3-a102-45168c90660b` is reused read-only; bytes
+still present initially. Normal grace ends near 2026-10-07 20:40 UTC and scheduled
+cleanup may occur after resume; verify registry deletion plus S3 HEAD absence.
+
+Acceptance is **suspension-aware observation**, not uninterrupted availability.
+Existing runner records gaps over 180 seconds as `schedule_gap_or_clock_change`;
+retain them and correlate with owner-provided suspend/resume times. Compute
+active sampling coverage separately from elapsed wall time; never fill missing
+samples. It will not make up missed reads. At/after deadline it records final
+resources and stops workload; cron then remains installed as a no-op until review
+and removal of only this entry. If resume happens after the deadline, no new
+reads are launched: final resources alone do not prove read recovery. A separately
+approved recovery smoke/new window may be needed. A second day is not automatic.
+
+On session reset: read this handoff first, inspect the new state and timestamps,
+verify pilot readiness, monitoring freshness, lifecycle health, expired capability
+renewal and expected cleanup. Preserve transient resume errors, resource/origin
+changes and missing evidence. Review before removing soak cron; leave monitoring
+and lifecycle intact. Do not run full tests against pilot DB. Last code suite:
+542 tests passed with separate dev Garage/Postgres; this checkpoint only changes
+schedule/docs/evidence. Pipeline observability/documentation and seeded randomized
+plus deterministic fetcher fault acceptance remain prerequisites, not implemented.
+Security/browser/off-host backup/disk/release gates remain open.

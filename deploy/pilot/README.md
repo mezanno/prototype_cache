@@ -222,3 +222,8 @@ private bounded samples; review evidence and remove only its cron entry afterwar
 Existing monitoring/lifecycle continue. The owner stopped the soak incomplete on
 2026-10-06; its cron was removed and private evidence preserved. The cron file
 is a retained template, not an installed schedule. Task 5 is not complete.
+
+A fresh suspension-aware observation is now scheduled using
+`private/task5-resume-soak.json`; see [current handoff](../../docs/SESSION_HANDOFF.md).
+Its wall-clock deadline is 2026-10-07 21:37:26 UTC. Suspension gaps stay visible;
+this does not restore the stopped original run or certify continuous operation.

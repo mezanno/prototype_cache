@@ -1,0 +1,42 @@
+{
+  "started_at": 1791322646.1605291,
+  "deadline": 1791409046.1605291,
+  "duration_seconds": 86400,
+  "corpus_sha256": "3fe38bdd641879780a112480514b7e692cd262afba3d5c26fc4c0f7309547be7",
+  "url_count": 3,
+  "unique_resource_count": 2,
+  "burst": {
+    "clients": 3,
+    "logical_reads": 60,
+    "successful_reads": 60,
+    "bytes": 42735480,
+    "http_attempt_statuses": {
+      "200": 60,
+      "503": 1
+    },
+    "errors": {},
+    "p95_ms_with_retries": 84.44787602638826,
+    "max_ms_with_retries": 1032.9393569845706
+  },
+  "baseline_origin_connections": 0,
+  "lifecycle_fixture_id": "caa51e80-8874-4eb3-a102-45168c90660b",
+  "disposition": "running_suspend_resume_observation_not_continuous_soak",
+  "initial_sample_count": 2,
+  "initial_issue_count": 0,
+  "initial_fixture": {
+    "state": "expired",
+    "size_bytes": 32,
+    "expired_at": "2026-10-06 20:40:07.873645+00:00",
+    "payload_deleted_at": "None",
+    "physical_exists": true
+  },
+  "schedule": "deploy/pilot/soak.cron",
+  "private_state": "deploy/pilot/private/task5-resume-soak.json",
+  "review_required": true,
+  "schedule_verification": {
+    "at_utc": "2026-10-06T21:38:01.372292+00:00",
+    "samples": 2,
+    "issues": 0,
+    "automatic_tick_verified": true
+  }
+}
