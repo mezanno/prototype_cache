@@ -212,3 +212,11 @@ Use the [Task 4 runbook and recorded compatibility gate](../../docs/TASK4_SECURI
 The retained prior/current pair was rehearsed without schema/backend changes;
 return-current image and lifecycle are healthy. Image vulnerability findings
 remain open; a successful rollback is not security release approval.
+
+## Pilot workload observation
+
+[Task 5's active soak](../../docs/TASK5_PILOT_ACCEPTANCE.md) uses the approved three
+URLs/two cached resources, three-client verified cache-only reads and a dedicated
+tiny tmp fixture. The minute cron self-stops workload at 24 hours and stores
+private bounded samples; review evidence and remove only its cron entry afterward.
+Existing monitoring/lifecycle continue. Task 5 is not yet complete.

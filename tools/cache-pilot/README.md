@@ -47,3 +47,34 @@ backend health. The script deliberately does not retry automatically.
 These are local implementation checks. They do not prove a live Gallica corpus,
 fresh private deployment, full process/container restart or production readiness.
 P4 runs this script against the packaged stack; P6 records corpus/soak acceptance.
+
+## Bounded concurrency and 24-hour soak (Task 5 / ADR-040)
+
+`pilot_acceptance.py` uses the owner-selected `pilot-corpus.json` (three URLs,
+two unique JPEG/WebP resources) with frozen size/SHA-256. Three HTTP clients issue
+20 reads each at start, preserving overload/retry status counts and end-to-end
+latency. Tick mode performs three cache-only verified reads, rotates the corpus,
+records resource/lifecycle/origin signals, and never requests origin preload.
+Credential input defaults to protected `deploy/pilot/private/fetcher.env`;
+URLs, credentials and exception text are omitted from runtime reports.
+
+```bash
+# State directory must be private. Refuses to overwrite an existing run.
+.venv/bin/python tools/cache-pilot/pilot_acceptance.py start \
+  --state deploy/pilot/private/task5-soak.json --fixture-id <dedicated-tmp-asset-id>
+# Schedule the tick entry from deploy/pilot/soak.cron, preserving existing cron jobs.
+.venv/bin/python tools/cache-pilot/pilot_acceptance.py tick \
+  --state deploy/pilot/private/task5-soak.json
+```
+
+The state file is mode 600, atomically replaced and bounded to 1,441 samples;
+exclusive locking skips overlapping invocations. Each observed sample records
+byte integrity, successes/failures, HTTP attempt statuses, p95 including retry
+backoff, Docker memory/CPU/PIDs/IDs, database size/counts, active capabilities,
+monitor/disk/lifecycle signals and origin-counter changes. Retry is capped at
+three total attempts for 503 only; other errors remain failures.
+At the real 24-hour deadline the workload stops and marks observations ready for
+review. It does not grant release approval or send external notifications.
+Inspect state timestamp and sample gaps; stopped cron or changed credentials
+must not be mistaken for successful observation. Short unit tests never count
+as soak evidence. See [Task 5](../../docs/TASK5_PILOT_ACCEPTANCE.md).

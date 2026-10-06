@@ -1,0 +1,2 @@
+# M-001/P6 / ADR-040: cache-only three-client tick, once/minute, stops workload at 24h.
+* * * * * /home/joseph/git_github/mezanno/prototype_cache/.venv/bin/python /home/joseph/git_github/mezanno/prototype_cache/tools/cache-pilot/pilot_acceptance.py tick --state /home/joseph/git_github/mezanno/prototype_cache/deploy/pilot/private/task5-soak.json >/dev/null 2>&1

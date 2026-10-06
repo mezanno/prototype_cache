@@ -1,0 +1,17 @@
+[
+  {
+    "url": "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9907264/f7/full/full/0/native.jpg",
+    "size_bytes": 740739,
+    "checksum": "sha256:a7a1f2ba2b730682e1b9a897f303f278b41a614dd417747d074d55746f864e34"
+  },
+  {
+    "url": "https://openapi.bnf.fr/iiif/image/v3/ark:/12148/bpt6k9907264/f7/full/max/0/default.jpg",
+    "size_bytes": 740739,
+    "checksum": "sha256:a7a1f2ba2b730682e1b9a897f303f278b41a614dd417747d074d55746f864e34"
+  },
+  {
+    "url": "https://openapi.bnf.fr/iiif/image/v3/ark:/12148/bd6t543024772/f18/full/max/0/default.webp",
+    "size_bytes": 655296,
+    "checksum": "sha256:c5a299d6b8a05253e4eb072e016b9be2ac6c8cd7711ec2b4ce352c75ebef88bf"
+  }
+]

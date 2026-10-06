@@ -1,0 +1,82 @@
+{
+  "started_at": 1791319297.9904177,
+  "deadline": 1791405697.9904177,
+  "duration_seconds": 86400,
+  "url_count": 3,
+  "unique_resource_count": 2,
+  "corpus_sha256": "3fe38bdd641879780a112480514b7e692cd262afba3d5c26fc4c0f7309547be7",
+  "burst": {
+    "clients": 3,
+    "logical_reads": 60,
+    "successful_reads": 60,
+    "bytes": 42735480,
+    "http_attempt_statuses": {
+      "200": 60,
+      "503": 1
+    },
+    "errors": {},
+    "p95_ms_with_retries": 30.626183026470244,
+    "max_ms_with_retries": 1045.180809975136
+  },
+  "baseline_origin_connections": 0,
+  "controls": {
+    "corpus": [
+      {
+        "asset_id": "80367c68-a28c-449f-8a06-e22214344d66",
+        "checksum": "sha256:a7a1f2ba2b730682e1b9a897f303f278b41a614dd417747d074d55746f864e34",
+        "bytes": 740739,
+        "preload_cache_hit": true,
+        "preload_ms": 5.445604037959129
+      },
+      {
+        "asset_id": "80367c68-a28c-449f-8a06-e22214344d66",
+        "checksum": "sha256:a7a1f2ba2b730682e1b9a897f303f278b41a614dd417747d074d55746f864e34",
+        "bytes": 740739,
+        "preload_cache_hit": true,
+        "preload_ms": 7.660386967472732
+      },
+      {
+        "asset_id": "d0d0d4e7-7ece-4119-a880-1bbf22ee8423",
+        "checksum": "sha256:c5a299d6b8a05253e4eb072e016b9be2ac6c8cd7711ec2b4ce352c75ebef88bf",
+        "bytes": 655296,
+        "preload_cache_hit": true,
+        "preload_ms": 6.845453986898065
+      }
+    ],
+    "cache_only_miss": {
+      "status": 404,
+      "elapsed_ms": 6.742070021573454
+    },
+    "nonallowlisted_status": 403,
+    "invalid_credential_status": 401,
+    "unique_assets": 2,
+    "origin_connections_before": 0,
+    "origin_connections_after": 0
+  },
+  "fixture": {
+    "asset_id": "caa51e80-8874-4eb3-a102-45168c90660b",
+    "alias": "tmp/pilotsoak62718b2fa258423db4b42003ad0ff84a/scheduled-cleanup.txt",
+    "size_bytes": 32,
+    "checksum": "sha256:52cb3926d910b538d52679d6c0cc51d21e98b69b32157189df8f6720ef708299",
+    "expires_at": "2026-10-06 20:39:27.122125+00:00",
+    "current_state": "available",
+    "expired_at": null,
+    "initial_state": "available",
+    "setup_note": "Uploaded once; setup mistakenly expected 201 from subsequent resolve. No duplicate upload."
+  },
+  "initial_lifecycle_fixture": {
+    "state": "expired",
+    "size_bytes": 32,
+    "expired_at": "2026-10-06 20:40:07.873645+00:00",
+    "payload_deleted_at": "None",
+    "physical_exists": true
+  },
+  "initial_database": {
+    "assets": 7,
+    "aliases": 9,
+    "audit_rows": 58,
+    "database_bytes": 8125463,
+    "retained_payload_bytes": 2052432
+  },
+  "status": "running; 24-hour completion not yet observed"
+}

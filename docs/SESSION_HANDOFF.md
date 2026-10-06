@@ -191,3 +191,34 @@ monitor no alerts. Six payloads/stable metadata and pre-existing audit match.
 [Task 4 record](TASK4_SECURITY_ROLLBACK.md) lists open High/Critical remediation
 and Garage scan coverage limits. No release/risk sign-off. Owner approved committing task 4 and explicitly resumed task 5. No push.
 Browser recheck pending.
+
+## Latest checkpoint — task 5 soak running (2026-10-06)
+
+Task 4 committed ab9b251. Owner resumed task 5 and chose three known URLs/two
+cached resources. Burst 60/60 hashes passed, one 503 retried; no origin calls.
+[Task 5](TASK5_PILOT_ACCEPTANCE.md) / ADR-040 records host-only tooling and fixtures.
+Minute soak cron installed alongside monitoring; state private/task5-soak.json,
+start 2026-10-06 20:41:37 UTC, full-window deadline 2026-10-07 20:41:37 UTC.
+Do not claim completion before then, overwrite state or rerun start. Final review
+must assess sample gaps/errors, resources and tmp fixture reclamation. Dedicated
+32-byte tmp asset caa51e80-8874-4eb3-a102-45168c90660b was scheduled-expired before
+start; normal 24-hour grace retained. Remove only the soak cron after review.
+536 tests/quality checks pass. Task-5 tooling/docs checkpoint committed; no push. Existing
+security findings and browser/off-host/disk/release gates remain open.
+
+## Task 5 checkpoint review — 2026-10-06
+
+Owner requested continuation with a commit and approval pause at each important
+step. Reviewed existing acceptance tooling, corpus, tests and startup evidence;
+no running schedule/state, application code or backend images changed. Confirmed
+pilot health and separate development backends. Fresh focused suite: 11 passed;
+Ruff lint/format, strict mypy (90 files) and Node client suite passed.
+At 20:57:01 UTC, private soak state contained 16 samples, 48 successful reads,
+16 explicit retried 503 attempts and zero recorded issues. This is an interim
+observation, not full-window acceptance. Preserve original deadline and state.
+Pause after committing this checkpoint; ask owner approval before the final
+post-deadline review and removal of only the soak cron. Existing automated
+soak/monitoring/lifecycle schedules continue during the approval pause.
+
+Fresh full suite against isolated development Garage/Postgres: **536 passed,
+none skipped**, with two existing upstream deprecation warnings.

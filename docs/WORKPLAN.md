@@ -312,3 +312,13 @@ containers/schema unchanged, lifecycle resumed and monitor healthy. See [task 4]
 High/Critical findings and Garage build-inventory coverage remain security gates;
 no dependency/backend upgrades or risk acceptance inferred. No commit/push yet.
 Pause before task 5; explicit owner approval required.
+
+## Task 5 started — 2026-10-06
+
+Task 4 committed as ab9b251; owner resumed task 5 and selected the three previous
+URLs (two unique resources). [Initial evidence and procedure](TASK5_PILOT_ACCEPTANCE.md)
+record 60/60 verified burst reads, one retried explicit overload, no origin calls,
+and scheduled tmp expiry. True 24-hour minute soak started 20:41:37 UTC; deadline
+2026-10-07 20:41:37 UTC. It remains in progress, not a passed acceptance claim.
+Review final bounded private samples and fixture reclamation after deadline;
+remove only the soak cron entry after review. No release approval or push.
