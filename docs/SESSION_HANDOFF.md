@@ -173,3 +173,12 @@ Garage/Postgres. Ruff lint/format, strict mypy (86 files), whitespace checks pas
 The quickstart's exact Python demo passed against deployed APIs, writing a copied
 WebP artifact and manifest last. This is a simulator, not an OCR engine/scheduler.
 Only docs/evidence changed after that full run; subsequent 25 admin regressions pass.
+
+## Latest checkpoint — task 3 resumed in CLI (2026-10-06)
+
+Owner resumed task 3; browser recheck remains pending. Lifecycle scheduled after
+zero-candidate/error dry run. Minute private health snapshot cron installed;
+audit/backup copies retained without deletion scheduling. See [task 3](TASK3_OPERATIONS.md).
+Earlier cleanup-disabled/pause-before-task-3 statements are historical.
+Owner approved the task-3 commit. Task 4 has not started; wait for explicit
+owner approval before security scans or rollback work. No push.

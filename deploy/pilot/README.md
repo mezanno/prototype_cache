@@ -198,3 +198,10 @@ passed for the local pilot (ADR-037). Use the recorded ordering, fresh volume an
 network isolation checks, pinned backend versions, table fingerprints and payload
 checksums for subsequent rehearsals. Daily/off-host backup scheduling and retention
 remain open; this evidence is not an online/PITR backup implementation.
+
+## Task 3 local operation
+
+[CLI monitoring and retention](../../docs/TASK3_OPERATIONS.md) documents ADR-038,
+the installed minute monitor and enabled 60-second lifecycle worker. Read
+`private/monitor.json`; check its timestamp for freshness. Audit/backups retained
+without automatic deletion. Docker disk headroom is near 10% free.

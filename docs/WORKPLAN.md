@@ -292,3 +292,13 @@ flowchart LR
     P3 --> P4
     P4 --> P5
 ```
+
+## Task 3 CLI follow-up — 2026-10-06
+
+Owner resumed monitoring/retention/cleanup in CLI, leaving browser recheck pending.
+Live dry-run found zero candidates/errors; existing lifecycle schedule enabled.
+Private minute CLI health monitor and conservative retention policy implemented
+(ADR-038). See [task 3 operations/evidence](TASK3_OPERATIONS.md). Docker filesystem
+is near 10% free-space warning; disk, off-host backup and remote-alert gates remain
+open. No audit/backup purge. Review/commit this task, then pause before task 4;
+no push.
