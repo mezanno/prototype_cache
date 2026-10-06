@@ -78,3 +78,39 @@ review. It does not grant release approval or send external notifications.
 Inspect state timestamp and sample gaps; stopped cron or changed credentials
 must not be mistaken for successful observation. Short unit tests never count
 as soak evidence. See [Task 5](../../docs/TASK5_PILOT_ACCEPTANCE.md).
+
+## Accelerated run (ADR-041)
+
+Prepare a new private report path, then run from the repository root:
+
+```bash
+.venv/bin/python tools/cache-pilot/accelerated_acceptance.py \
+  --state deploy/pilot/private/task5-accelerated.json
+```
+
+**Execution awaits owner approval.** No accelerated pilot run has been performed.
+The command stays in the foreground; it installs no cron. Three persistent HTTP
+clients target 1,440 reads each over 900 seconds (one per client every 0.625 s).
+Existing overload retries can consume several slots: missed slots are counted
+and skipped, never replayed in a catch-up burst. At 900 seconds no new reads
+start; bounded in-flight reads/retries and final measurements can extend command
+completion beyond 15 minutes. This is a target volume, not a guarantee of 4,320
+completed reads. Successful-read p95 includes retry backoff; HTTP statuses and
+failed reads remain visible. No preloads, quota changes or cleanup mutations.
+
+The frozen three-URL/two-resource corpus and protected credentials are reused.
+Minute resource snapshots and final resources/origin counters use the existing
+observer. Review memory/CPU/PIDs, container identities, capabilities, database
+and audit growth, disk/lifecycle/monitor signals, missing observations and origin
+changes. The report retains at most 4,320 read outcomes plus roughly 16 resource
+snapshots, is mode 600, and cannot overwrite an existing report. Exclusive locking
+rejects overlapping invocations for the same report. Use Ctrl-C for a recorded
+interruption; abrupt process/host loss can leave a `running` checkpoint with only
+resource snapshots, which must be treated as incomplete, never resumed by
+replacing that evidence. Credentials and exception text are excluded from output.
+
+Resource observations are checkpoints; per-read details are written at normal
+completion or Ctrl-C. Sampling does not report per-second resource peaks. Keep
+the computer awake during this run. No automated release sign-off; cleanup grace,
+slow leaks and suspend/resume behavior require separate observations. Pipeline
+integration requires observability implementation and documentation first.

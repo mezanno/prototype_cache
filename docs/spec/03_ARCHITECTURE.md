@@ -386,3 +386,9 @@ incomplete. Preserve evidence; an accelerated run must be labeled separately,
 and suspension gaps exclude uninterrupted-soak claims. Real pipeline integration
 requires implemented and validated observability plus documentation first. No
 new acceptance or release approval is inferred.
+
+### ADR-041 — accelerated private cache workload
+
+| ID | Decision | Status | Rationale | Alternatives |
+|----|----------|--------|-----------|--------------|
+| ADR-041 | Separate foreground 900-second workload with three persistent clients, each targeting 1,440 reads at 0.625-second intervals. Use monotonic pacing, skip missed slots without catch-up, stop launching reads at deadline, allow existing bounded requests/retries to drain. Record every outcome and missed slot, aggregate latency, minute resource/origin observations and final evidence in a private report. Preserve the incomplete soak unchanged. | Accepted for tooling preparation (2026-10-06); live execution awaits owner approval | B-015/B-019, NFR-002/004/005: bounded load without changing admission limits or claiming elapsed-time equivalence. Backpressure may reduce achieved volume. | Overlap unlimited rounds to force 4,320 completions; shorten deletion grace; equate accelerated load with uninterrupted 24-hour operation. |

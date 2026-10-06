@@ -270,3 +270,177 @@ def test_concurrent_monitor_refresh_is_not_mistaken_for_clock_failure(
     # The monitor finished after the read round started, but before resource capture.
     resources = acceptance.resource_sample(100)
     assert resources["observed_at"] == 121 and resources["monitor"]["timestamp"] == 120
+
+
+def test_accelerated_pacing_skips_backpressure_without_catchup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import accelerated_acceptance as accelerated
+
+    clock = [0.0]
+
+    class Stop:
+        def is_set(self) -> bool:
+            return False
+
+        def wait(self, delay: float) -> bool:
+            clock[0] += delay
+            return False
+
+    class Client:
+        def __init__(self, **kwargs: Any) -> None:
+            assert kwargs["follow_redirects"] is False
+
+        def __enter__(self) -> Client:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            pass
+
+    starts: list[float] = []
+
+    def read(*args: Any) -> dict[str, Any]:
+        starts.append(clock[0])
+        clock[0] += 1.1
+        return {"ok": True, "attempts": [503, 200], "bytes": 5, "elapsed_ms": 1100}
+
+    monkeypatch.setattr(accelerated, "DURATION", 3)
+    monkeypatch.setattr(accelerated, "ROUNDS", 6)
+    monkeypatch.setattr(accelerated, "INTERVAL", 0.5)
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(httpx, "Client", Client)
+    monkeypatch.setattr(acceptance, "verified_read", read)
+    result = accelerated.paced_client(0, [ITEM], "secret", 0, Stop())  # type: ignore[arg-type]
+    assert starts == [0, 1.1, 2.2]
+    assert result["skipped_slots"] == 2 and result["unstarted_slots"] == 1
+    assert [row["slot"] for row in result["reads"]] == [0, 2, 4]
+
+
+def test_accelerated_summary_preserves_failures_and_overloads() -> None:
+    import accelerated_acceptance as accelerated
+
+    report = accelerated.summary(
+        [
+            {
+                "skipped_slots": 2,
+                "unstarted_slots": 1,
+                "reads": [
+                    {"ok": True, "attempts": [503, 200], "bytes": 5, "elapsed_ms": 1000},
+                    {"ok": False, "attempts": [503, 503, 503], "error": "http_status"},
+                ],
+            }
+        ]
+    )
+    assert report["successful_reads"] == 1 and report["attempted_reads"] == 2
+    assert report["http_attempt_statuses"] == {"503": 4, "200": 1}
+    assert report["errors"] == {"http_status": 1}
+    assert report["p95_ms_with_retries"] == 1000
+
+
+def test_accelerated_refuses_existing_evidence_before_any_requests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import accelerated_acceptance as accelerated
+
+    report = tmp_path / "report.json"
+    report.write_text("preserved")
+
+    def forbidden() -> float:
+        raise AssertionError("unexpected network")
+
+    monkeypatch.setattr(acceptance, "origin_counter", forbidden)
+    with pytest.raises(ValueError, match="overwrite"):
+        accelerated.run(report, [ITEM], "secret", "digest")
+    assert report.read_text() == "preserved"
+
+
+def test_accelerated_short_harness_records_resources_and_final_outcomes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import accelerated_acceptance as accelerated
+
+    monkeypatch.setattr(accelerated, "DURATION", 0.3)
+    monkeypatch.setattr(accelerated, "ROUNDS", 2)
+    monkeypatch.setattr(accelerated, "INTERVAL", 0.025)
+    monkeypatch.setattr(acceptance, "origin_counter", lambda: 0)
+    monkeypatch.setattr(acceptance, "resource_sample", lambda *args: {"monitor": {"alerts": []}})
+    monkeypatch.setattr(
+        acceptance,
+        "verified_read",
+        lambda *args: {
+            "ok": True,
+            "attempts": [200],
+            "bytes": 5,
+            "elapsed_ms": 1,
+        },
+    )
+    report = tmp_path / "accelerated.json"
+    assert accelerated.run(report, [ITEM], "secret", "digest") == 0
+    state = json.loads(report.read_text())
+    assert state["status"] == "observations_complete_review_required"
+    assert state["samples"] and state["final_origin_connections"] == 0
+    assert state["summary"]["attempted_reads"] <= 6
+    assert state["summary"]["successful_reads"] == state["summary"]["attempted_reads"]
+    assert "secret" not in report.read_text()
+    assert report.stat().st_mode & 0o777 == 0o600
+
+
+def test_accelerated_interrupt_preserves_incomplete_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import accelerated_acceptance as accelerated
+
+    monkeypatch.setattr(acceptance, "origin_counter", lambda: 0)
+    calls = 0
+
+    def interrupt(*args: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise KeyboardInterrupt
+        return {"monitor": {"alerts": []}}
+
+    monkeypatch.setattr(acceptance, "resource_sample", interrupt)
+    monkeypatch.setattr(
+        accelerated,
+        "paced_client",
+        lambda *args: {
+            "client": args[0],
+            "reads": [],
+            "skipped_slots": 0,
+            "unstarted_slots": 1440,
+        },
+    )
+    report = tmp_path / "interrupt.json"
+    assert accelerated.run(report, [ITEM], "secret", "digest") == 1
+    data = json.loads(report.read_text())
+    assert data["status"] == "interrupted_review_required"
+    assert data["summary"]["unstarted_slots"] == 4320
+
+
+def test_accelerated_origin_change_remains_a_failed_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import accelerated_acceptance as accelerated
+
+    values = iter([0, 1])
+    monkeypatch.setattr(acceptance, "origin_counter", lambda: next(values, 1))
+    monkeypatch.setattr(acceptance, "resource_sample", lambda *args: {"monitor": {"alerts": []}})
+    monkeypatch.setattr(accelerated, "DURATION", 0.01)
+    monkeypatch.setattr(
+        accelerated,
+        "paced_client",
+        lambda *args: {
+            "client": args[0],
+            "reads": [],
+            "skipped_slots": 0,
+            "unstarted_slots": 1440,
+        },
+    )
+    report = tmp_path / "changed.json"
+    assert accelerated.run(report, [ITEM], "secret", "digest") == 1
+    assert "origin_counter_changed_or_reset" in json.loads(report.read_text())["issues"]

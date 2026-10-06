@@ -349,3 +349,13 @@ the pipeline contract before selecting concrete instrumentation. Existing
 monitoring is a baseline, not completion of that integration prerequisite.
 Daytime observations must report cumulative active time, suspension gaps and
 resume recovery; they cannot claim an uninterrupted 24-hour soak.
+
+## Accelerated tooling checkpoint — 2026-10-06
+
+ADR-041 provides a separate 15-minute foreground runner targeting 4,320 cached
+reads with three persistent clients. Backpressure skips slots; it never changes
+limits or forces catch-up. Every outcome/missed slot and minute/final resource
+signals remain available for review. The incomplete soak stays preserved and
+its schedule disabled. See [operator instructions](../tools/cache-pilot/README.md).
+Owner approved preparation only; commit and pause before live execution. Real
+pipeline integration remains gated on implemented observability and documentation.

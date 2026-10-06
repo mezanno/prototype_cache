@@ -144,3 +144,18 @@ continues while paused. Final review remains pending after the deadline.
 
 Fresh full suite against isolated development Garage/Postgres: **536 passed,
 none skipped**, with two existing upstream deprecation warnings.
+
+## Accelerated tooling checkpoint — 2026-10-06
+
+ADR-041 provides a separate 15-minute foreground runner targeting 4,320 cached
+reads with three persistent clients. Backpressure skips slots; it never changes
+limits or forces catch-up. Every outcome/missed slot and minute/final resource
+signals remain available for review. The incomplete soak stays preserved and
+its schedule disabled. See [operator instructions](../tools/cache-pilot/README.md).
+Owner approved preparation only; commit and pause before live execution. Real
+pipeline integration remains gated on implemented observability and documentation.
+
+Preparation validation: **542 tests passed, none skipped**, against separate
+development Garage/Postgres; two existing upstream deprecation warnings. Ruff
+lint/format, strict mypy (91 files), Node client suite and CLI help passed.
+No accelerated pilot execution or schedule installation occurred.
