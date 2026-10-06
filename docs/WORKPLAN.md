@@ -426,3 +426,33 @@ covers failed-refetch preservation; `test_fetcher_garage.py` covers a real origi
 fallback, TLS and connection release. This is existing partial coverage, not
 completion of the new randomized end-to-end failure matrix. Identify remaining
 gaps when implementing the harness and observability. No injection performed.
+
+## Current owner pause — 2026-10-06 21:34 UTC
+
+Owner requested a committed consistent state before suspending the computer.
+**Pause now; do not start any workload, restart the soak, inject faults or begin
+implementation until the owner resumes.** No 24-hour soak is active: cron absence
+was reverified; normal monitoring cron remains installed and lifecycle remains
+enabled. Those jobs cannot observe the host during suspension. On resume,
+verify pilot readiness, monitor freshness, lifecycle recovery and expected expiry
+before interpreting measurements; record suspension gaps explicitly. Normal
+wall-clock TTL/grace may elapse overnight; do not shorten them or reset state.
+
+Completed checkpoints: `9a3daf1` original soak tooling; `aeacb85` preserved
+incomplete soak (30 samples/90 reads); `c6f58ab` accelerated tooling; `eb724ee`
+reviewed 15-minute results (4,320 verified reads, 720 retried 503s, p95 1.084 s);
+`d57a225` fetcher fault acceptance requirements. Full implementation validation:
+542 tests passed, none skipped; Ruff lint/format, strict mypy and client checks
+passed. Subsequent changes are docs/evidence only. No pushes. Owner-downloaded
+`tmp/native.jpg` and `tmp/default.jpg` remain untracked and must be preserved;
+protected runtime/report/backup files stay ignored, never expose credentials.
+
+Next authorized discussion on resume: observability and documentation
+prerequisites for real pipeline integration, including a seeded randomized and
+deterministic fetcher failure matrix. Implementation and fault execution have
+not started. Determine the pipeline's input/output/job-correlation contract;
+prepare bounded instrumentation and operator guidance with tests, commit and
+pause for approval before advancing. Daytime active-hour/suspend-resume
+observation is separate from uninterrupted 24-hour acceptance. Security findings,
+Garage inventory coverage, browser recheck, off-host backup/disk controls, tmp
+reclamation acceptance and release sign-off remain open.
