@@ -1,0 +1,161 @@
+{
+  "disposition": "suspension_aware_observation_reviewed_with_gaps_not_continuous_soak",
+  "started_at_utc": "2026-10-06T21:37:26.160529+00:00",
+  "deadline_utc": "2026-10-07T21:37:26.160529+00:00",
+  "finished_at_utc": "2026-10-07T21:38:01.693198+00:00",
+  "elapsed_wall_seconds": 86435.53266882896,
+  "scheduled_samples": 965,
+  "resource_observations": 964,
+  "resource_observations_missing": 2,
+  "successful_scheduled_reads": 2895,
+  "scheduled_http_attempt_statuses": {
+    "200": 2895,
+    "503": 965
+  },
+  "scheduled_read_errors": {},
+  "startup_burst": {
+    "clients": 3,
+    "logical_reads": 60,
+    "successful_reads": 60,
+    "bytes": 42735480,
+    "http_attempt_statuses": {
+      "200": 60,
+      "503": 1
+    },
+    "errors": {},
+    "p95_ms_with_retries": 84.44787602638826,
+    "max_ms_with_retries": 1032.9393569845706
+  },
+  "issues": [
+    {
+      "at_utc": "2026-10-06T21:40:02.079889+00:00",
+      "issue": "observation_unavailable"
+    },
+    {
+      "at_utc": "2026-10-07T05:37:40.973049+00:00",
+      "issue": "schedule_gap_or_clock_change"
+    },
+    {
+      "at_utc": "2026-10-07T05:37:40.973049+00:00",
+      "issue": "observation_unavailable"
+    }
+  ],
+  "gaps": [
+    {
+      "from_utc": "2026-10-06T21:40:02.079889+00:00",
+      "to_utc": "2026-10-07T05:37:40.973049+00:00",
+      "seconds": 28658.893159866333
+    }
+  ],
+  "nominal_sampled_minutes": 965,
+  "nominal_sampled_minutes_note": "Sample count, not measured active duration; excludes fabricated overnight coverage.",
+  "origin_values": [
+    0
+  ],
+  "containers": {
+    "asset-store-pilot-asset-store-1": {
+      "memory_percent_initial": 15.77,
+      "memory_percent_min": 15.77,
+      "memory_percent_max": 18.81,
+      "memory_percent_final": 16.59,
+      "cpu_percent_max": 47.23,
+      "pids_max": 13,
+      "container_id_unchanged": true
+    },
+    "asset-store-pilot-fetcher-1": {
+      "memory_percent_initial": 9.88,
+      "memory_percent_min": 9.42,
+      "memory_percent_max": 12.36,
+      "memory_percent_final": 10.0,
+      "cpu_percent_max": 47.07,
+      "pids_max": 9,
+      "container_id_unchanged": true
+    },
+    "asset-store-pilot-postgres-1": {
+      "memory_percent_initial": 3.58,
+      "memory_percent_min": 3.57,
+      "memory_percent_max": 4.27,
+      "memory_percent_final": 3.74,
+      "cpu_percent_max": 20.47,
+      "pids_max": 16,
+      "container_id_unchanged": true
+    },
+    "asset-store-pilot-garage-1": {
+      "memory_percent_initial": 1.14,
+      "memory_percent_min": 1.09,
+      "memory_percent_max": 1.57,
+      "memory_percent_final": 1.2,
+      "cpu_percent_max": 11.27,
+      "pids_max": 18,
+      "container_id_unchanged": true
+    },
+    "asset-store-pilot-lifecycle-1": {
+      "memory_percent_initial": 25.02,
+      "memory_percent_min": 25.01,
+      "memory_percent_max": 26.26,
+      "memory_percent_final": 26.26,
+      "cpu_percent_max": 0.0,
+      "pids_max": 5,
+      "container_id_unchanged": true
+    }
+  },
+  "database_initial": {
+    "assets": 7,
+    "aliases": 9,
+    "audit_rows": 67,
+    "database_bytes": 8141847,
+    "retained_payload_bytes": 2052432
+  },
+  "database_final": {
+    "assets": 7,
+    "aliases": 9,
+    "audit_rows": 253,
+    "database_bytes": 8264727,
+    "retained_payload_bytes": 2052400
+  },
+  "registered_content_unchanged_except_fixture": true,
+  "final_cleanup_fixture": {
+    "state": "deleted",
+    "size_bytes": 32,
+    "expired_at": "2026-10-06 20:40:07.873645+00:00",
+    "payload_deleted_at": "2026-10-07 20:40:49.696538+00:00",
+    "physical_exists": false
+  },
+  "monitor_alert_sample_count": 0,
+  "active_capabilities_max": 1.0,
+  "registry_waiters_max": 0.0,
+  "docker_disk_free_ratio_min": 0.1642502593787475,
+  "private_report_sha256": "1c69173b112671f9b7519dcddccbcaa53985f085d901a0c642dd02bd1fb8c56c",
+  "soak_cron_removed": true,
+  "all_other_cron_entries_preserved": true,
+  "limitations": [
+    "Two unique cached resources; not representative pipeline workload",
+    "One overnight gap; two unavailable resource captures, cause not proven by redacted report",
+    "Per-round latency summaries cannot establish aggregate read p95",
+    "Container identities do not prove absence of in-place process restarts",
+    "Sampled memory changes require continued monitoring; no leak-free claim",
+    "Continuous 24-hour availability, fault injection and pipeline instrumentation remain unverified",
+    "No release approval"
+  ],
+  "audit_growth_review": {
+    "rows_added": 186,
+    "actions": [
+      {
+        "action": "capability.issue",
+        "outcome": "granted",
+        "count": 184
+      },
+      {
+        "action": "asset.delete",
+        "outcome": "success",
+        "count": 1
+      },
+      {
+        "action": "asset.payload_delete",
+        "outcome": "success",
+        "count": 1
+      }
+    ]
+  },
+  "post_review_pilot_health": "Application/backend healthy; lifecycle running."
+}

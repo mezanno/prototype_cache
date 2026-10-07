@@ -227,3 +227,8 @@ A fresh suspension-aware observation is now scheduled using
 `private/task5-resume-soak.json`; see [current handoff](../../docs/SESSION_HANDOFF.md).
 Its wall-clock deadline is 2026-10-07 21:37:26 UTC. Suspension gaps stay visible;
 this does not restore the stopped original run or certify continuous operation.
+
+Final observation review (2026-10-07): completed with suspension/measurement
+gaps retained; disposable tmp cleanup verified. Only its cron was removed;
+monitoring/lifecycle continue. See [final evidence](../../docs/TASK5_RESUME_SOAK_FINAL.json).
+No soak workload remains scheduled.

@@ -1,4 +1,47 @@
-# Session reset handoff — updated 2026-10-06
+# Session reset handoff — updated 2026-10-07
+
+## Current checkpoint — observation reviewed and closed, paused (2026-10-07)
+
+Owner resumed final review after the deadline. The fresh observation finished
+2026-10-07 21:38:01 UTC (23:38 Paris), 24 hours 35.53 seconds after start.
+[Final evidence](TASK5_RESUME_SOAK_FINAL.json): **2,895/2,895 scheduled reads
+verified**, 965 recovered 503 attempts, no read failures; initial 60-read burst
+is separate. 965 scheduled rounds; 963 complete resource rounds plus final capture.
+One 7h57m39s overnight gap and two unavailable resource captures remain recorded.
+Reads succeeded at suspension/resume boundary captures; complete resource
+observations resumed on the following minute. Missing-capture cause is unproven
+because exception details are intentionally redacted. This closes the bounded
+suspension-aware observation, **not uninterrupted 24-hour certification**.
+
+Cleanup check **closed**: existing 32-byte disposable fixture reached deleted
+state and physical HEAD absence at 2026-10-07 20:40:49 UTC. Registered assets/
+aliases unchanged; retained bytes dropped exactly 32. No observed new origin
+connections or monitoring alerts. Container identities unchanged; post-review
+application/backend health passed, lifecycle running. Audit grew by 186 rows:
+184 granted capabilities, one logical delete and one payload delete. Database
+grew 122,880 bytes. Active capabilities peaked at one, registry waiters zero;
+disk free ratio stayed above 16.42%. Memory remained within limits but final
+lifecycle memory rose 25.02→26.26%, so do not infer absence of slow leaks.
+Per-round latency summaries cannot establish a whole-run p95; existing accelerated
+p95 1.084 s and overload limits remain material acceptance qualifications.
+
+Removed **only** the `task5-resume-soak.json` cron entry; every other cron entry
+preserved. Normal monitoring and lifecycle continue. `deploy/pilot/soak.cron`
+is now a retained template, not an installed workload. Protected crontab backup:
+`deploy/pilot/private/task5-crontab-before-close.txt`. All original/incomplete/
+accelerated/new reports preserved; final private report checksum is recorded in
+the public summary. No application/config/image changes, faults or full tests
+against pilot data. Latest code suite remains 542 passed; this checkpoint is
+reviewed operational evidence/docs only. Commit locally, no push, then **pause**.
+
+Next step requires owner resume: implemented observability and documentation
+before real pipeline integration, plus deterministic/seeded randomized fetcher
+client/origin/network/internal failure acceptance. No such implementation or
+injection has started. Task 5's selected corpus, accelerated workload and
+suspension-aware observation steps are closed with coverage/latency limitations;
+full-scale/continuous-service certification, representative pipeline workload,
+security remediation, Garage inventory, browser recheck, off-host backup/disk
+controls and release sign-off remain open. Preserve untracked owner images.
 
 ## Current checkpoint — new suspend/resume observation running
 
