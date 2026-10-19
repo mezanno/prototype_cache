@@ -542,3 +542,35 @@ suspension-aware observation steps are closed with coverage/latency limitations;
 full-scale/continuous-service certification, representative pipeline workload,
 security remediation, Garage inventory, browser recheck, off-host backup/disk
 controls and release sign-off remain open. Preserve untracked owner images.
+
+## Current checkpoint — pipeline contract owner form (2026-10-12)
+
+Owner requested a concise, fillable document with spec context, proposed defaults
+and clearly marked answer fields, plus a durable session handoff.
+Created [first pipeline integration form](services/PIPELINE_CONTRACT_FORM.md).
+**Ongoing task: collect/review the owner's answers to the six sections.** Existing
+storage-facing rules are retained; proposals in the form are not accepted ADRs.
+
+On resume, read the form and its answers first. Reconcile them with SCN-002/005/
+007/009, the worker/fetcher contracts and active requirements. Clarify only material
+gaps, then prepare the agreed integration contract, instrumentation/operator plan
+and deterministic/seeded randomized failure coverage matrix. Record major accepted
+technical choices in ADRs before coding. Observability and documentation remain
+prerequisites to real pipeline integration; bounded fault tooling must be reviewed
+before separately authorized live injection.
+
+This request authorizes documentation preparation only; no implementation,
+deployment, workload, restart or fault execution was performed or authorized.
+The prior observation is closed; no soak restart is implied. Recorded code baseline
+remains 542 tests passed, not rerun for this docs-only checkpoint. Existing release
+gates and protected operational evidence remain unchanged. Preserve untracked
+owner images in `tmp/`.
+
+Handoff update (2026-10-19): owner authorized committing this form and checkpoint
+for continuation on another computer, where conversation context will be absent.
+Start with this checkpoint and `services/PIPELINE_CONTRACT_FORM.md`; its six
+`ANSWER:` fields are still awaiting owner input. Do not infer acceptance from the
+prefilled proposals. No implementation or live execution is authorized by this
+commit request. No push requested. Protected pilot runtime files, reports and
+untracked owner images are machine-local and are not transferred by this commit;
+do not assume a pilot deployment exists on the next computer.
