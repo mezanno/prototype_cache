@@ -1,3 +1,5 @@
+> **Legacy internal module.** The [active plan](../../docs/WORKPLAN.md) does not require a generic capability broker for new collection consumers. Existing runtime behavior remains unchanged.
+
 # storage-guard
 
 Future FastAPI capability broker (`FR-010`–`FR-015`, audit log).

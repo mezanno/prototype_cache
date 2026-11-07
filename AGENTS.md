@@ -2,9 +2,16 @@
 
 ## Mission
 
-Build a production-shaped prototype of the **`asset-store`** module: a multi-tenant content/asset repository with an alias layer and a capability broker, used by asynchronous workers, upload services, and a thin admin UI. See [`docs/spec/README.md`](docs/spec/README.md) for the module identity and glossary.
+Deliver custom collection upload/admin/storage, local IIIF publication for
+Corpusense and existing workers, then an allowlisted Gallica **Image API**
+proxy/cache. The owner accepted the pivot on 2026-11-07; see
+[`docs/spec/README.md`](docs/spec/README.md) and [`docs/WORKPLAN.md`](docs/WORKPLAN.md).
+The current job submission/processing system remains unchanged.
 
-The repo is named `prototype_cache` for historical reasons; the module name is `asset-store`. The repo will be renamed at code time, not before.
+The general `asset-store` programme is frozen. Existing `asset_store_core` and
+`fetcher_service` code is available for selective reuse; universal aliases,
+capability brokerage or completion of M-001 must not become prerequisites.
+The historical repo/package names do not imply a rename task.
 
 ## Source Of Truth
 
@@ -36,9 +43,14 @@ If requirements conflict, update docs first, then implement.
 
 ## Suggested Work Order For Agents
 
-1. Spec completion and ambiguity removal (`docs/spec/`).
-2. Service scaffolding + CI baseline (single `asset-store` service with internal `registry`/`capabilities`/`storage` modules, dev compose stack).
-3. Core ingestion path (write capability -> upload -> commit -> available).
-4. Retrieval path for workers (read capability -> signed URL -> GET).
-5. Reliability/security hardening (audit log, quotas, scoped tokens).
-6. Operational readiness (dashboards, alerts, runbooks, backup).
+1. B-101: first collection/import contract and actual Corpusense/job integration inputs.
+2. R1: durable raw files/catalog, restricted admin/API, retryable import and publication status.
+3. R2: existing IIIF Image engine, generated local manifests, real UI/job and source-coordinate proof.
+4. R3: Image-only Gallica proxy/cache; Corpusense fetches manifests directly and routes image requests.
+5. Later: user/project authorization, proxy metering, worker egress, multiple backends and agentic interfaces.
+
+Public reads apply only to approved published test material; writes stay restricted.
+Preserve canonical source/provenance and exact representation/coordinate metadata.
+Keep archives, runtime data, private reports/config, migrations and owner images
+intact. No cleanup, workload, deployment, rename, commit or push is implicit in a
+documentation update. Use the active plan rather than historical pauses/next steps.

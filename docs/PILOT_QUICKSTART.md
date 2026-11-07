@@ -1,3 +1,5 @@
+> **Legacy M-001 runbook.** New delivery follows [M-002](milestones/COLLECTIONS_AND_IMAGE_PROXY_PILOT.md). Host-specific runtime claims below are historical; verify actual state and preserve private files/volumes before any operation. These commands do not deploy the planned collection/IIIF services.
+
 # Deploy and use the local cache pilot
 
 ## 1. Deployment

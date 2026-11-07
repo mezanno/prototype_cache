@@ -1,3 +1,5 @@
+> **Legacy M-001 deployment package.** The [active M-002 plan](../../docs/WORKPLAN.md) does not yet have a new deployment implementation. Preserve existing volumes/private configuration; do not infer authorization to restart, migrate or delete anything from the documentation pivot.
+
 # M-001 private pilot package (ADR-032)
 
 Start with the short [deployment/task quickstart](../../docs/PILOT_QUICKSTART.md).

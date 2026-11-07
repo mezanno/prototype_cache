@@ -1,147 +1,78 @@
-# 04 - Operations And Readiness
+# 04 — Pilot operations and verification
 
-## Observability at a glance
+**M-002, 2026-11-07.** Operations support the three releases in
+[the plan](../WORKPLAN.md). The old Swarm/HA/SLO and comprehensive fault programme
+is deferred, not passed. These are requirements for future implementation, not
+new installed monitoring, backups or jobs.
 
-| What to watch | Source | Labels |
-|---------------|--------|--------|
-| Per-user / per-task storage | Registry compactor | `space`, `partition_id` |
-| Per-bucket disk (ops) | object-store exporter | `bucket` |
-| Cache effectiveness | fetcher-service | `fetch_cache_hit`, `fetch_remote_errors` |
-| API health | asset-registry, storage-guard | `endpoint`, `result_class` |
+## Deployment
 
-**Quota enforcement** uses registry sums per `(space, partition_id)`, not the object store alone ([`Q-004`](05_BACKLOG_AND_OPEN_QUESTIONS.md)).
+Use one host/Compose with collection API/admin, Postgres, the existing S3 approach,
+and the selected IIIF Image server. The Gallica proxy can initially be another
+module in the app. Publish only intended service routes; keep database/backend
+administration and credentials private. Document browser and worker reachable
+base URLs/CORS, disk/resource limits and startup/restart for the actual host.
+Do not assume the protected old pilot deployment exists on a new machine.
 
----
+Restricted admin writes use configured operator credentials; no end-user identity
+platform is required. Use TLS for remote secret-bearing/admin access. Published
+test content is deliberately public; draft/unpublished routes must be inaccessible,
+including image-server routes. Unpublication cannot recall downloaded copies or
+previously issued links; document cache invalidation/expiry behavior.
 
-## Deployment Model
+## Data protection
 
-- **Runtime target** - Docker Swarm in the target environment (NFR-011). Docker Compose for single-machine development.
-- **Environments** - `dev` (developer workstation; single-node Compose), `staging` (Swarm cluster with two nodes, scaled-down replicas), `prod` (Swarm cluster; replica count sized to load).
-- **Release strategy** - rolling update per service; `asset-registry` and `storage-guard` are stateless and can be rolled one task at a time; `object-store` (Garage) uses its own rolling strategy with quorum preserved; Postgres is updated during maintenance windows with read-only mode if required.
-- **Rollback strategy** - re-deploy previous image tag (Swarm `service update --rollback`); schema migrations are forward-compatible by policy so an older service binary can run against a newer schema for at least one release cycle.
+- Raw uploaded files are retained and immutable; separately store disposable image
+  derivatives and proxy responses. Do not put collections under legacy cache TTL
+  or pressure eviction. Import failure may clean only its own unpublished artifacts.
+- Preserve metadata and matching raw files in a documented coherent backup.
+  Before R2 shared use, restore the chosen collection in isolation and verify its
+  metadata/order/checksums. Same-host copies do not establish disaster recovery.
+- Existing runtime data, private reports/configuration, original test observations,
+  untracked owner images and migration history are preserved. No pivot cleanup or
+  host/network/fault execution is implicit.
+- Review applicable known findings in the [security closeout](../security/B018_CLOSEOUT.md)
+  for the code/images/routes actually reused. The pivot neither closes findings
+  nor demands completion of every legacy platform goal before any implementation.
 
-## Configuration And Secrets
+## Minimal signals
 
-- **Config source** - environment variables for ports, URLs, feature flags; YAML configuration file for the larger settings (capability TTL bounds, default grace periods).
-- **Secret manager** - Docker Swarm secrets for MVP (service credentials, Postgres passwords, object-store credentials); migration to HashiCorp Vault or similar tracked as a forward step.
-- **Rotation policy** - service credentials rotated by re-deploying with the new secret; rolling restart absorbs the transition; rotation event recorded in the audit log.
-- **Environment separation rules** - one Swarm secret per `(environment, service)` pair; no production secret visible from staging containers.
+| Path | Operator must see | Acceptance |
+|---|---|---|
+| Import/publication | Item status/error, imported bytes/count, dimensions/checksum, duration, publication changes and operator credential identity | Diagnose interrupted/invalid import; retry remaining items; no partial published content. |
+| IIIF/local processing | Image route failures/latency, storage or transform errors, actual input representation and dimensions | Explain a UI failure and correlate a real processing input/export. |
+| Gallica proxy | Cache hit/miss, origin request/429/error, bytes/duration, inflight work, local overload and upstream backoff | Distinguish local overload from BnF throttling and verify recovery/cache reuse. |
+| Storage/runtime | Health, disk use, backend/DB failures and resource bounds | Saturation is explicit; no silent data loss, unbounded queue or repeated uncontrolled origin work. |
 
-## Observability
+Use existing JSON logging/metrics patterns; specify concrete metric names with the
+implementation. IDs belong in logs, not unbounded metric labels. Never log admin
+credentials, signed URL tokens, API keys or upstream credential-bearing queries.
+Full tracing, dashboards, per-user billing and a new audit platform are deferred.
 
-### Metrics
+## Release checks
 
-Per-service (`asset-registry`, `storage-guard`, and later `fetcher`) Prometheus-style metrics. Labels: `service`, `endpoint`, `space` (bucket), `partition_id` where applicable, `result_class` (`2xx`/`4xx`/`5xx`).
+1. **R1:** import a representative approved collection and invalid/interrupted
+   items; verify restricted writes, path safety, finite limits, unpublished access
+   denial, repeat import behavior, checksums and reopen/restart persistence.
+2. **R2:** validate chosen-version manifests/image information; exercise actual
+   Corpusense browsing/import and existing real worker input access; verify browser
+   disconnect/reconnect does not cancel the job and results remain retrievable; verify one
+   source-coordinate mapping and an isolated metadata/raw-data restore.
+3. **R3:** use isolated origin fixtures for misses/hits, different renditions,
+   redirects/unsafe destinations, 429/timeout/partial-body/storage failure and
+   healthy follow-up. Verify released resources, prior-cache preservation, finite
+   upstream demand, freshness and key redaction. Perform a bounded real UI smoke
+   with the approved BnF configuration; never inject faults into real BnF.
 
-- **`asset_store_reserved_upload_bytes{space}`** (gauge, ADR-029) - unpurged exact-size upload estimates, including failed/deleted writes. Scrape returns NaN if the Postgres pool cannot supply a connection within 10ms per bucket; other metrics remain available.
-- **`asset_store_upload_reservations_total{space,outcome}`** (counter, ADR-029) - pre-PUT reservation `granted`/`denied`; `upload.reserve_denied` warning logs omit request/body/credential values. Successful reservations emit `asset.upload_reserve` audit events.
-- **`asset_store_upload_inflight`** / **`fetcher_job_inflight`** (gauges, implemented ADR-028) - admitted upload/ensure-url work per process.
-- **`asset_store_upload_admission_total{outcome}`** / **`fetcher_job_admission_total{outcome}`** (counters, implemented ADR-028) - `granted` and `denied` admission; credential-free `asset_store_upload.overload` / `fetcher_job.overload` warning logs accompany saturation.
-- **`asset_store_failed_upload_cleanup_total{space,outcome}`** (counter, implemented ADR-027) - failed proxy-upload cleanup: `reclaimed`, `deferred` (inspect registry/storage health and lifecycle sweeps), or `preserved` (available/expired state was retained). Structured `upload.cleanup` logs identify the asset and outcome without credentials.
-- **`asset_store_requests_total`** (counter) - request count by endpoint and result class.
-- **`asset_store_request_duration_seconds`** (histogram) - per-endpoint latency; standard quantiles via histogram_quantile.
-- **`asset_store_capability_issued_total`** (counter) - by `mode` (`presigned`/`token`), `op` (`read`/`write`), `outcome` (`granted`/`denied`; implemented overload outcomes `capacity_denied`/`rate_denied`). ADR-030 rate rejections emit `capability.rate_denied` logs and create no per-request audit row.
-- **`asset_store_capability_issue_duration_seconds`** (histogram) - for NFR-003.
-- **`asset_store_alias_state_transitions_total`** (counter) - by `from`, `to`.
-- **`asset_store_storage_bytes`** (gauge) - per `space` and per `(space, partition_id)`; refreshed by a periodic compactor job (authoritative for quotas).
-- **`asset_store_storage_assets`** (gauge) - per `space`, per `partition_id`, per `state`.
-- **`objectstore_bucket_usage_bytes`** (gauge) - per bucket from the object-store exporter (coarse cost/ops view).
-- **`fetch_cache_hit_total`** / **`fetch_remote_errors_total`** / **`fetch_bytes_ingested_total`** (counter) - fetcher-service; labels `bucket` (`cache`|`tmp`), `mirror_id` optional.
-- **`asset_store_audit_events_total`** (counter) - by `action`.
-- **`asset_store_checksum_mismatch_total`** (counter) - durability canary.
+Tests accompany changed behavior; run relevant CI checks in implementation work.
+Documentation-only changes need link/consistency checks, not application workloads.
+Do not start a new soak, benchmark or broad randomized harness solely because it
+was required in the previous plan. Larger failure/scale/security certification is
+tracked separately; selected releases still need honest, bounded failure evidence.
 
-Plus standard object-store and Postgres exporter metrics (request rate, latency, error rate, disk usage, connection pool).
+## Release record
 
-### Logging
-
-- **Format** - structured JSON, one line per event; fields include `ts`, `service`, `level`, `correlation_id`, `caller_service_id`, `space`, `alias` (when relevant), `event`, `message`.
-- **Correlation IDs** - one `correlation_id` per inbound request; propagated downstream via the `X-Correlation-Id` header.
-- **Redaction policy** - no secrets in logs; capability tokens replaced with a distinct non-secret identifier or digest;
-  **current implementation stores the live bearer as `capability_id` (SEC-07), so
-  this requirement is not yet met**; alias names allowed (they are not secrets by policy - operator guidance forbids putting PII in aliases).
-
-### Tracing
-
-- **Trace boundaries** - inbound HTTP request boundary; outbound object-store and Postgres calls.
-- **Required spans** - `capability.issue`, `asset.commit`, `asset.resolve`, `audit.append`, `object_store.put`, `object_store.get`, `db.query`.
-- **Exporter** - OTLP via a sidecar collector; backend left as a deployment choice (Jaeger or Tempo recommended).
-
-### Alerts
-
-Alert thresholds are starting points; refined after Phase 4 load testing. Severity SEV-1 pages on-call; SEV-2 raises a ticket.
-
-| Alert | Trigger | Severity | Owner |
-|---|---|---|---|
-| ReadErrorRateHigh | `rate(asset_store_requests_total{endpoint="resolve",result_class="5xx"}[5m]) / rate(asset_store_requests_total{endpoint="resolve"}[5m])` > 1% for 10 min | SEV-1 | on-call |
-| ReadLatencyHigh | `histogram_quantile(0.95, asset_store_request_duration_seconds{endpoint="resolve"})` > 0.5 s for 15 min | SEV-2 | on-call |
-| CapabilityMintLatencyHigh | `histogram_quantile(0.95, asset_store_capability_issue_duration_seconds)` > 0.1 s for 15 min | SEV-2 | on-call |
-| ChecksumMismatchDetected | `increase(asset_store_checksum_mismatch_total[5m])` > 0 | SEV-1 | on-call |
-| ObjectStoreNodeDown | `up{job="objectstore"} == 0` for 5 min | SEV-1 | on-call |
-| ObjectStoreDiskAlmostFull | object-store node free space < 10% for 30 min | SEV-2 | on-call |
-| PostgresConnectionsExhausted | `pg_stat_activity_count` >= 90% of `max_connections` for 10 min | SEV-2 | on-call |
-| AuditWriteFailures | `increase(asset_store_audit_events_total{outcome="error"}[5m])` > 0 | SEV-1 | on-call |
-| CapabilityIssueDeniedSurge | `rate(asset_store_capability_issued_total{outcome="denied"}[5m])` exceeds rolling baseline by 5x | SEV-3 | on-call |
-
-## SLO / SLI Draft
-
-The SLOs target the **read path** (the dominant workload). Write-path SLOs to be added after Phase 3.
-
-| SLI | Definition | Target | Measurement Window |
-|---|---|---|---|
-| Availability (read) | (1 - 5xx rate on `resolve` and signed-URL GET) measured in 1-minute buckets | 99.9% | rolling 30 days |
-| Latency (read p95) | p95 of `asset_store_request_duration_seconds{endpoint="resolve"}` | <= 200 ms (in-cluster) | rolling 7 days |
-| Capability mint latency p95 | p95 of `asset_store_capability_issue_duration_seconds` | <= 50 ms | rolling 7 days |
-| Durability canary | `increase(asset_store_checksum_mismatch_total)` | == 0 | rolling 30 days |
-
-Error budget for the read availability SLO: 0.1% of 30 days = ~43 minutes per 30-day window. Burn-rate alerts to be configured in Phase 3.
-
-## Testing Strategy
-
-- **Unit tests** - per service; pytest; coverage targets `>= 80%` for new modules; mocks for the object-store layer when fast tests are needed.
-- **Integration tests** - run the full stack via Docker Compose; exercise SCN-001..007 end-to-end; CI runs them on every PR.
-- **End-to-end tests** - same scenarios run against the staging Swarm cluster nightly; failure raises a SEV-3 alert.
-- **Load tests** - Locust- or k6-driven; reproduce S-2 and S-3 conditions; runs on demand and before each release candidate.
-- **Chaos / failure injection** - kill one `asset-registry` task, one `storage-guard` task, one object-store node; verify that retries succeed and metrics report the impact within SLO error budget.
-- **Security tests** - SAST in CI (e.g. `bandit`, `semgrep`); image scanning (`trivy` or `grype`); dependency vulnerability scan; capability-scoping test suite per S-4.
-
-## Go-Live Checklist
-
-- [x] Prototype security review performed — [B-018 findings](../security/B018_REVIEW.md).
-  [Bounded fixes completed](../security/B018_CLOSEOUT.md); complex remediation
-  and security release sign-off remain open.
-- [x] Threat model documented — [STRIDE map](../security/B018_REVIEW.md#stride-map-and-controls-that-held).
-- [ ] Runbooks written for: capability issuance failures, object-store node loss, Postgres failover, audit log overflow, garbage collection misfire.
-- [ ] Dashboards and alerts live in the chosen observability backend; on-call ownership defined.
-- [ ] Backup/restore tested for Postgres and the object store.
-- [ ] Incident ownership defined (paging schedule, escalation contacts).
-- [ ] Capacity baseline measured under S-2 / S-3 loads; SLO targets validated against measured headroom.
-- [ ] License audit completed (in particular: object-store and any vendored dependency).
-- [ ] Disaster recovery rehearsal completed at least once.
-
-## Runbook Stubs
-
-These will live in `docs/runbooks/` once the implementation lands; placeholders here so we do not forget them at code time.
-
-- `RUNBOOK-001` Object-store node loss - detect, drain, replace, rebalance.
-- `RUNBOOK-002` Postgres failover - if/when a replica is added.
-- `RUNBOOK-003` Capability issuance saturation - tune workers, identify caller.
-- `RUNBOOK-004` Audit log overflow - rotate, archive, alert tuning.
-- `RUNBOOK-005` Garbage collection stuck - manual trigger and inspection.
-- `RUNBOOK-006` License or CVE response - swap object-store image, rotate keys.
-
-## Lifecycle worker operations (B-014)
-
-The [lifecycle runbook](../services/lifecycle-worker.md#runbook) documents migration
-0002, dry-run/apply, periodic scheduling, capacity/retention configuration, retry
-semantics and metric export. Sample high-water/exhaustion/error alerts are in
-[`deploy/observability/lifecycle-alerts.yml`](../../deploy/observability/lifecycle-alerts.yml).
-Alerts are supplied as rules, not automatically installed by the dev stack.
-`gc_evicted_total` counts successful lifecycle actions (expiry and purge separately),
-not unique assets. Ratios/exhaustion describe the pass's planning snapshot.
-
-## Postgres pool operation (ADR-023)
-
-See [transaction isolation](../security/SEC02_TRANSACTION_ISOLATION.md#configuration-and-operations)
-for per-process connection/queue bounds, checkout timeout, 503 retry behavior and
-registry metrics. Monitor queue growth and acquisition failures before increasing
-limits; aggregate pool maxima must fit the database connection budget.
+For each increment record source/image identity, host/configured limits (no secrets),
+corpus/formats, measured outcomes, errors, operator instructions, rollback and
+remaining limitations. Do not inherit old “542 tests” or cache soak results as
+collection/IIIF acceptance. Prototype public access is not production approval.

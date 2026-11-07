@@ -1,15 +1,16 @@
 ---
-description: Core project context for asset-store work across this repository.
+description: Current collection/IIIF/proxy pilot context across this repository.
 applyTo: "**"
 ---
 
-# Asset-Store Project Context
+# Collection and IIIF pilot context
 
-- The module under development is `asset-store`: a multi-tenant content/asset repository with three internal layers (`object-store`, `asset-registry`, `storage-guard`). The repo is still named `prototype_cache` for historical reasons.
-- Treat `docs/spec/` as the requirements source of truth. The reading order and glossary live in `docs/spec/README.md`.
-- Discovery-stage notes live under `docs/_archive/` and `docs/spec/_archive/` and are read-only; promote points into the active spec rather than editing the archive.
-- Prefer measurable requirements and explicit assumptions; mark unknowns as `Q-*` rows in `docs/spec/05_BACKLOG_AND_OPEN_QUESTIONS.md`.
-- For every major technical choice, update the ADR table in `docs/spec/03_ARCHITECTURE.md`.
-- Out of scope for the prototype: image processing, remote URL fetching, IIIF serving, end-user authentication.
-- In scope for the prototype: durable storage, alias/metadata/lifecycle, short-lived prefix-scoped capabilities, audit log, admin UI, bulk loader, worker simulator.
-- Keep implementation, tests, and observability aligned with the spec.
+- Owner-approved pivot: restricted custom collection upload/admin/storage → local IIIF publication → Gallica Image API proxy/cache. See `docs/spec/README.md` and `docs/WORKPLAN.md`.
+- Keep existing Corpusense/job submission/processing interfaces unchanged; obtain real examples rather than treating worker-sim as the product protocol.
+- The general asset-store programme is frozen; existing registry/guards/adapters/fetcher are selective reuse. No mandatory generic alias/capability layer, Supabase switch or package/repo rename.
+- Public reads of approved published test material, restricted administrative writes. User/project auth, proxy login/metering, strict worker egress, multiple backends and agentic interfaces are follow-ups.
+- Local collection manifests are generated. Gallica Presentation manifests are fetched directly by Corpusense, which routes Image API info/image requests through the proxy. No server-side Presentation proxy or manifest rewriting.
+- Preserve raw files and canonical provenance, exact representation dimensions/checksum and export coordinate mapping. Collection retention is separate from disposable cache eviction.
+- Keep `docs/spec/` authoritative. Record choices as ADRs and unknowns as Q rows; tests and relevant observability accompany behavior changes.
+- `docs/history/asset-store/` preserves the superseded programme; old sequencing/handoffs are not current instructions. Existing runtime/security limitations remain true for reused code.
+- Discovery archives `docs/_archive/` and `docs/spec/_archive/` are read-only. Preserve protected runtime/report/config files, migration history and owner images.

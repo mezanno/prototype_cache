@@ -1,3 +1,5 @@
+> **Existing asset-store implementation notes.** The [active workplan](WORKPLAN.md) and [spec](spec/README.md) supersede product goals and future sequencing here. Existing code/runtime limitations remain; no new collection/IIIF service is delivered by the pivot.
+
 # Implementation Notes
 
 How the **current code** relates to the spec, and deliberate shortcuts for the prototype phase.
@@ -567,5 +569,5 @@ If requirements shrink to “store files per user with ACLs only,” revisiting 
 ## Related spec docs
 
 - Storage layout: [`spec/03_ARCHITECTURE.md`](spec/03_ARCHITECTURE.md)
-- Jargon: [`spec/README.md` glossary](spec/README.md#glossary-and-acronyms)
+- Jargon: [`spec/README.md` glossary](history/asset-store/spec/README.md#glossary-and-acronyms)
 - OSS survey: [`spec/A_OSS_SURVEY.md`](spec/A_OSS_SURVEY.md)

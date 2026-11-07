@@ -1,3 +1,5 @@
+> **Existing simulator, not the Corpusense job contract.** The [pivot](../WORKPLAN.md) preserves the real job submission/processing system; this protocol is optional implementation evidence, not a required new consumer interface.
+
 # Worker simulator (B-012)
 
 Implements SCN-002 and SCN-005: guarded reads with checksum verification, followed

@@ -1,25 +1,27 @@
-# asset-store prototype
+# Collection publishing and Gallica Image proxy pilot
 
-Prototype for the `asset-store` module: immutable asset storage, alias registry,
-and scoped capability checks for async workers and future IIIF/cache consumers.
+**We have pivoted.** Deliver restricted collection upload/admin/storage, local
+IIIF publication usable by Corpusense/current workers, then an Image-only Gallica
+proxy/cache. The existing job submission and processing system stays unchanged.
+Public reads are accepted for approved published test material; administrative
+writes stay restricted. Corpusense fetches Gallica manifests directly and routes
+Image API requests through the proxy. Authentication/metering of proxy users is later.
 
-## Goal
+Start with the **[workplan](docs/WORKPLAN.md)**, [active specification](docs/spec/README.md)
+and [M-002 release plan](docs/milestones/COLLECTIONS_AND_IMAGE_PROXY_PILOT.md).
+[Architecture/status](docs/OVERVIEW.md) distinguishes target services from existing code.
 
-Define and validate a production-grade design for a deployable, testable, observable storage subsystem before selecting final technologies.
+The existing FastAPI asset-store, Postgres/S3 adapters, guards/admin/lifecycle,
+fetcher, bulk-loader and worker simulator remain available for selective reuse.
+They do not yet implement the new collection service or full IIIF Image serving.
+The generic asset-store roadmap is frozen; no storage-provider switch, universal
+alias/capability layer or job-engine rewrite is required to ship this pilot.
+No code/runtime behavior was changed by the documentation pivot.
 
-## Current implementation slice
+## Existing implementation — development commands
 
-Start with the **[visual architecture and progress overview](docs/OVERVIEW.md)**
-for component responsibilities and implementation status. The current milestone is
-a [private, single-instance cache pilot](docs/milestones/PRIVATE_CACHE_PILOT.md)
-on top of asset-store and fetcher-service.
-
-The prototype includes a FastAPI service, durable Postgres registry, Garage/S3
-storage adapter, scoped capabilities, fetcher, bulk-loader, worker simulator and
-lifecycle cleanup worker, and an [admin console](docs/services/admin-ui.md) at `/admin`.
-In-memory adapters remain available for local tests. Browser acceptance, security
-hardening and production readiness remain open;
-see the [workplan](docs/WORKPLAN.md) for remaining work.
+The commands below exercise the existing prototype, not completed M-002 services.
+See [legacy implementation notes](docs/IMPLEMENTATION_NOTES.md) for its limitations.
 
 Run the tests and the API locally (uv-managed env):
 
@@ -75,11 +77,13 @@ the entire suite with nothing skipped.
 - Spec: `docs/spec/` (glossary at the end of `docs/spec/README.md`)
 - Global execution plan: `docs/WORKPLAN.md`
 - Agent operating guide: `AGENTS.md`
-- Cursor rules for agents: `.cursor/rules/`
+- Editor context: `.github/instructions/`
+- Historical programme/evidence: `docs/history/asset-store/`
 
-## Local pilot deployment and task workflow
+## Legacy pilot deployment and task workflow
 
-See the short [pilot quickstart](docs/PILOT_QUICKSTART.md) for deployment,
+See the short [pilot quickstart](docs/PILOT_QUICKSTART.md) for the previous deployment contract,
 authenticated caching, worker input reads and manifest-last result publication.
-The running local pilot supports the current BnF v3 API and mapped legacy
+Do not assume a running deployment exists on this machine.
+The recorded legacy local pilot supports the current BnF v3 API and mapped legacy
 full-image URLs. Task scheduling/processing code remains external.

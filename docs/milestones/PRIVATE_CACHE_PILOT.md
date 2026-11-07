@@ -1,3 +1,5 @@
+> **Historical M-001 plan — superseded by the 2026-11-07 pivot.** Follow [M-002](COLLECTIONS_AND_IMAGE_PROXY_PILOT.md) and the [active workplan](../WORKPLAN.md). The body below preserves the previous scope/checkpoints, not current prerequisites or authorization. No runtime behavior/evidence was changed.
+
 # M-001 — private Gallica IIIF cache pilot
 
 **Current delivery goal · planned 2026-09-28 · implementation baseline `18d738e`.**
@@ -64,7 +66,7 @@ The existing admin console still receives browser acceptance testing.
 
 The URL shape comes from the [original cache sketch](../_archive/NOTES.md#caching-of-distant-iiif-resources):
 `{mirrored domain}/{remote resource-related url part}`. Active
-[SCN-010](../spec/01_SCOPE.md#scn-010---user-reads-a-cached-image-instead-of-the-authoritative-source)
+[SCN-010](../history/asset-store/spec/01_SCOPE.md#scn-010---user-reads-a-cached-image-instead-of-the-authoritative-source)
 already specifies the image-mirror workflow; ADR-014 specifies internal canonical
 cache aliases. Public URL spelling and internal storage aliases are separate layers.
 

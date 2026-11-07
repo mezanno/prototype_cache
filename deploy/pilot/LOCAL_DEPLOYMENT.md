@@ -1,3 +1,5 @@
+> **Historical/local M-001 instructions.** Follow [the active workplan](../../docs/WORKPLAN.md) for new delivery; verify actual host state before reuse. No runtime changes are implied by the pivot.
+
 # Local pilot deployment evidence — 2026-10-01
 
 **Status: local implementation/restart checks passed; tester release is not signed off.**

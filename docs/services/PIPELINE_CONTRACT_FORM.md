@@ -1,3 +1,5 @@
+> **Superseded integration form.** The [active workplan](../WORKPLAN.md) and [collection contract](collections-service.md) replace this six-section form and its pause/authorization/next-task instructions. Keep the current job system unchanged; obtain only the real UI/job examples needed for integration. This body remains historical context, not a requirement to adopt aliases/capabilities or implement a new pipeline.
+
 # First pipeline integration — owner review form
 
 Created 2026-10-12. **Status: awaiting owner answers; proposals are not decisions.**
@@ -145,7 +147,7 @@ top diagnostic needs. Unknown values are fine._
 
 ## Fixed acceptance scope and deferred choices
 
-The [failure prerequisite](../WORKPLAN.md#fetcher-fault-injection-acceptance-prerequisite--2026-10-06)
+The [failure prerequisite](../history/asset-store/WORKPLAN.md#fetcher-fault-injection-acceptance-prerequisite--2026-10-06)
 already requires deterministic coverage plus seeded random client, origin,
 network/TLS and internal failures. Verify recovery, preserved cached bytes, no
 partial available assets, released resources and safe correlated telemetry.

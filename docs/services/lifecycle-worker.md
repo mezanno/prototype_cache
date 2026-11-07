@@ -1,3 +1,5 @@
+> **Existing asset-store lifecycle contract.** Follow the [active plan](../WORKPLAN.md) for new delivery. Do not place retained collection raw files under legacy cache expiry/eviction. This pivot does not authorize changing existing schedules, deleting data or migrating storage.
+
 # Lifecycle worker (B-014)
 
 FR-060/063/064/067/069 and ADR-020: a trusted maintenance process performs one

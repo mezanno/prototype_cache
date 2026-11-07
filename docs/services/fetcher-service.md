@@ -1,6 +1,8 @@
+> **Existing implementation / historical roadmap.** The [active Gallica Image proxy contract](gallica-image-proxy.md) and [workplan](../WORKPLAN.md) govern new delivery. This body documents the legacy authenticated preload/cache-only facade and earlier future plans, not delivered M-002 behavior. R3 adds Image API miss fetching and info.json; Gallica manifests remain direct in Corpusense. Do not copy the old Presentation-mirror/end-user-auth roadmap into the new pilot.
+
 # Fetcher Service
 
-> Terms and acronyms: [`../spec/README.md` glossary](../spec/README.md#glossary-and-acronyms)
+> Terms and acronyms: [`../spec/README.md` glossary](../history/asset-store/spec/README.md#glossary-and-acronyms)
 
 ## M-001 planned cache facade
 

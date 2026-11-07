@@ -1,3 +1,5 @@
+> **Existing asset-store admin contract.** This is not the planned [collection administration API/tools](collections-service.md). Reuse selectively; old B-013 acceptance/roadmap does not gate M-002. Runtime behavior below is unchanged.
+
 # Admin console (B-013)
 
 Operator walkthrough: [Using the console](../guides/admin-console.md).
